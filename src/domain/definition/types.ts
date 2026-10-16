@@ -2,6 +2,9 @@
 //
 // - 一般の画面は、最新イベントの公開版をこの形の JSON 1 つとして読む（要件 5 章）。
 // - 読み込んだ JSON は validatePublicDefinition（validate.ts）で検証してから使う。
+// - 定義は不変の値として扱う（特効の計算〔boost.ts〕が定義・段階のオブジェクトごとに索引を覚えるため）。
+//   項目はすべて readonly、配列は readonly T[] にして書き換えを型の誤りにし、検証後の値は実行時にも深く凍結する。
+//   内容を変えるときは新しいオブジェクトを作る。
 // - 並び順は配列の順で表す（areas・fudas は配列の順がそのまま並び順。
 //   stages は同じ海域の段階どうしの配列の中での前後が、その海域の中の並び順）。
 // - 特効は「段階のボスで効く艦名グループ × 倍率」だけを持つ（U11）。
@@ -16,81 +19,81 @@ export type Importance = "normal" | "important" | "hard";
 /** イベント（要件 4.1） */
 export interface EventInfo {
   /** イベント ID */
-  id: string;
+  readonly id: string;
   /** イベント名（例「2026夏イベ」） */
-  name: string;
+  readonly name: string;
   /** 開始日時（必須）。ISO 8601 の時差つき（例 "2026-08-07T12:00:00+09:00"。秒は省略可） */
-  startAt: string;
+  readonly startAt: string;
   /**
    * 終了日時（任意）。未定なら null。形式は startAt と同じで、startAt より後。
    * JSON では省略してもよく、検証後の値では null になる
    */
-  endAt: string | null;
+  readonly endAt: string | null;
   /** 特効データの版の日付（公開した日。"YYYY-MM-DD"。画面では「2026/08/04 版」） */
-  versionDate: string;
+  readonly versionDate: string;
 }
 
 /** 海域（E1、E2…） */
 export interface Area {
   /** 海域 ID */
-  id: string;
+  readonly id: string;
   /** 表示名（例「E1」） */
-  name: string;
+  readonly name: string;
 }
 
 /** 札（出撃札） */
 export interface Fuda {
   /** 札 ID */
-  id: string;
+  readonly id: string;
   /** 札名（例「連合艦隊」） */
-  name: string;
+  readonly name: string;
   /** 札の色（"#RRGGBB"） */
-  color: string;
+  readonly color: string;
   /**
    * ゲーム内の札番号（U10。取り込みデータの api_sally_area／area の値と対応する）。
    * 未入力なら null。JSON では省略してもよく、検証後の値では null になる。1 以上の整数で、札どうしで重複しない
    */
-  gameNumber: number | null;
+  readonly gameNumber: number | null;
 }
 
 /** 特効グループ（この段階のボスで効く艦名の集合 × 倍率） */
 export interface BoostGroup {
   /** グループ ID（定義全体で重複しない） */
-  id: string;
+  readonly id: string;
   /** グループ名（例「連合艦隊C」）。空でもよい（ほかの名前と違い、空は誤りにしない） */
-  name: string;
+  readonly name: string;
   /** 倍率（例 1.27）。1 以上の有限の数 */
-  multiplier: number;
+  readonly multiplier: number;
   /** 艦名（改装段階を問わない艦名。例「時雨」は 時雨改二・時雨改三 にも効く） */
-  shipNames: string[];
+  readonly shipNames: readonly string[];
 }
 
 /** 攻略段階（段階） */
 export interface Stage {
   /** 段階 ID */
-  id: string;
+  readonly id: string;
   /** 属する海域の ID（areas のどれか） */
-  areaId: string;
+  readonly areaId: string;
   /** 段階名（例「ゲージ3」） */
-  name: string;
+  readonly name: string;
   /** この段階で使う札の ID（fudas のどれか） */
-  fudaId: string;
+  readonly fudaId: string;
   /** 大事さ */
-  importance: Importance;
+  readonly importance: Importance;
   /** この段階のボスで効く特効グループ（未入力なら空配列） */
-  boosts: BoostGroup[];
+  readonly boosts: readonly BoostGroup[];
 }
 
 /** 公開定義（最新イベントの公開版） */
 export interface PublicDefinition {
-  schemaVersion: DefinitionSchemaVersion;
-  event: EventInfo;
+  readonly schemaVersion: DefinitionSchemaVersion;
+  readonly event: EventInfo;
   /** 海域（配列の順が並び順） */
-  areas: Area[];
+  readonly areas: readonly Area[];
   /** 札（配列の順が並び順） */
-  fudas: Fuda[];
+  readonly fudas: readonly Fuda[];
   /** 段階（同じ海域の段階どうしの前後が、その海域の中の並び順） */
-  stages: Stage[];
+  readonly stages: readonly Stage[];
 }
 
 /**
