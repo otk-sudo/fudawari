@@ -51,4 +51,20 @@ describe("発行するパスワード（generatePassword）", () => {
     expect(joined).toMatch(/[a-z]/);
     expect(joined).toMatch(/[0-9]/);
   });
+
+  // レビュー対応（親の決定 10）：Supabase の設定でパスワードの条件（英大文字・英小文字・数字）を付けても通るように
+  it("どのパスワードも、英大文字・英小文字・数字を 1 文字以上ずつ含む（16 文字のまま。300 個作って確かめる）", () => {
+    // 準備・実行：毎回選ぶだけだと、16 文字に数字が 1 つも入らないことが 300 回のうち何度も起きる（1 回あたり約 6%）
+    const passwords = Array.from({ length: 300 }, () => generatePassword());
+
+    // 検証：条件を満たさないものを集める（空なら合格）
+    const lacking = passwords.filter(
+      (password) =>
+        !ALPHANUMERIC_16.test(password) ||
+        !/[A-Z]/.test(password) ||
+        !/[a-z]/.test(password) ||
+        !/[0-9]/.test(password),
+    );
+    expect(lacking).toEqual([]);
+  });
 });

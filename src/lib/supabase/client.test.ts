@@ -90,6 +90,18 @@ describe("Supabase のクライアントの入口（@/lib/supabase）", () => {
       expect(optionsOfCall(fake, 0) ?? {}).not.toMatchObject({ auth: { persistSession: false } });
     });
 
+    it("ふだんのクライアントは、URL の中のログインの情報を読まない（auth.detectSessionInUrl: false。レビュー対応）", () => {
+      // 準備
+      stubSupabaseEnv();
+
+      // 実行
+      getSupabaseClient();
+
+      // 検証
+      expect(fake.createClient).toHaveBeenCalledTimes(1);
+      expect(optionsOfCall(fake, 0) ?? {}).toMatchObject({ auth: { detectSessionInUrl: false } });
+    });
+
     it("2 回呼んでも、作るのは 1 回で同じクライアントを返す", () => {
       // 準備
       stubSupabaseEnv();

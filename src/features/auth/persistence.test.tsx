@@ -2,7 +2,7 @@ import { act, renderHook, waitFor, within } from "@testing-library/react";
 import { hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setRole, signIn, signOut } from "@/features/auth";
+import { setRole, signIn, signOut, useRole } from "@/features/auth";
 import { HomeScreen } from "@/features/home/HomeScreen";
 import { resetSupabaseClient } from "@/lib/supabase";
 import {
@@ -209,6 +209,30 @@ describe("ログイン中の権限の保存と復元（@/features/auth）", () =
     // 検証
     expect(role.current).toBe("user");
     expect(account.current).toBeNull();
+  });
+
+  it("localStorage に保存できなくても、この画面の中ではログインした扱いにする（読み込み直すと一般利用者。親の決定）", async () => {
+    // 準備：保存（setItem）が例外を投げる
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("容量が足りません", "QuotaExceededError");
+    });
+    const { result: role } = renderHook(() => useRole());
+
+    // 実行
+    let ok = false;
+    await act(async () => {
+      ok = (await signIn(ADMIRAL.loginId, ADMIRAL.password)).ok;
+    });
+
+    // 検証：この画面では管理者
+    expect(ok).toBe(true);
+    expect(role.current).toBe("admin");
+    // 検証：保存できていないので、読み込み直すと一般利用者
+    vi.restoreAllMocks();
+    const fresh = await reloadAuth();
+    const { result: freshRole } = renderHook(() => fresh.useRole());
+    await flushEffects();
+    expect(freshRole.current).toBe("user");
   });
 
   describe("静的に書き出した HTML との食い違い（hydration）", () => {

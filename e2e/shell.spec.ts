@@ -33,6 +33,8 @@ const SCREENS = [
   { path: "/drift", heading: "計画と実際の札" },
   { path: "/definition", heading: "イベント定義" },
   { path: "/collaborators", heading: "協力者" },
+  // 招待（2026-10-17 にやめた。U3・U19）の古いリンクの案内のページ。ほかの画面と同じく左メニューを出す
+  { path: "/invite", heading: "協力者への招待" },
 ] as const;
 
 test.describe("左メニューでの移動", () => {
@@ -102,7 +104,7 @@ test.describe("各画面のルートの入れ物", () => {
     });
   }
 
-  // 招待の画面（/invite）は作らない（U3・U19。2026-10-17 に招待をやめた）
+  // 左メニューを出さない単独の画面はログインだけ。/invite は招待をやめた（U3・U19）ことの案内のページとして残し、上の SCREENS で確かめる
   test("/login を直接開くと、画面（見出し）が出て、左メニューは出ない", async ({ page }) => {
     // 準備・実行
     const response = await page.goto("/login");

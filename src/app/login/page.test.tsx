@@ -1,5 +1,8 @@
-import { render, renderHook, screen, waitFor } from "@testing-library/react";
+import { AuthApiError } from "@supabase/supabase-js";
+import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
+import { hydrateRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/app/login/page";
 import { setRole, signOut, useAccount, useRole } from "@/features/auth";
@@ -9,11 +12,13 @@ import {
   authFailure,
   authNetworkError,
   calledSupabaseMethods,
+  type FakeAuthResponse,
   type FakeSupabase,
   installFakeSupabase,
   stubSupabaseEnv,
   stubSupabaseEnvWithout,
 } from "@/test/supabase-fake";
+import { createDeferred } from "@/test/deferred";
 
 // supabase-js の createClient を偽物に差し替える（Supabase に通信しない）
 vi.mock("@supabase/supabase-js", async (importOriginal) => ({
@@ -248,5 +253,133 @@ describe("ログインの画面（/login）", () => {
     // 検証
     await waitFor(() => expect(navigation.navigate).toHaveBeenCalledWith("/"));
     expect(screen.queryByText(/ID\s*かパスワードが違/)).not.toBeInTheDocument();
+  });
+
+  // レビュー対応（親の決定 1）：書き出した HTML（JavaScript が動く前）では送れない。送っても URL にパスワードが出ない
+  describe("書き出した HTML（hydration の前と後）", () => {
+    let container: HTMLDivElement | null = null;
+    let root: Root | null = null;
+
+    /** ビルドのときと同じく、ログインの画面を HTML に書き出して、画面に置く（React はまだ動いていない） */
+    function placeStaticHtml(): HTMLDivElement {
+      const placed = document.createElement("div");
+      placed.innerHTML = renderToString(<LoginPage />);
+      document.body.appendChild(placed);
+      container = placed;
+      return placed;
+    }
+
+    afterEach(async () => {
+      if (root !== null) {
+        const mounted = root;
+        await act(async () => {
+          mounted.unmount();
+        });
+      }
+      root = null;
+      container?.remove();
+      container = null;
+    });
+
+    it("書き出した HTML では「ログイン」ボタンが押せず、フォームは method=\"post\"（JavaScript の前に送っても URL にパスワードが出ない）", () => {
+      // 準備・実行
+      const placed = placeStaticHtml();
+
+      // 検証
+      expect(within(placed).getByRole("button", { name: "ログイン" })).toBeDisabled();
+      const form = placed.querySelector("form");
+      expect(form).not.toBeNull();
+      expect(form?.getAttribute("method")?.toLowerCase()).toBe("post");
+    });
+
+    it("書き出した HTML でパスワードの欄に Enter を押しても、フォームは送られない（暗黙の送信も起きない）", async () => {
+      // 準備：送られた回数を数える（jsdom は画面の移動をしないので、送られたら止めて数える）
+      const user = userEvent.setup();
+      const placed = placeStaticHtml();
+      const form = placed.querySelector("form");
+      if (form === null) throw new Error("フォームがない");
+      let submitted = 0;
+      form.addEventListener("submit", (event) => {
+        submitted += 1;
+        event.preventDefault();
+      });
+
+      // 実行
+      await user.type(within(placed).getByLabelText(/^パスワード/), "secret-password{Enter}");
+
+      // 検証
+      expect(submitted).toBe(0);
+    });
+
+    it("書き出した HTML に重ねる（hydration）と、食い違いのエラーを出さずに「ログイン」ボタンが押せるようになる", async () => {
+      // 準備
+      const placed = placeStaticHtml();
+      const onRecoverableError = vi.fn();
+
+      // 実行
+      await act(async () => {
+        root = hydrateRoot(placed, <LoginPage />, { onRecoverableError });
+      });
+
+      // 検証
+      await waitFor(() =>
+        expect(within(placed).getByRole("button", { name: "ログイン" })).toBeEnabled(),
+      );
+      expect(onRecoverableError).not.toHaveBeenCalled();
+    });
+  });
+
+  // 親の決定 11 のうち、ログインの画面にかかわるもの（実装済み。テストで固定する）
+  describe("決めてあったが、テストがなかったもの", () => {
+    it("ID の前後の空白は除いてからログインする", async () => {
+      // 準備
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      // 実行
+      await submit(user, `  ${TARO.loginId}  `, TARO.password);
+
+      // 検証
+      await waitFor(() => expect(navigation.navigate).toHaveBeenCalledWith("/"));
+      expect(fake.main.auth.signInWithPassword).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "taro-01@fudawari.invalid" }),
+      );
+    });
+
+    it("ログインの途中で「ログイン」をもう一度押しても、ログインは 1 回だけ（二重送信を防ぐ）", async () => {
+      // 準備：Auth の応答を待たせる
+      const user = userEvent.setup();
+      const answer = createDeferred<FakeAuthResponse>();
+      fake.main.auth.signInWithPassword.mockReturnValueOnce(answer.promise);
+      render(<LoginPage />);
+      await user.type(idField(), TARO.loginId);
+      await user.type(passwordField(), TARO.password);
+
+      // 実行
+      await user.click(loginButton());
+      await user.click(loginButton());
+
+      // 検証
+      expect(fake.main.auth.signInWithPassword).toHaveBeenCalledTimes(1);
+      answer.resolve({ data: { user: null, session: null }, error: null });
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+    });
+
+    it.each([
+      ["429（回数の制限）", () => new AuthApiError("Request rate limit reached", 429, "over_request_rate_limit")],
+      ["500（サーバーの障害）", () => new AuthApiError("Unexpected failure", 500, "unexpected_failure")],
+    ])("ID・パスワードの間違い以外の Auth の失敗（%s）は、通信の失敗と同じ文を出す", async (_label, makeError) => {
+      // 準備
+      fake.main.auth.signInWithPassword.mockResolvedValueOnce(authFailure(makeError()));
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      // 実行
+      await submit(user, TARO.loginId, TARO.password);
+
+      // 検証
+      expect(await screen.findByRole("alert")).toHaveTextContent(/通信に失敗/);
+      expect(navigation.navigate).not.toHaveBeenCalled();
+    });
   });
 });

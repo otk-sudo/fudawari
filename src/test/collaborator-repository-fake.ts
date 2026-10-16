@@ -2,6 +2,7 @@
 //
 // - 中身（members）を持ち、一覧・発行・外すでその中身を読み書きする（画面が発行・外したあとに一覧を読み直しても、手元で表を書き換えても通る）
 // - 各操作は vi.fn。失敗の場面は `fake.issue.mockResolvedValueOnce({ ok: false, error: "id-taken" })` のように差し替える
+// - checkSession（Supabase のセッションがあるか）は、既定ではある（{ ok: true, value: true }）
 import { type Mock, vi } from "vitest";
 import type { Collaborator, CollaboratorRepository } from "@/features/collaborators";
 
@@ -11,6 +12,7 @@ export type FakeCollaboratorRepository = {
   list: Mock<CollaboratorRepository["list"]>;
   issue: Mock<CollaboratorRepository["issue"]>;
   remove: Mock<CollaboratorRepository["remove"]>;
+  checkSession: Mock<NonNullable<CollaboratorRepository["checkSession"]>>;
   /** 今の中身（発行・外すで変わる） */
   members: Collaborator[];
 };
@@ -53,5 +55,17 @@ export function createFakeCollaboratorRepository(
     return { ok: true, value: undefined };
   });
 
-  return { repository: { list, issue, remove }, list, issue, remove, members };
+  const checkSession = vi.fn<NonNullable<CollaboratorRepository["checkSession"]>>(async () => ({
+    ok: true,
+    value: true,
+  }));
+
+  return {
+    repository: { list, issue, remove, checkSession },
+    list,
+    issue,
+    remove,
+    checkSession,
+    members,
+  };
 }

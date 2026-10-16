@@ -62,4 +62,10 @@ export type CollaboratorRepository = {
   issue: (input: IssueCollaboratorInput) => Promise<CollaboratorResult<{ userId: string }>>;
   /** 協力者を外す（remove_collaborator） */
   remove: (userId: string) => Promise<CollaboratorResult<void>>;
+  /**
+   * ふだんのクライアントに、ログインのセッションがあるか（auth.getSession か auth.getUser で確かめる）。ない → { ok: true, value: false }。
+   * 協力者画面は開いたときに、一覧を読む前にこれを呼ぶ（セッションがなければ保存した権限を消し、ログインし直す案内を出す）。
+   * PR-10b のレビュー対応のテストを先に書いた段階では省略できる形にしてある。実装で必須にする
+   */
+  checkSession?: () => Promise<CollaboratorResult<boolean>>;
 };

@@ -1,16 +1,18 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type Role, setRole } from "@/features/auth";
+import { type Role, setRole, useRole } from "@/features/auth";
 import {
   type Collaborator,
   type CollaboratorError,
+  type CollaboratorResult,
   CollaboratorsScreen,
 } from "@/features/collaborators";
 import {
   createFakeCollaboratorRepository,
   type FakeCollaboratorRepository,
 } from "@/test/collaborator-repository-fake";
+import { createDeferred } from "@/test/deferred";
 import { expectInDocumentOrder } from "@/test/dom-order";
 
 // 協力者画面の本文（要件 3.8、モック Collaborators.dc.html。招待の欄は「協力者を追加」に置き換える）
@@ -101,7 +103,15 @@ function displayNameInput(): HTMLElement {
 /** 「協力者を追加」の欄が出るまで待つ */
 async function waitForIssueForm(): Promise<void> {
   await screen.findByRole("heading", { name: "協力者を追加" });
+  // 一覧を読み終えるまで「発行する」は押せない（レビュー対応）。押せるようになるまで待つ
+  await waitFor(() => expect(screen.getByRole("button", { name: "発行する" })).toBeEnabled());
 }
+
+/** 新しい失敗の理由「設定の失敗」（実装で CollaboratorError に "config" を足すまでの型合わせ） */
+const CONFIG_ERROR = "config" as CollaboratorError;
+
+/** 権限がない・ログインが切れているときに出す案内の要点（レビュー対応の親の決定 3） */
+const RELOGIN_AS_ADMIN = /管理者でログインし直してください/;
 
 /** ID と表示名を入れて「発行する」を押す（空の文字列なら入れない） */
 async function issue(user: UserEvent, loginId: string, displayName: string): Promise<void> {
@@ -478,6 +488,239 @@ describe("協力者画面の本文（CollaboratorsScreen）", () => {
       expect(await screen.findByRole("alert")).toHaveTextContent(message);
       expect(fake.remove).toHaveBeenCalledWith("user-akane");
       expect(getRow("あかね")).toBeInTheDocument();
+    });
+  });
+
+  // レビュー対応（親の決定 6）：開いたときに Supabase のセッションがなければ、保存した権限を消し、ログインし直す案内を出す
+  describe("開いたときの Supabase のセッションの確認", () => {
+    it("セッションがなければ「ログインし直してください」と /login への案内を出し、一覧を読まず、一般利用者に戻す", async () => {
+      // 準備・実行
+      const fake = renderScreen("admin", MEMBERS, (f) => {
+        f.checkSession.mockResolvedValueOnce({ ok: true, value: false });
+      });
+      const { result: role } = renderHook(() => useRole());
+
+      // 検証：案内
+      expect(await screen.findByText(/ログインし直してください/)).toBeInTheDocument();
+      const loginLink = screen
+        .getAllByRole("link")
+        .find((link) => link.getAttribute("href") === "/login");
+      expect(loginLink).toBeDefined();
+      // 検証：一覧は読まず、表を出さず、発行もできない。拒否の表示にも切り替えない
+      expect(fake.checkSession).toHaveBeenCalled();
+      expect(fake.list).not.toHaveBeenCalled();
+      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+      const issueButton = screen.queryByRole("button", { name: "発行する" });
+      if (issueButton !== null) expect(issueButton).toBeDisabled();
+      expect(screen.queryByText("このページは管理者のみ使えます")).not.toBeInTheDocument();
+      // 検証：保存した権限を消し、一般利用者に戻っている
+      await waitFor(() => expect(role.current).toBe("user"));
+    });
+
+    it("セッションを確かめ終えるまで一覧を読まず、あると分かったら一覧を読む", async () => {
+      // 準備
+      const session = createDeferred<CollaboratorResult<boolean>>();
+      const fake = renderScreen("admin", MEMBERS, (f) => {
+        f.checkSession.mockReturnValueOnce(session.promise);
+      });
+      await waitFor(() => expect(fake.checkSession).toHaveBeenCalled());
+      expect(fake.list).not.toHaveBeenCalled();
+
+      // 実行
+      session.resolve({ ok: true, value: true });
+
+      // 検証
+      expect(await findRow("提督")).toBeInTheDocument();
+      expect(fake.list).toHaveBeenCalled();
+    });
+
+    it("管理者以外には、セッションを確かめない（Supabase に通信しない）", async () => {
+      // 準備・実行
+      const fake = renderScreen("collab");
+
+      // 検証
+      expect(await screen.findByText("このページは管理者のみ使えます")).toBeInTheDocument();
+      expect(fake.checkSession).not.toHaveBeenCalled();
+    });
+  });
+
+  // レビュー対応（親の決定 7。Codex の指摘：一覧が古いまま発行すると、加えた人が表から消える）
+  describe("一覧を読み終えるまで「発行する」を押せない", () => {
+    it("読み込み中は押せず、読み終えたら押せる", async () => {
+      // 準備
+      const listed = createDeferred<CollaboratorResult<Collaborator[]>>();
+      renderScreen("admin", MEMBERS, (f) => {
+        f.list.mockReturnValueOnce(listed.promise);
+      });
+      await screen.findByRole("heading", { name: "協力者を追加" });
+
+      // 検証：読み込み中
+      expect(screen.getByRole("button", { name: "発行する" })).toBeDisabled();
+
+      // 実行：読み終える
+      listed.resolve({ ok: true, value: [...MEMBERS] });
+
+      // 検証
+      expect(await findRow("提督")).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByRole("button", { name: "発行する" })).toBeEnabled());
+    });
+
+    it("一覧を読めなかったときも押せない（押しても保管庫に渡さない）", async () => {
+      // 準備
+      const user = userEvent.setup();
+      const fake = renderScreen("admin", MEMBERS, (f) => {
+        f.list.mockResolvedValueOnce({ ok: false, error: "network" });
+      });
+      expect(await screen.findByRole("alert")).toHaveTextContent(/読み込めませんでした/);
+
+      // 実行
+      await user.type(idInput(), "hanako-2");
+      await user.type(displayNameInput(), "花子");
+      await user.click(screen.getByRole("button", { name: "発行する" }));
+
+      // 検証
+      expect(screen.getByRole("button", { name: "発行する" })).toBeDisabled();
+      expect(fake.issue).not.toHaveBeenCalled();
+    });
+  });
+
+  // レビュー対応（親の決定 3）：権限がない・ログインが切れているときは「管理者でログインし直してください」
+  describe("権限がない・ログインが切れているときの案内", () => {
+    it("一覧が forbidden なら、管理者でログインし直す案内を出す", async () => {
+      // 準備・実行
+      renderScreen("admin", MEMBERS, (f) => {
+        f.list.mockResolvedValueOnce({ ok: false, error: "forbidden" });
+      });
+
+      // 検証
+      expect(await screen.findByRole("alert")).toHaveTextContent(RELOGIN_AS_ADMIN);
+    });
+
+    it("発行が forbidden なら、管理者でログインし直す案内を出す", async () => {
+      // 準備
+      const user = userEvent.setup();
+      renderScreen("admin", MEMBERS, (f) => {
+        f.issue.mockResolvedValueOnce({ ok: false, error: "forbidden" });
+      });
+      await waitForIssueForm();
+
+      // 実行
+      await issue(user, "hanako-2", "花子");
+
+      // 検証
+      expect(await screen.findByRole("alert")).toHaveTextContent(RELOGIN_AS_ADMIN);
+    });
+
+    it("外すのが forbidden なら、管理者でログインし直す案内を出す", async () => {
+      // 準備
+      const user = userEvent.setup();
+      renderScreen("admin", MEMBERS, (f) => {
+        f.remove.mockResolvedValueOnce({ ok: false, error: "forbidden" });
+      });
+      const dialog = await openRemoveConfirm(user, "あかね");
+      await user.click(confirmCheckbox(dialog, "あかね"));
+
+      // 実行
+      await user.click(within(dialog).getByRole("button", { name: /外す/ }));
+
+      // 検証
+      expect(await screen.findByRole("alert")).toHaveTextContent(RELOGIN_AS_ADMIN);
+    });
+  });
+
+  // レビュー対応（親の決定 8）：signUp が session なしで成功した（Confirm email が ON）
+  it("発行が設定の失敗（config）なら、Supabase の設定で Confirm email を OFF にする案内を出し、パスワードは出さない", async () => {
+    // 準備
+    const user = userEvent.setup();
+    renderScreen("admin", MEMBERS, (f) => {
+      f.issue.mockResolvedValueOnce({ ok: false, error: CONFIG_ERROR });
+    });
+    await waitForIssueForm();
+
+    // 実行
+    await issue(user, "hanako-2", "花子");
+
+    // 検証
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Confirm email/);
+    expect(alert).toHaveTextContent(/OFF/);
+    expect(screen.queryByText(ONE_TIME_NOTICE)).not.toBeInTheDocument();
+  });
+
+  // 親の決定 11 のうち、協力者画面にかかわるもの（実装済み。テストで固定する）
+  describe("決めてあったが、テストがなかったもの", () => {
+    it("ID の前後の空白は除いてから発行する", async () => {
+      // 準備
+      const user = userEvent.setup();
+      const fake = renderScreen("admin");
+      await waitForIssueForm();
+
+      // 実行
+      await issue(user, "  hanako-2  ", "花子");
+
+      // 検証
+      await waitFor(() => expect(fake.issue).toHaveBeenCalledTimes(1));
+      expect(fake.issue.mock.calls[0]?.[0].loginId).toBe("hanako-2");
+    });
+
+    it.each<[CollaboratorError]>([["already-registered"], ["invalid-input"], ["not-found"]])(
+      "協力者にするところ（register）で失敗したら（%s）、別の ID で発行するよう勧める",
+      async (error) => {
+        // 準備
+        const user = userEvent.setup();
+        renderScreen("admin", MEMBERS, (f) => {
+          f.issue.mockResolvedValueOnce({ ok: false, error });
+        });
+        await waitForIssueForm();
+
+        // 実行
+        await issue(user, "hanako-2", "花子");
+
+        // 検証
+        expect(await screen.findByRole("alert")).toHaveTextContent(/別の\s*ID/);
+      },
+    );
+
+    it("発行の途中で「発行する」をもう一度押しても、保管庫に渡すのは 1 回だけ（二重送信を防ぐ）", async () => {
+      // 準備：保管庫の発行を待たせる
+      const user = userEvent.setup();
+      const issued = createDeferred<CollaboratorResult<{ userId: string }>>();
+      const fake = renderScreen("admin", MEMBERS, (f) => {
+        f.issue.mockReturnValueOnce(issued.promise);
+      });
+      await waitForIssueForm();
+      await user.type(idInput(), "hanako-2");
+      await user.type(displayNameInput(), "花子");
+
+      // 実行
+      await user.click(screen.getByRole("button", { name: "発行する" }));
+      await user.click(screen.getByRole("button", { name: "発行する" }));
+
+      // 検証
+      expect(fake.issue).toHaveBeenCalledTimes(1);
+      issued.resolve({ ok: true, value: { userId: "issued-user-1" } });
+      expect(await screen.findByText(ONE_TIME_NOTICE)).toBeInTheDocument();
+    });
+
+    it("外す途中で「外す」をもう一度押しても、保管庫に渡すのは 1 回だけ（二重送信を防ぐ）", async () => {
+      // 準備：保管庫の外すを待たせる
+      const user = userEvent.setup();
+      const removed = createDeferred<CollaboratorResult<void>>();
+      const fake = renderScreen("admin", MEMBERS, (f) => {
+        f.remove.mockReturnValueOnce(removed.promise);
+      });
+      const dialog = await openRemoveConfirm(user, "あかね");
+      await user.click(confirmCheckbox(dialog, "あかね"));
+      const removeButton = within(dialog).getByRole("button", { name: /外す/ });
+
+      // 実行
+      await user.click(removeButton);
+      await user.click(removeButton);
+
+      // 検証
+      expect(fake.remove).toHaveBeenCalledTimes(1);
+      removed.resolve({ ok: true, value: undefined });
+      await waitFor(() => expect(queryRow("あかね")).not.toBeInTheDocument());
     });
   });
 });

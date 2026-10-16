@@ -1,12 +1,13 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CollaboratorsPage from "@/app/collaborators/page";
-import { type Role, setRole, signIn, signOut } from "@/features/auth";
+import { type Role, setRole, signIn, signOut, useRole } from "@/features/auth";
 import { resetSupabaseClient } from "@/lib/supabase";
 import {
   addManager,
   calledSupabaseMethods,
+  clearSupabaseCalls,
   FAKE_SUPABASE_PUBLISHABLE_KEY,
   FAKE_SUPABASE_URL,
   type FakeSupabase,
@@ -82,6 +83,17 @@ async function issue(user: UserEvent, loginId: string, displayName: string): Pro
 describe("協力者の画面（/collaborators）", () => {
   let fake: FakeSupabase;
 
+  /**
+   * 管理者としてログインする（保存した権限と、Supabase のセッションの両方ができる）。呼んだ記録は消す。
+   * レビュー対応で、開いたときに Supabase のセッションを確かめるようになったため、setRole("admin") だけでは管理者の画面にならない
+   */
+  async function signInAsAdmiral(): Promise<void> {
+    await act(async () => {
+      expect((await signIn(ADMIRAL.loginId, ADMIRAL.password)).ok).toBe(true);
+    });
+    clearSupabaseCalls(fake);
+  }
+
   beforeEach(async () => {
     localStorage.clear();
     stubSupabaseEnv();
@@ -121,7 +133,7 @@ describe("協力者の画面（/collaborators）", () => {
 
   it("管理者が開くと、ヘッダー（協力者・管理者専用・説明）と、profiles の全員の表を出す", async () => {
     // 準備
-    setRole("admin");
+    await signInAsAdmiral();
 
     // 実行
     render(<CollaboratorsPage />);
@@ -138,7 +150,7 @@ describe("協力者の画面（/collaborators）", () => {
   it("ID と表示名を入れて発行すると、保存しない別のクライアントでアカウントを作り、管理者のログインのまま register_collaborator で協力者にして、パスワードを出す", async () => {
     // 準備
     const user = userEvent.setup();
-    setRole("admin");
+    await signInAsAdmiral();
     render(<CollaboratorsPage />);
     await findRow("提督");
 
@@ -176,7 +188,7 @@ describe("協力者の画面（/collaborators）", () => {
   it("発行した ID と、画面に出たパスワードでログインすると、協力者になる", async () => {
     // 準備：管理者が発行する
     const user = userEvent.setup();
-    setRole("admin");
+    await signInAsAdmiral();
     render(<CollaboratorsPage />);
     await findRow("提督");
     await issue(user, "hanako-2", "花子");
@@ -198,7 +210,7 @@ describe("協力者の画面（/collaborators）", () => {
   it("「外す」を確認してから押すと remove_collaborator を呼び、表から消す", async () => {
     // 準備
     const user = userEvent.setup();
-    setRole("admin");
+    await signInAsAdmiral();
     render(<CollaboratorsPage />);
     const row = await findRow("あかね");
 
@@ -214,5 +226,57 @@ describe("協力者の画面（/collaborators）", () => {
     );
     await waitFor(() => expect(queryRow("あかね")).not.toBeInTheDocument());
     expect(queryRow("提督")).toBeInTheDocument();
+  });
+
+  // レビュー対応（親の決定 6）
+  it("保存した権限は管理者でも、Supabase のセッションがなければ、保存した権限を消して「ログインし直してください」と /login への案内を出し、一覧を読まない", async () => {
+    // 準備：管理者でログインした後で、Supabase のセッションだけが切れた（期限切れ・別のタブでのログアウトなど）
+    await signInAsAdmiral();
+    await fake.main.auth.signOut();
+    clearSupabaseCalls(fake);
+    const { result: role } = renderHook(() => useRole());
+    expect(role.current).toBe("admin");
+
+    // 実行
+    render(<CollaboratorsPage />);
+
+    // 検証：案内
+    expect(await screen.findByText(/ログインし直してください/)).toBeInTheDocument();
+    const loginLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === "/login");
+    expect(loginLink).toBeDefined();
+    // 検証：一覧は読まない
+    expect(fake.main.from).not.toHaveBeenCalled();
+    expect(fake.main.rpc).not.toHaveBeenCalled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // 検証：保存した権限を消し、一般利用者に戻る（読み込み直しても一般利用者）
+    await waitFor(() => expect(role.current).toBe("user"));
+    vi.resetModules();
+    const fresh = await import("@/features/auth");
+    const { result: freshRole } = renderHook(() => fresh.useRole());
+    await act(async () => {});
+    expect(freshRole.current).toBe("user");
+  });
+
+  // レビュー対応（親の決定 2）
+  it("発行を押したときに管理者のセッションが切れていたら、アカウントを作らずに、管理者でログインし直す案内を出す", async () => {
+    // 準備：開いた時点ではログインしている
+    const user = userEvent.setup();
+    await signInAsAdmiral();
+    render(<CollaboratorsPage />);
+    await findRow("提督");
+    await waitFor(() => expect(screen.getByRole("button", { name: "発行する" })).toBeEnabled());
+    // 準備：その後でセッションが切れる
+    await fake.main.auth.signOut();
+    clearSupabaseCalls(fake);
+
+    // 実行
+    await issue(user, "hanako-2", "花子");
+
+    // 検証
+    expect(await screen.findByRole("alert")).toHaveTextContent(/管理者でログインし直してください/);
+    expect(fake.issuing.auth.signUp).not.toHaveBeenCalled();
+    expect(fake.main.rpc).not.toHaveBeenCalled();
   });
 });

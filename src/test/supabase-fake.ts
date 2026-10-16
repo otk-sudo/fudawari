@@ -59,8 +59,8 @@ export type FakeProfileRow = {
 /** Auth のアカウント（メールアドレスとパスワード） */
 export type FakeAccount = { userId: string; email: string; password: string };
 
-/** Auth の利用者 */
-export type FakeUser = { id: string; email: string };
+/** Auth の利用者（identities は signUp の戻り値で使う。「Confirm email」が ON のときの見分けに使われる） */
+export type FakeUser = { id: string; email: string; identities?: Array<Record<string, unknown>> };
 
 /** Auth のセッション */
 export type FakeSession = {
@@ -108,6 +108,8 @@ export type FakeSupabaseClient = {
         data: { subscription: { id: string; unsubscribe: Mock<() => void> } };
       }
     >;
+    /** クライアントの後片付け（supabase-js 2.118 の auth.dispose）。ない版をまねるときは delete で消す */
+    dispose?: Mock<() => void>;
   };
   from: Mock<(table: string) => FakeQuery>;
   rpc: Mock<(fn: string, args?: Record<string, unknown>) => Promise<FakeQueryResult>>;
@@ -146,6 +148,17 @@ export function rpcFailure(code: string, message = "テスト用の RPC の失�
     count: null,
     status: 400,
     statusText: "Bad Request",
+  };
+}
+
+/** 表の読み取り・RPC が、コード（例 "42501"・"PGRST301"）と状態コード（例 401・403）の失敗を返したときの結果 */
+export function postgrestFailure(code: string, status: number, message = "テスト用の失敗"): FakeQueryResult {
+  return {
+    data: null,
+    error: new PostgrestError({ message, details: "", hint: "", code }),
+    count: null,
+    status,
+    statusText: "",
   };
 }
 
@@ -390,6 +403,7 @@ function createFakeClient(server: FakeSupabaseServer, counter: { users: number }
           data: { subscription: { id: string; unsubscribe: Mock<() => void> } };
         }
       >(() => ({ data: { subscription: { id: "fake-subscription", unsubscribe: vi.fn() } } })),
+      dispose: vi.fn<() => void>(),
     },
     from: vi.fn<(table: string) => FakeQuery>((table) => new FakeQuery(() => tableRows(server, table))),
     rpc: vi.fn<(fn: string, args?: Record<string, unknown>) => Promise<FakeQueryResult>>(
@@ -454,7 +468,10 @@ export function addManager(
 type RecordedMock = { mock: { calls: readonly unknown[] }; mockClear: () => unknown };
 
 function clientMocks(client: FakeSupabaseClient): Array<[string, RecordedMock]> {
+  const dispose: Array<[string, RecordedMock]> =
+    client.auth.dispose === undefined ? [] : [["auth.dispose", client.auth.dispose]];
   return [
+    ...dispose,
     ["auth.signInWithPassword", client.auth.signInWithPassword],
     ["auth.signUp", client.auth.signUp],
     ["auth.signOut", client.auth.signOut],

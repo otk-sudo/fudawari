@@ -1,6 +1,15 @@
+import { AuthApiError } from "@supabase/supabase-js";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setRole, type SignInResult, signIn, signOut, useAccount, useRole } from "@/features/auth";
+import {
+  setRole,
+  type SignInFailure,
+  type SignInResult,
+  signIn,
+  signOut,
+  useAccount,
+  useRole,
+} from "@/features/auth";
 import { resetSupabaseClient } from "@/lib/supabase";
 import {
   addManager,
@@ -279,6 +288,111 @@ describe("ログイン・ログアウト（@/features/auth の signIn・signOut�
       // 検証
       expect(fake.main.auth.signOut).toHaveBeenCalled();
       expect(role.current).toBe("user");
+    });
+
+    it("このブラウザのセッションだけを終える（auth.signOut に scope: \"local\" を渡す。レビュー対応）", async () => {
+      // 準備
+      expect((await signIn(ADMIRAL.loginId, ADMIRAL.password)).ok).toBe(true);
+
+      // 実行
+      await signOut();
+
+      // 検証
+      expect(fake.main.auth.signOut).toHaveBeenCalledWith(expect.objectContaining({ scope: "local" }));
+    });
+  });
+
+  // レビュー対応（親の決定 4）：Auth が別の人に切り替わった後で失敗したら、前にログインしていた人の権限も残さない
+  describe("ログイン中に別の ID で signIn して、Auth が切り替わった後で失敗したとき", () => {
+    /** ページを読み込み直したときと同じように、モジュールを読み直した新しい権限の入口を返す */
+    async function reloadAuth(): Promise<typeof import("@/features/auth")> {
+      vi.resetModules();
+      return import("@/features/auth");
+    }
+
+    it.each<[string, (f: FakeSupabase) => Promise<SignInResult>, SignInFailure]>([
+      [
+        "profiles に行がない（no-permission）",
+        () => signIn(GUEST.loginId, GUEST.password),
+        "no-permission",
+      ],
+      [
+        "profiles の読み取りが通信に失敗した（network）",
+        (f: FakeSupabase) => {
+          f.main.from.mockImplementationOnce(() => failedQuery(networkFailure()));
+          return signIn(TARO.loginId, TARO.password);
+        },
+        "network",
+      ],
+      [
+        "profiles の読み取りが例外を投げた（network）",
+        (f: FakeSupabase) => {
+          f.main.from.mockImplementationOnce(() => {
+            throw new TypeError("Failed to fetch");
+          });
+          return signIn(TARO.loginId, TARO.password);
+        },
+        "network",
+      ],
+    ])(
+      "%s：前に保存した管理者の権限も消し、一般利用者に戻す（読み込み直しても一般利用者）",
+      async (_label, signInAgain, reason) => {
+        // 準備：管理者でログインしている
+        const { result: role } = renderHook(() => useRole());
+        const { result: account } = renderHook(() => useAccount());
+        await act(async () => {
+          expect((await signIn(ADMIRAL.loginId, ADMIRAL.password)).ok).toBe(true);
+        });
+        expect(role.current).toBe("admin");
+
+        // 実行：別の ID でログインし直して、Auth が切り替わった後で失敗する
+        let result: SignInResult | undefined;
+        await act(async () => {
+          result = await signInAgain(fake);
+        });
+
+        // 検証：失敗の理由と、この画面の権限
+        expect(result).toEqual({ ok: false, reason });
+        expect(role.current).toBe("user");
+        expect(account.current).toBeNull();
+        // 検証：読み込み直しても、前の管理者の権限は戻らない
+        const fresh = await reloadAuth();
+        const { result: freshRole } = renderHook(() => fresh.useRole());
+        await act(async () => {});
+        expect(freshRole.current).toBe("user");
+      },
+    );
+  });
+
+  // 親の決定 11 のうち、ログインにかかわるもの（実装済み。テストで固定する）
+  describe("決めてあったが、テストがなかったもの", () => {
+    it("ID の前後の空白は除いてからログインする", async () => {
+      // 準備・実行
+      const result = await signIn(`  ${TARO.loginId}  `, TARO.password);
+
+      // 検証
+      expect(fake.main.auth.signInWithPassword).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "taro-01@fudawari.invalid" }),
+      );
+      expect(result).toEqual({
+        ok: true,
+        account: { role: "collab", displayName: "太郎", loginId: "taro-01" },
+      });
+    });
+
+    it.each([
+      ["429（回数の制限）", () => new AuthApiError("Request rate limit reached", 429, "over_request_rate_limit")],
+      ["500（サーバーの障害）", () => new AuthApiError("Unexpected failure", 500, "unexpected_failure")],
+    ])("ID・パスワードの間違い以外の Auth の失敗（%s）は network（通信の失敗と同じ扱い）", async (_label, makeError) => {
+      // 準備
+      fake.main.auth.signInWithPassword.mockResolvedValueOnce(authFailure(makeError()));
+
+      // 実行
+      const result = await signIn(TARO.loginId, TARO.password);
+
+      // 検証
+      expect(fake.main.auth.signInWithPassword).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ ok: false, reason: "network" });
     });
   });
 });
