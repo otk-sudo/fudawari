@@ -1,15 +1,16 @@
-# PR ごとと main への push で、型・Lint・単体テスト・ビルド・画面テストを実行する
+# PR ごとと main・release への push で、型・Lint・単体テスト・ビルド・画面テスト・DB のテストを実行する。
+# release（本番）への push では、すべて通ったあとに本番の DB へマイグレーションを適用する
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, release]
 
 permissions:
   contents: read
 
-# PR では古い実行を取り消す。main（本番）への push は取り消さず、すべてのコミットに結果を残す
+# PR では古い実行を取り消す。main・release への push は取り消さず、すべてのコミットに結果を残す
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -51,16 +52,21 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - name: Playwright の版を調べる
+      - name: Playwright の版と OS イメージを調べる
         id: pw-version
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          # node が失敗したらここで止める（版が空のままキャッシュのキーを作らない）
+          version="$(node -p "require('@playwright/test/package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          # ImageOS はランナーの環境変数（式の env からは読めない）
+          echo "image=${ImageOS}" >> "$GITHUB_OUTPUT"
       - name: Playwright のブラウザをキャッシュから戻す
         id: pw-cache
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           # OS イメージと Playwright の版が同じときだけ使い回す
-          key: playwright-${{ runner.os }}-${{ env.ImageOS }}-${{ steps.pw-version.outputs.version }}
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.image }}-${{ steps.pw-version.outputs.version }}
       - name: Playwright のブラウザを入れる（キャッシュなし）
         if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
@@ -79,3 +85,61 @@ jobs:
             test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  db:
+    name: DB のテスト（ローカルの Supabase）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: ローカルの Supabase を起動する（テストに使わない部品は止める）
+        run: npx supabase start -x studio,imgproxy,storage-api,logflare,vector,edge-runtime,mailpit,postgres-meta,supavisor,realtime
+      - name: マイグレーションを空の DB に適用する
+        run: npx supabase db reset
+      - name: 権限ごとの可否などの DB のテスト（pgTAP）
+        run: npx supabase test db
+      - name: ID とパスワードでアカウントを作り、ログインできることを確かめる（ID は「ID@fudawari.invalid」の形。U3）
+        run: |
+          eval "$(npx supabase status -o env)"
+          body='{"email":"ci-check@fudawari.invalid","password":"ci-check-password-0001"}'
+          # 失敗したときだけ応答の本文を表示する
+          curl -sS --fail-with-body -o /tmp/signup.json "$API_URL/auth/v1/signup" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body" || { cat /tmp/signup.json; exit 1; }
+          curl -sS --fail-with-body -o /tmp/token.json "$API_URL/auth/v1/token?grant_type=password" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body" || { cat /tmp/token.json; exit 1; }
+      - name: ローカルの Supabase を止める
+        if: ${{ always() }}
+        run: npx supabase stop --no-backup
+
+  deploy-db:
+    name: 本番の DB へマイグレーションを適用（release のみ）
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/release' }}
+    needs: [check, e2e, db]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # production 環境の秘密の値は release からだけ読める（GitHub の環境の設定）
+    environment: production
+    concurrency:
+      group: deploy-db
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      # 本番の秘密の値を扱うので、依存のインストールスクリプトは走らせない（supabase CLI は optionalDependencies のバイナリで動く）
+      - run: npm ci --ignore-scripts
+      - name: マイグレーションを適用する
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_DB_URL}" ]; then
+            echo "::error::SUPABASE_DB_URL がありません（production 環境の秘密の値を確認してください）"
+            exit 1
+          fi
+          # 失敗したら、まず Supabase のプロジェクトが停止していないか確かめる（無料プランは約 7 日で停止する）
+          npx supabase db push --db-url "${SUPABASE_DB_URL}" --include-all --yes
