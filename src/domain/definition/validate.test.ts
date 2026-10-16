@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneSummer2026Definition, summer2026Definition } from "@/test/fixtures";
+import { cloneSummer2026Definition, type Mutable, summer2026Definition } from "@/test/fixtures";
 import type {
   BoostGroup,
   DefinitionErrorCode,
@@ -13,8 +13,11 @@ import { parsePublicDefinition, validatePublicDefinition } from "./validate";
 
 // ---- テストの補助 ----
 
+/** 壊した例を作るための、書き換えられる定義（公開定義の型は読み取り専用のため） */
+type Draft = Mutable<PublicDefinition>;
+
 /** テスト用の定義の複製を 1 か所だけ壊して返す */
-function broken(breakIt: (draft: PublicDefinition) => void): unknown {
+function broken(breakIt: (draft: Draft) => void): unknown {
   const draft = cloneSummer2026Definition();
   breakIt(draft);
   return draft;
@@ -45,6 +48,21 @@ function expectOk(result: DefinitionValidationResult): PublicDefinition {
   return result.value;
 }
 
+/**
+ * 値の中で凍結されていないオブジェクト・配列の場所を集める（すべて凍結されていれば空の配列）。
+ * 場所はエラーの path と同じ形（ルートは ""、"stages[4].boosts[0].shipNames" など）
+ */
+function unfrozenPaths(value: unknown, path = ""): string[] {
+  if (typeof value !== "object" || value === null) return [];
+  const self = Object.isFrozen(value) ? [] : [path];
+  const children = Array.isArray(value)
+    ? value.flatMap((item: unknown, index) => unfrozenPaths(item, `${path}[${index}]`))
+    : Object.entries(value).flatMap(([key, child]) =>
+        unfrozenPaths(child, path === "" ? key : `${path}.${key}`),
+      );
+  return [...self, ...children];
+}
+
 const E2_3 = stageIndex("E2-3");
 const E2_2 = stageIndex("E2-2");
 
@@ -61,7 +79,7 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
     it("ゲーム内の札番号を省略した札は通り、検証後の値では null になる（U10：札番号は任意）", () => {
       // 準備
       const input = broken((d) => {
-        delete (d.fudas[0] as Partial<Fuda>).gameNumber;
+        delete (d.fudas[0] as Partial<Mutable<Fuda>>).gameNumber;
       });
 
       // 実行
@@ -73,7 +91,7 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
 
     it("終了日時を省略した定義は通り、検証後の値では null になる", () => {
       const input = broken((d) => {
-        delete (d.event as Partial<EventInfo>).endAt;
+        delete (d.event as Partial<Mutable<EventInfo>>).endAt;
       });
 
       const value = expectOk(validatePublicDefinition(input));
@@ -210,29 +228,32 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
   });
 
   describe("必須項目の欠け", () => {
-    it.each<[string, (d: PublicDefinition) => void]>([
-      ["schemaVersion", (d) => delete (d as Partial<PublicDefinition>).schemaVersion],
-      ["event", (d) => delete (d as Partial<PublicDefinition>).event],
-      ["event.id", (d) => delete (d.event as Partial<EventInfo>).id],
-      ["event.name", (d) => delete (d.event as Partial<EventInfo>).name],
-      ["event.startAt", (d) => delete (d.event as Partial<EventInfo>).startAt],
-      ["event.versionDate", (d) => delete (d.event as Partial<EventInfo>).versionDate],
-      ["areas", (d) => delete (d as Partial<PublicDefinition>).areas],
-      ["fudas", (d) => delete (d as Partial<PublicDefinition>).fudas],
-      ["stages", (d) => delete (d as Partial<PublicDefinition>).stages],
-      ["fudas[0].color", (d) => delete (d.fudas[0] as Partial<Fuda>).color],
-      ["stages[0].fudaId", (d) => delete (d.stages[0] as Partial<Stage>).fudaId],
-      ["stages[0].areaId", (d) => delete (d.stages[0] as Partial<Stage>).areaId],
-      ["stages[0].importance", (d) => delete (d.stages[0] as Partial<Stage>).importance],
-      ["stages[0].boosts", (d) => delete (d.stages[0] as Partial<Stage>).boosts],
-      ["stages[0].boosts[0].name", (d) => delete (d.stages[0].boosts[0] as Partial<BoostGroup>).name],
+    it.each<[string, (d: Draft) => void]>([
+      ["schemaVersion", (d) => delete (d as Partial<Draft>).schemaVersion],
+      ["event", (d) => delete (d as Partial<Draft>).event],
+      ["event.id", (d) => delete (d.event as Partial<Mutable<EventInfo>>).id],
+      ["event.name", (d) => delete (d.event as Partial<Mutable<EventInfo>>).name],
+      ["event.startAt", (d) => delete (d.event as Partial<Mutable<EventInfo>>).startAt],
+      ["event.versionDate", (d) => delete (d.event as Partial<Mutable<EventInfo>>).versionDate],
+      ["areas", (d) => delete (d as Partial<Draft>).areas],
+      ["fudas", (d) => delete (d as Partial<Draft>).fudas],
+      ["stages", (d) => delete (d as Partial<Draft>).stages],
+      ["fudas[0].color", (d) => delete (d.fudas[0] as Partial<Mutable<Fuda>>).color],
+      ["stages[0].fudaId", (d) => delete (d.stages[0] as Partial<Mutable<Stage>>).fudaId],
+      ["stages[0].areaId", (d) => delete (d.stages[0] as Partial<Mutable<Stage>>).areaId],
+      ["stages[0].importance", (d) => delete (d.stages[0] as Partial<Mutable<Stage>>).importance],
+      ["stages[0].boosts", (d) => delete (d.stages[0] as Partial<Mutable<Stage>>).boosts],
+      [
+        "stages[0].boosts[0].name",
+        (d) => delete (d.stages[0].boosts[0] as Partial<Mutable<BoostGroup>>).name,
+      ],
       [
         "stages[0].boosts[0].multiplier",
-        (d) => delete (d.stages[0].boosts[0] as Partial<BoostGroup>).multiplier,
+        (d) => delete (d.stages[0].boosts[0] as Partial<Mutable<BoostGroup>>).multiplier,
       ],
       [
         "stages[0].boosts[0].shipNames",
-        (d) => delete (d.stages[0].boosts[0] as Partial<BoostGroup>).shipNames,
+        (d) => delete (d.stages[0].boosts[0] as Partial<Mutable<BoostGroup>>).shipNames,
       ],
     ])("%s がないと missing_field になる", (path, breakIt) => {
       const input = broken(breakIt);
@@ -324,7 +345,7 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
       },
     );
 
-    it.each<[string, (d: PublicDefinition) => void]>([
+    it.each<[string, (d: Draft) => void]>([
       ["event.name", (d) => (d.event.name = "")],
       ["areas[0].name", (d) => (d.areas[0].name = "")],
       ["fudas[0].name", (d) => (d.fudas[0].name = "")],
@@ -426,6 +447,57 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
     expectError(result, "unknown_reference", `stages[${E2_3}].fudaId`);
     expectError(result, "invalid_value", "fudas[0].color");
   });
+
+  // 特効の計算（boost.ts）は定義・段階のオブジェクトごとに索引を覚えるため、検証後の定義は書き換えられない値にする
+  describe("検証後の値は深く凍結されている", () => {
+    it("ルート・各配列・各要素・入れ子の配列（空の配列も）まで Object.isFrozen が true", () => {
+      // 実行
+      const value = expectOk(validatePublicDefinition(cloneSummer2026Definition()));
+
+      // 検証：代表の場所を名指しで確かめてから、残りもすべて凍結されていることを確かめる
+      expect(Object.isFrozen(value)).toBe(true);
+      expect(Object.isFrozen(value.event)).toBe(true);
+      expect(Object.isFrozen(value.areas)).toBe(true);
+      expect(Object.isFrozen(value.areas[0])).toBe(true);
+      expect(Object.isFrozen(value.fudas)).toBe(true);
+      expect(Object.isFrozen(value.fudas[0])).toBe(true);
+      expect(Object.isFrozen(value.stages)).toBe(true);
+      expect(Object.isFrozen(value.stages[E2_3])).toBe(true);
+      expect(Object.isFrozen(value.stages[E2_3].boosts)).toBe(true);
+      expect(Object.isFrozen(value.stages[E2_3].boosts[0])).toBe(true);
+      expect(Object.isFrozen(value.stages[E2_3].boosts[0].shipNames)).toBe(true);
+      expect(Object.isFrozen(value.stages[stageIndex("E3-G")].boosts)).toBe(true);
+      expect(unfrozenPaths(value)).toEqual([]);
+    });
+
+    it("省略を null にそろえた値（ゲーム内の札番号・終了日時を省いた入力）も深く凍結されている", () => {
+      // 準備
+      const input = broken((d) => {
+        delete (d.fudas[0] as Partial<Mutable<Fuda>>).gameNumber;
+        delete (d.event as Partial<Mutable<EventInfo>>).endAt;
+      });
+
+      // 実行
+      const value = expectOk(validatePublicDefinition(input));
+
+      // 検証
+      expect(unfrozenPaths(value)).toEqual([]);
+    });
+
+    it("入力の値は凍結せず、内容も変えない（検証は呼び出し元の値に手を加えない）", () => {
+      // 準備
+      const input = cloneSummer2026Definition();
+
+      // 実行
+      validatePublicDefinition(input);
+
+      // 検証
+      expect(Object.isFrozen(input)).toBe(false);
+      expect(Object.isFrozen(input.stages)).toBe(false);
+      expect(Object.isFrozen(input.stages[E2_3].boosts[0].shipNames)).toBe(false);
+      expect(input).toEqual(summer2026Definition);
+    });
+  });
 });
 
 describe("parsePublicDefinition（JSON の文字列を読んで検証）", () => {
@@ -433,6 +505,16 @@ describe("parsePublicDefinition（JSON の文字列を読んで検証）", () =>
     const result = parsePublicDefinition(JSON.stringify(summer2026Definition));
 
     expect(expectOk(result)).toEqual(summer2026Definition);
+  });
+
+  it("読み込んだ値も、ルートから入れ子の配列まで深く凍結されている", () => {
+    // 実行
+    const value = expectOk(parsePublicDefinition(JSON.stringify(summer2026Definition)));
+
+    // 検証
+    expect(Object.isFrozen(value)).toBe(true);
+    expect(Object.isFrozen(value.stages[E2_3].boosts[0].shipNames)).toBe(true);
+    expect(unfrozenPaths(value)).toEqual([]);
   });
 
   it.each(["{", "", "svdata={}", "{'a': 1}"])(

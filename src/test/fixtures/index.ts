@@ -7,7 +7,11 @@
 // - summer2026Ships／summer2026Assignments／unknownShip／shipByUid()／createBulkShips()：
 //   モックの所持艦 31 隻、一覧の割り当て、マスタにない艦、600 隻以上の個体（ships.ts）
 //
+// - Mutable<T>：読み取り専用の型を入れ子まで書き換えられる型にする（mutable.ts）。
+//   cloneSummer2026Definition() の戻り値の型で、壊した例を作る補助の引数の型にも使う
+//
 // 共有のデータは凍結してある。書き換えたいテストは複製（clone〜、createBulkShips の戻り値、スプレッド）を使う。
+export type { Mutable } from "./mutable";
 export { cloneSummer2026Definition, summer2026Definition } from "./summer2026Definition";
 export { summer2026MasterEntries } from "./shipMaster";
 export {
