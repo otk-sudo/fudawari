@@ -301,6 +301,7 @@ declare
   v_uid uuid := auth.uid();
   v_draft public.drafts%rowtype;
   v_version integer;
+  v_now timestamptz;
 begin
   perform public._check_editable_event(p_event_id, v_role);
   perform public._check_document(p_content);
@@ -331,19 +332,21 @@ begin
     );
   end if;
 
+  -- 保存の日時（下書き・記録・最後に編集）は、行ロックを取った後の 1 つの時刻にそろえる（記録の並びを保存の順に合わせる）
+  v_now := clock_timestamp();
   update public.drafts
-  set version = version + 1, content = p_content, updated_by = v_uid, updated_at = now()
+  set version = version + 1, content = p_content, updated_by = v_uid, updated_at = v_now
   where event_id = p_event_id
   returning version into v_version;
 
-  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary)
-  select p_event_id, v_uid, p.display_name, 'save', l.item ->> 'mapLabel', l.item ->> 'summary'
+  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary, created_at)
+  select p_event_id, v_uid, p.display_name, 'save', l.item ->> 'mapLabel', l.item ->> 'summary', v_now
   from jsonb_array_elements(p_logs) with ordinality as l (item, n)
   cross join (select display_name from public.profiles where user_id = v_uid) as p
   order by l.n;
 
   update public.profiles
-  set last_edited_at = now(), last_edited_note = '下書きを保存'
+  set last_edited_at = v_now, last_edited_note = '下書きを保存'
   where user_id = v_uid;
 
   return jsonb_build_object('status', 'saved', 'version', v_version);
@@ -417,8 +420,8 @@ begin
   values (p_event_id, v_label, v_content, v_draft.version, v_uid, v_now)
   returning id into v_id;
 
-  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary)
-  select p_event_id, v_uid, display_name, 'publish', null, '公開（' || v_label || '）'
+  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary, created_at)
+  select p_event_id, v_uid, display_name, 'publish', null, '公開（' || v_label || '）', v_now
   from public.profiles
   where user_id = v_uid;
 
@@ -427,7 +430,7 @@ begin
   end if;
 
   update public.profiles
-  set last_edited_at = now(), last_edited_note = '公開'
+  set last_edited_at = v_now, last_edited_note = '公開'
   where user_id = v_uid;
 
   return jsonb_build_object(
