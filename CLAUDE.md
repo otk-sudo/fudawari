@@ -12,7 +12,7 @@
 - U1〜U24 は 2026-10-16 にすべて決定した（`docs/requirements.md` 13.1）。新しい論点は勝手に決めず、親に戻す
 
 ## 技術構成（決定）
-Next.js 16（App Router、静的書き出し `output: "export"`）＋ TypeScript 6（strict）／Cloudflare Pages／Supabase（DB・Auth〔Discord〕・Realtime。管理者・協力者だけが使う）／Dexie.js（IndexedDB）／dnd-kit／TanStack Virtual／Radix UI（見た目を持たない部品）／Zustand／CSS Modules ＋ CSS 変数／modern-screenshot ＋ Clipboard API／Vitest・Testing Library・fake-indexeddb・Playwright（Chromium）／GitHub Actions。依存の追加・版の変更は親だけが行う。必要なら理由を添えて親に相談する。
+Next.js 16（App Router、静的書き出し `output: "export"`）＋ TypeScript 6（strict）／Cloudflare Pages／Supabase（DB・Auth〔管理者が発行する ID とパスワード。U3〕・Realtime。管理者・協力者だけが使う）／Dexie.js（IndexedDB）／dnd-kit／TanStack Virtual／Radix UI（見た目を持たない部品）／Zustand／CSS Modules ＋ CSS 変数／modern-screenshot ＋ Clipboard API／Vitest・Testing Library・fake-indexeddb・Playwright（Chromium）／GitHub Actions。依存の追加・版の変更は親だけが行う。必要なら理由を添えて親に相談する。
 - 版の事情：TypeScript は typescript-eslint の対応範囲のため 6.0 系に固定（`~6.0.3`）。jsdom は Node 22.18 で動く 29 系。ESLint は 10 系（eslint-config-next 16.4 が対応。peer の警告は出るが `npm ci` は通る）。Node は `^22.13.0 || ^24.0.0 || >=26.0.0`（ESLint・jsdom・Vitest の対応範囲の重なり）。
 - ESLint 10 で動かないルールがあるため、次は有効にしない：`react/jsx-filename-extension`、`react/forward-ref-uses-ref`、`import/no-default-export`・`import/no-named-export`・`import/unambiguous`（ESLint 10 にない context の API を使う）。
 
