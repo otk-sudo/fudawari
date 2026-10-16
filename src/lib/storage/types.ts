@@ -17,6 +17,22 @@ export interface SaveImportInput {
   filter: ImportFilter;
   /** 個体 ID があるか（parseImportText の hasUid）。false のときは割り当てを引き継がない（U9） */
   hasUid: boolean;
+  /**
+   * ロックの情報があるか（parseImportText の hasLockInfo）。
+   * false のときは「ロック済みだけ」が効かなかったため、最終取り込みの条件は lockedOnly: false で記録する
+   * （記録するのは実際に効いた条件＝filter.lockedOnly && hasLockInfo）
+   */
+  hasLockInfo: boolean;
+}
+
+/**
+ * 取り込みで外れる（外した）割り当ての件数
+ * - 件数は、すべてのイベントの「個体 ID → 札 ID」の組の数の合計（2 つのイベントで同じ個体が外れれば 2 件）
+ * - 画面は件数が 1 以上なら、保存の前に確認を挟む
+ */
+export interface SaveImportResult {
+  /** 外れる（previewImport）／外した（saveImport）割り当ての件数 */
+  removedAssignmentCount: number;
 }
 
 /** 保存した取り込みの情報（最終取り込み。ホームと設定の「最終取り込み（日時） ／ n 隻」に使う） */
@@ -65,8 +81,15 @@ export interface FudawariStorage {
    * - hasUid が false（個体 ID がない古い形式）：引き継げないため、すべてのイベントの割り当てを消す
    *   （前に同じ個体 ID の割り当てがあっても、控えから始まる）
    * - 同じ個体 ID が複数あるときは、先の個体だけを保存する
+   * - 最終取り込みの条件は、実際に効いた条件（lockedOnly は filter.lockedOnly && hasLockInfo）で記録する
+   * 戻り値は、実際に外した割り当ての件数（すべてのイベントの合計）
    */
-  saveImport(input: SaveImportInput): Promise<void>;
+  saveImport(input: SaveImportInput): Promise<SaveImportResult>;
+  /**
+   * その取り込みを saveImport したら外れる割り当ての件数（すべてのイベントの合計）を返す。保存はしない。
+   * 外す規則は saveImport と同じ（個体 ID がある形式は今回の取り込みにいない個体の割り当て、ない形式はすべての割り当て）
+   */
+  previewImport(input: SaveImportInput): Promise<SaveImportResult>;
   /** 保存した個体の一覧（取り込んでいなければ空） */
   loadShips(): Promise<OwnedShip[]>;
   /** 最終取り込みの情報（取り込んでいない・削除した後は null） */

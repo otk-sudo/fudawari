@@ -176,6 +176,14 @@ export function openStorage(options: OpenStorageOptions = {}): FudawariStorage {
         }
         if (changed.length > 0) await assignments.bulkPut(changed);
       });
+      // 仮の値（PR-04a のレビュー対応の先行テスト用の入れ物）。外した件数の数え方は実装担当が入れる
+      return { removedAssignmentCount: 0 };
+    },
+
+    async previewImport(input) {
+      // 仮の入れ物（PR-04a のレビュー対応の先行テスト用）。外れる件数の数え方は実装担当が入れる
+      void input;
+      return { removedAssignmentCount: 0 };
     },
 
     async loadShips() {

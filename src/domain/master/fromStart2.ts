@@ -65,6 +65,27 @@ export function readStart2(data: unknown): Start2Like | null {
   return { api_mst_ship: rows };
 }
 
+/** 味方艦の行で、数でなければならない項目（api_luck は 0 番目〔運の初期値〕が数でなければならない） */
+export type InvalidFriendlyRowField = "api_sortno" | "api_stype" | "api_ctype" | "api_luck";
+
+/** マスタに必要な項目が数でない味方艦の行 */
+export interface InvalidFriendlyRow {
+  /** 艦 ID（api_id） */
+  id: number;
+  /** 数でなかった項目（api_sortno・api_stype・api_ctype・api_luck の順） */
+  fields: InvalidFriendlyRowField[];
+}
+
+/**
+ * 味方艦（api_id < 1500）の行のうち、api_sortno・api_stype・api_ctype が数でない、または api_luck の 0 番目が数でない行を返す。
+ * 生成（generateShipMaster）は、1 行でもあれば 0 で埋めずに失敗する（壊れたマスタを配らない）。深海棲艦の行は見ない
+ */
+export function findInvalidFriendlyRows(start2: Start2Like): InvalidFriendlyRow[] {
+  // 仮の入れ物（PR-04a のレビュー対応の先行テスト用）。中身は実装担当が入れる
+  void start2;
+  return [];
+}
+
 /** 図鑑番号の比べやすい値。図鑑番号がない・0 以下の艦は後回しにする（未実装の艦の行などを艦型の名前に使わない） */
 function sortNoKey(row: ApiMstShipLike): number {
   const sortno = row.api_sortno;

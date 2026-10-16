@@ -42,6 +42,18 @@ export interface GenerateShipMasterDeps {
   classNames?: ReadonlyMap<number, string>;
   /** 書き出し先。省略すると SHIP_MASTER_OUTPUT_PATH */
   outputPath?: string;
+  /**
+   * 味方艦の隻数の下限（省略すると 800。2026-10 の実データは 866 隻）。
+   * 下回れば壊れたマスタとみなし、理由を入れた Error で失敗して書き出さない。テストでは小さい値を渡す
+   */
+  minShipCount?: number;
+  /**
+   * 取得に失敗（例外、または ok でない応答）したときに再試行する回数（省略すると 3。最初の 1 回とは別に数える）。
+   * すべて失敗したら、最後の失敗の理由で失敗する
+   */
+  retries?: number;
+  /** 再試行の前に待つ時間（ミリ秒。省略すると 2000。テストでは 0） */
+  retryDelayMs?: number;
 }
 
 /** 生成の結果（スクリプトが表示に使う） */
