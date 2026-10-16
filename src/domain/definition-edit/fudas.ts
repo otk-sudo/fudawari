@@ -57,6 +57,8 @@ export function addFuda(doc: DefinitionDoc, input: AddFudaInput): EditResult {
 
 /**
  * 札の名前・色・札番号を変える（指定した項目だけ）。段階の札の参照（fudaId）は変わらない。
+ * 名前は前後の空白を除いて入れる（addFuda と同じ）。空になっても弾かない（入力の途中の空の名前は、保存・公開のときの検証で弾く）。
+ * 画面は名前の入力を確定したとき（blur・Enter）に呼ぶ前提（入力中に呼ぶと、打っている途中の空白も除かれるため）。
  * 札番号は自分自身の今の番号と同じなら重複にしない。null で未入力に戻せる。
  * - エラー：色が選択肢にない・札番号が 1 以上の整数でない → invalid_value、
  *   札番号がほかの札と重複 → duplicate_game_number、札がない → not_found
@@ -72,7 +74,7 @@ export function updateFuda(doc: DefinitionDoc, fudaId: string, patch: FudaPatch)
 
   const updated: Fuda = {
     ...fuda,
-    name: patch.name ?? fuda.name,
+    name: patch.name?.trim() ?? fuda.name,
     color: patch.color ?? fuda.color,
     gameNumber: patch.gameNumber === undefined ? fuda.gameNumber : patch.gameNumber,
   };

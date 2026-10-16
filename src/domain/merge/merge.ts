@@ -52,7 +52,10 @@
 //
 // ■ 実装で決めたこと（上の決まりにない細部）
 //   - 衝突の ID は場所（location）から作る（例 "stage:E2-3:importance"）。同じ入力からは同じ ID になる。
-//   - resolveMerge は、選んだ側を使って同じ手順で合わせ直す。衝突でない所は mergeDefinitions と同じ結果になる。
+//   - resolveMerge は、選んだ側を使って同じ手順で合わせ直す。衝突の選び方によって、参照の整合で残す札・海域が変わり、
+//     衝突の一覧が増減しうる（選んだ後に新しく生じた衝突は自分の内容にする）。
+//   - 合わせた文書の問題（段階が 0、終了日時が開始日時以前、札番号の重複）は findDocumentIssues で調べ、issues に入れる。
+//     resolveMerge は最終的な文書に問題があれば成功にしない。
 //   - 参照の整合で残す札・海域は、削除と変更の衝突にも、自動で合わせた所（削除）にも出さない（残すしかないため）。
 //   - 2 人が同じ ID を追加して中身が違うとき（ID は呼び出し側が重ならないように作るので、通常は起きない）は自分の内容にする。
 //   - 海域の名前は変える操作がないため、項目として比べず報告もしない（変わっていれば、変えた側の名前にする）。
@@ -62,6 +65,7 @@
 //     削除した段階は base の位置。各海域の最後にその海域の段階の並び順）。
 import { importanceLabel } from "@/domain/definition/importance";
 import type { Area, BoostGroup, EventInfo, Fuda, Stage } from "@/domain/definition/types";
+import { findDocumentIssues } from "@/domain/definition-edit/issues";
 import type { DefinitionDoc } from "@/domain/definition-edit/types";
 import {
   areaNameIn,
@@ -672,12 +676,11 @@ function runMerge(input: MergeInput, choose: Chooser): MergeResult {
     merged,
     autoMerged: all.flatMap((r) => r.autoMerged),
     conflicts: all.flatMap((r) => r.conflicts),
-    // 空の入れ物（PR-09 の指摘対応で実装担当が、合わせた文書の問題を入れる）
-    issues: [],
+    issues: findDocumentIssues(merged),
   };
 }
 
-/** 3 方向マージ。自動で合わせた所・衝突・（衝突は自分の内容を仮に入れた）合わせた文書を返す */
+/** 3 方向マージ。自動で合わせた所・衝突・（衝突は自分の内容を仮に入れた）合わせた文書・その文書の問題を返す */
 export function mergeDefinitions(input: MergeInput): MergeResult {
   return runMerge(input, () => "mine");
 }
@@ -690,16 +693,22 @@ function choiceOf(choices: ConflictChoices, id: string): ConflictChoice | undefi
 }
 
 /**
- * 衝突ごとの選択（相手の内容／自分の内容）から、最終的な文書を作る。
- * - すべての衝突を選んでいれば { ok: true, doc }（衝突がなければ選択なしで merged と同じ文書）
- * - 選んでいない衝突があれば { ok: false, unresolved }（選んでいない衝突の ID）
+ * 衝突ごとの選択（相手の内容／自分の内容）から、最終的な文書を作る。確かめる順は次のとおり
+ * 1. 選んでいない衝突があれば { ok: false, code: "unresolved", unresolved }（選んでいない衝突の ID）
+ * 2. 最終的な文書に問題（findDocumentIssues）があれば { ok: false, code: "issues", issues, doc }（保存してはいけない）
+ * 3. どちらもなければ { ok: true, doc }（衝突も問題もなければ、選択なしで merged と同じ文書）
  * - choices にある、衝突でない ID は無視する
+ * - 衝突の一覧（mergeDefinitions の conflicts）は、すべて自分の内容を選んだ場合のもの。
+ *   衝突の選び方によって衝突の一覧が増減しうる（参照の整合：段階の札の選び方で札が使われるかどうかが変わり、
+ *   札の削除と変更の衝突が生じたり消えたりする）。選んだ後に新しく生じた衝突は、選んでいる間の表示と同じく自分の内容にし、
+ *   選び方によって意味がなくなった衝突の選択は使われない
  */
 export function resolveMerge(input: MergeInput, choices: ConflictChoices): ResolveResult {
   const { conflicts } = mergeDefinitions(input);
   const unresolved = conflicts.filter((c) => choiceOf(choices, c.id) === undefined).map((c) => c.id);
   if (unresolved.length > 0) return { ok: false, code: "unresolved", unresolved };
-  // 選んだ側で合わせ直す。選択によって新しく生じた衝突（通常は起きない）は、選んでいる間の表示と同じく自分の内容にする
-  const { merged } = runMerge(input, (id) => choiceOf(choices, id) ?? "mine");
+  // 選択を使って同じ手順で合わせ直す（選択の中にない衝突は自分の内容）
+  const { merged, issues } = runMerge(input, (id) => choiceOf(choices, id) ?? "mine");
+  if (issues.length > 0) return { ok: false, code: "issues", issues, doc: merged };
   return { ok: true, doc: merged };
 }

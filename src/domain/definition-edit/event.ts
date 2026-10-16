@@ -16,15 +16,21 @@ const MSG_END_IN_PAST = "終了日時は今より後にしてください（過�
 /**
  * イベントの名前・開始日時・終了日時を変える（指定した項目だけ）。検証と権限の確認はしない
  * （validateEventInfo・checkUpdatePermission で行う）。
+ * 終了日時の空文字・空白だけは未定（null）にそろえる（文書では未定を null で表すため。validateEventInfo も未定として扱う）。
  */
 export function updateEvent(doc: DefinitionDoc, patch: EventPatch): EditResult {
   const event = {
     ...doc.event,
     name: patch.name ?? doc.event.name,
     startAt: patch.startAt ?? doc.event.startAt,
-    endAt: patch.endAt === undefined ? doc.event.endAt : patch.endAt,
+    endAt: patch.endAt === undefined ? doc.event.endAt : normalizeEndAt(patch.endAt),
   };
   return ok({ ...doc, event });
+}
+
+/** 終了日時の空文字・空白だけを未定（null）にする。それ以外はそのまま */
+function normalizeEndAt(endAt: string | null): string | null {
+  return endAt === null || endAt.trim() === "" ? null : endAt;
 }
 
 /**

@@ -7,8 +7,10 @@
 // - 新しい段階・札・特効グループの ID は呼び出し側が渡す（例 crypto.randomUUID()）。
 //   2 人が同時に追加しても ID が重ならず、3 方向マージ（src/domain/merge/）で別のものとして扱えるようにするため。
 //   海域だけは「E4」のように番号で決まるので、関数の中で決める（addArea）。
-// - 新規作成でまだ入力していないイベント名・開始日時・版の日付は空文字にする（保存・公開のときの検証で弾く）。
-// - 名前を空にする変更（入力の途中）は編集の関数では弾かない。保存・公開のときの検証（validatePublicDefinition）で弾く。
+// - 新規作成でまだ入力していないイベント名・開始日時・版の日付は空文字にする
+//   （下書きの保存の検証〔validateDraftDefinition〕では通し、公開のときの検証〔validatePublicDefinition〕で弾く）。
+// - 名前を空にする変更（入力の途中）は編集の関数では弾かない。保存・公開のときの検証
+//  （validateDraftDefinition・validatePublicDefinition。イベント名以外の名前の空はどちらでも弾く）で弾く。
 //   札の追加だけは入力を確定する操作なので、空の名前を弾く。
 import type { EventInfo, Importance, PublicDefinition } from "@/domain/definition/types";
 
@@ -239,7 +241,10 @@ export interface UpdatePermissionInput {
   role: Role;
   /** 保存先の今のイベントの情報（相手が保存した内容を含む、DB にある最新の値） */
   saved: EventInfo;
-  /** 保存しようとしているイベントの情報 */
+  /**
+   * 保存しようとしているイベントの情報。衝突を解いた後の文書の値
+   * （相手の保存と 3 方向マージをしたときは、resolveMerge で作った最終的な文書の event。マージする前の自分の値で確かめない）
+   */
   next: EventInfo;
   /** 今の時刻 */
   now: Date;
