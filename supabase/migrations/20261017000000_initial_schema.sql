@@ -537,7 +537,8 @@ end;
 $$;
 
 -- 管理者が発行したアカウント（auth.users にいる人）を協力者にする
---   管理者だけ。相手が auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010、表示名が空 → FD005
+--   管理者だけ。相手が auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010、
+--   表示名が空・メールが @fudawari.invalid で終わらない → FD005
 create function public.register_collaborator(p_user_id uuid, p_display_name text)
 returns void
 language plpgsql
@@ -555,11 +556,12 @@ begin
   if exists (select 1 from public.profiles where user_id = p_user_id) then
     perform public._raise('FD010', 'すでに定義を編集できる権限があります');
   end if;
-  -- 管理者が発行した ID（ID@fudawari.invalid）のアカウントだけを協力者にする（実在のメールアドレスのアカウントを入れない）
+  -- ID の形（ID@fudawari.invalid）のアカウントだけを協力者にする（実在のメールアドレスのアカウントを入れない。
+  -- 発行した本人のアカウントかどうかは、画面が自分の signUp で返った user ID を渡すことで決まる）
   if not exists (
     select 1 from auth.users where id = p_user_id and lower(email) like '%@fudawari.invalid'
   ) then
-    perform public._raise('FD005', '管理者が発行した ID のアカウントではありません');
+    perform public._raise('FD005', 'ID の形のアカウントではありません');
   end if;
   insert into public.profiles (user_id, display_name, role)
   values (p_user_id, btrim(p_display_name), 'collab');
