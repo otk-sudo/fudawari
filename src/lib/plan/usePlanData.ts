@@ -8,6 +8,8 @@
 // - イベント ID があるときは、最初の描画から読み込み中（loading）を返す（待機中を挟まない）。
 // - 同じ画面の部品には、同じイベント ID・札 ID の一覧を渡す（どれも最新イベントの定義から作る）。
 //   部品ごとに違う値を渡すと、後から頼んだ方の読み込みだけが残る。
+// - getPlanStorage() は、共有のストアと同じ保存先を包んだものを返す。取り込みの保存・取り込みの確認・
+//   取り込んだ艦娘データの削除は、ストアに残っている割り当ての保存がすべて終わってから行う。
 import { useEffect, useSyncExternalStore } from "react";
 import { type FudawariStorage, openStorage } from "@/lib/storage";
 import { createPlanDataStore, type PlanDataStore } from "./store";
@@ -29,6 +31,8 @@ interface LoadRequest {
 /** 共有の札割りのデータ（モジュールに 1 つ。初めて使われたときに作る） */
 interface SharedPlanData {
   store: PlanDataStore;
+  /** getPlanStorage が返す保存先（ストアと同じ保存先を包んだもの。wrapStorage） */
+  storage: FudawariStorage;
   /** 最後にストアへ読み込みを頼んだ対象（まだ頼んでいなければ null） */
   requested: LoadRequest | null;
 }
@@ -64,8 +68,43 @@ let ownsStorage = false;
 /** 共有のストア（null なら、次に使うときに作る） */
 let shared: SharedPlanData | null = null;
 
+/** 使う保存先（中身）を返す（まだなければ既定の保存先を開く） */
+function getStorage(): FudawariStorage {
+  if (storage === null) {
+    storage = openStorage();
+    ownsStorage = true;
+  }
+  return storage;
+}
+
+/**
+ * 保存先を包む。取り込みの保存（saveImport）・取り込みの確認（previewImport）・取り込んだ艦娘データの削除
+ * （clearImportedShips）は、ストアに残っている割り当ての保存がすべて終わってから行う
+ * （保存の途中の割り当てが、取り込みで外した個体の割り当てを保存先に戻さないように）。
+ * ほかの操作はそのまま中継する。中継は呼ぶたびに中の保存先のメソッドを読む（テストの vi.spyOn・記録も効く）
+ */
+function wrapStorage(inner: FudawariStorage, store: PlanDataStore): FudawariStorage {
+  return {
+    saveImport: (input) => store.afterSaves(() => inner.saveImport(input)),
+    previewImport: (input) => store.afterSaves(() => inner.previewImport(input)),
+    clearImportedShips: () => store.afterSaves(() => inner.clearImportedShips()),
+    loadShips: () => inner.loadShips(),
+    loadLastImport: () => inner.loadLastImport(),
+    loadAssignments: (eventId) => inner.loadAssignments(eventId),
+    saveAssignments: (eventId, assignments) => inner.saveAssignments(eventId, assignments),
+    returnOrphanedAssignments: (eventId, fudaIds) => inner.returnOrphanedAssignments(eventId, fudaIds),
+    loadSettings: () => inner.loadSettings(),
+    saveSettings: (patch) => inner.saveSettings(patch),
+    close: () => inner.close(),
+  };
+}
+
 function getShared(): SharedPlanData {
-  shared ??= { store: createPlanDataStore(getPlanStorage()), requested: null };
+  if (shared === null) {
+    const inner = getStorage();
+    const store = createPlanDataStore(inner);
+    shared = { store, storage: wrapStorage(inner, store), requested: null };
+  }
   return shared;
 }
 
@@ -113,20 +152,19 @@ export function usePlanData(eventId: string | null, fudaIds: readonly string[]):
 }
 
 /**
- * usePlanData が読み書きする保存先を返す（何度呼んでも同じもの）。
- * 取り込み画面の取り込みの保存（saveImport）、設定の「取り込んだ艦娘データを削除」（clearImportedShips）などに使い、
- * その後で usePlanData の reload を呼ぶ
+ * usePlanData が読み書きする保存先（resetPlanDataCache で渡した保存先、なければ既定の保存先）を包んだものを返す
+ * （何度呼んでも同じもの。resetPlanDataCache の後は作り直す）。
+ * 取り込みの保存（saveImport）・取り込みの確認（previewImport）・取り込んだ艦娘データの削除（clearImportedShips）は、
+ * usePlanData の割り当ての保存がすべて終わってから行う。ほかの操作はそのまま中継する。
+ * 取り込み画面の取り込みの保存、設定の「取り込んだ艦娘データを削除」などに使い、その後で usePlanData の reload を呼ぶ
  */
 export function getPlanStorage(): FudawariStorage {
-  if (storage === null) {
-    storage = openStorage();
-    ownsStorage = true;
-  }
-  return storage;
+  return getShared().storage;
 }
 
 /**
- * 共有している札割りのデータを捨てる（次に使われたときに読み直す）。storage を渡すと、次からその保存先を使う。
+ * 共有している札割りのデータ（ストアと getPlanStorage が返す包み）を捨てる（次に使われたときに作り直して読み直す）。
+ * storage を渡すと、次からその保存先を使う。
  * テストの前準備・後片付けで使う（画面からは呼ばない）。描画中の部品には知らせない。
  * ここで開いた既定の保存先は閉じる（渡された保存先は閉じない。閉じるのは渡した側）
  */
