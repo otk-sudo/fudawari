@@ -4,6 +4,7 @@
 //   同じテストファイルの中では DB の中身が残るため、テストごとに別の名前で開き、afterEach で cleanupTestStorages() を呼ぶ。
 // - ブラウザ内の保存が使えない（IndexedDB を開けない）場面は、どの操作も失敗する偽物（failingStorage）か、
 //   indexedDB.open を失敗させた本物の保存（openStorageWithoutIndexedDB）で作る。
+// - 保存・読み込みが重なる場面（競合）は、本物の保存の saveAssignments・loadShips を止めておける保存先（holdableStorage）で作る。
 import Dexie from "dexie";
 import { vi } from "vitest";
 import type { ImportFilter } from "@/domain/import/types";
@@ -108,4 +109,125 @@ export function importInput(
 /** 並び順に左右されないよう、個体 ID の順に並べる */
 export function byUid(ships: readonly OwnedShip[]): OwnedShip[] {
   return [...ships].sort((a, b) => a.uid.localeCompare(b.uid));
+}
+
+/** holdableStorage で止めた保存先の操作（1 回分） */
+export interface HeldOperation {
+  /** 止めた操作が呼ばれたら（保存先に届いたら）解決する */
+  readonly reached: Promise<void>;
+  /** 止めていた操作を続ける（本物の保存先の操作を呼ぶ） */
+  release(): void;
+  /** 止めていた操作を、本物の保存先を呼ばずに失敗させる */
+  fail(error?: unknown): void;
+}
+
+/** 操作を止めておける保存先（holdableStorage の戻り値） */
+export interface HoldableStorage {
+  /** 本物の保存先へ中継する保存先（ストアや resetPlanDataCache に渡す） */
+  storage: FudawariStorage;
+  /** 次に呼ばれる saveAssignments を 1 回だけ止める（続けて頼むと、その次の呼び出しも順に止める） */
+  holdSaveAssignments(): HeldOperation;
+  /** 次に呼ばれる loadShips を 1 回だけ止める（続けて頼むと、その次の呼び出しも順に止める） */
+  holdLoadShips(): HeldOperation;
+  /**
+   * 本物の保存先の操作を呼んだ順の記録。呼んだときに操作名（例 "saveAssignments"）、
+   * 終わったとき（成功・失敗とも）に「操作名:done」を足す。止めている間と、fail で失敗させた操作は記録しない
+   */
+  readonly calls: readonly string[];
+}
+
+/** 止める指定 1 回分 */
+interface Hold {
+  operation: HeldOperation;
+  /** 止めた呼び出しが届いたことを知らせる */
+  arrive(): void;
+  /** release で解決し、fail で失敗する */
+  gate: Promise<void>;
+}
+
+function createHold(): Hold {
+  let arrive: () => void = () => {};
+  const reached = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  let open: () => void = () => {};
+  let reject: (error: unknown) => void = () => {};
+  const gate = new Promise<void>((resolve, rejectGate) => {
+    open = resolve;
+    reject = rejectGate;
+  });
+  // 止めた呼び出しが届く前に fail しても、未処理の失敗として報告しない（届いた呼び出しには失敗が伝わる）
+  gate.catch(() => {});
+  return {
+    arrive: () => arrive(),
+    gate,
+    operation: {
+      reached,
+      release: () => open(),
+      fail: (error: unknown = new Error("保存先の操作を失敗させた（テスト）")) => reject(error),
+    },
+  };
+}
+
+/**
+ * 本物の保存先へ中継し、saveAssignments・loadShips を止めておける保存先を返す
+ * （保存の途中で読み込む・読み込みの途中で割り当てを変える、などの重なりを作るため）。
+ * 中継は呼ぶたびに本物の保存先のメソッドを読むので、本物の保存先への vi.spyOn も効く
+ */
+export function holdableStorage(real: FudawariStorage): HoldableStorage {
+  const calls: string[] = [];
+  const holds: { saveAssignments: Hold[]; loadShips: Hold[] } = { saveAssignments: [], loadShips: [] };
+
+  /** 本物の保存先の操作を呼び、呼んだこと・終わったことを記録する */
+  async function call<T>(name: string, run: () => Promise<T>): Promise<T> {
+    calls.push(name);
+    try {
+      return await run();
+    } finally {
+      calls.push(`${name}:done`);
+    }
+  }
+
+  /** 止める指定が残っていれば、release／fail まで待つ（fail なら失敗する） */
+  async function waitIfHeld(queue: Hold[]): Promise<void> {
+    const hold = queue.shift();
+    if (hold === undefined) return;
+    hold.arrive();
+    await hold.gate;
+  }
+
+  /** 止める指定を 1 回分足す */
+  function hold(queue: Hold[]): HeldOperation {
+    const created = createHold();
+    queue.push(created);
+    return created.operation;
+  }
+
+  const storage: FudawariStorage = {
+    saveImport: (input) => call("saveImport", () => real.saveImport(input)),
+    previewImport: (input) => call("previewImport", () => real.previewImport(input)),
+    async loadShips() {
+      await waitIfHeld(holds.loadShips);
+      return call("loadShips", () => real.loadShips());
+    },
+    loadLastImport: () => call("loadLastImport", () => real.loadLastImport()),
+    clearImportedShips: () => call("clearImportedShips", () => real.clearImportedShips()),
+    loadAssignments: (eventId) => call("loadAssignments", () => real.loadAssignments(eventId)),
+    async saveAssignments(eventId, assignments) {
+      await waitIfHeld(holds.saveAssignments);
+      return call("saveAssignments", () => real.saveAssignments(eventId, assignments));
+    },
+    returnOrphanedAssignments: (eventId, fudaIds) =>
+      call("returnOrphanedAssignments", () => real.returnOrphanedAssignments(eventId, fudaIds)),
+    loadSettings: () => call("loadSettings", () => real.loadSettings()),
+    saveSettings: (patch) => call("saveSettings", () => real.saveSettings(patch)),
+    close: () => real.close(),
+  };
+
+  return {
+    storage,
+    holdSaveAssignments: () => hold(holds.saveAssignments),
+    holdLoadShips: () => hold(holds.loadShips),
+    calls,
+  };
 }
