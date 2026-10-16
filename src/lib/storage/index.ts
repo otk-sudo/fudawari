@@ -4,6 +4,7 @@ export type {
   FudawariStorage,
   ImportRecord,
   SaveImportInput,
+  SaveImportResult,
   Settings,
   TraySort,
   TrayView,

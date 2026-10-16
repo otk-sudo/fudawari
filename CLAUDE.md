@@ -38,7 +38,8 @@ e2e/              Playwright
 - Lint：`npm run lint`
 - 単体テスト：`npm test`（Vitest）
 - 画面テスト：`npm run test:e2e`（Playwright。静的書き出しをビルドして serve で配信し、それに対して実行する）。初めて手元で動かすときは先に `npx playwright install chromium`。ポートはワークツリーごとに自動で変わる（`E2E_PORT` で上書きできる）ので、複数のワークツリーで同時に実行してよい
-- ビルド：`npm run build`（`out/` に静的書き出し。のちに最新イベントの公開定義 JSON と艦船マスタの生成を含める）
+- ビルド：`npm run build`（`out/` に静的書き出し。直前の prebuild で艦船マスタ `public/data/ship-master.json` を Tibowl/api_start2 から生成するため通信が必要。生成物はコミットしない。のちに最新イベントの公開定義 JSON の取得も含める）。Cloudflare Pages のビルドコマンドも `npm run build`（`npx next build` にするとマスタが生成されない）
+- 艦船マスタの生成：`npm run generate:ship-master`。通信できないときに既存のファイルを使い回すなら `SKIP_SHIP_MASTER=1` を付ける（CI・Cloudflare Pages では付けない）。`npm run build` と `npm run test:e2e` も通信が必要
 - DB：Supabase CLI のマイグレーション（`supabase/migrations/`。手元に Docker がないため、DB のテストは CI で動かす）
 
 ## このプロジェクト固有の注意

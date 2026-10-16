@@ -20,9 +20,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** 有限の数か */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 /** 有限の数なら、その数。ほかは undefined */
 function finiteNumberOrUndefined(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return isFiniteNumber(value) ? value : undefined;
+}
+
+/**
+ * 配列の先頭から、有限の数が続く分だけを写す（最初の数でない要素の位置で止める）。
+ * 数でない要素を飛ばして詰めると、[null, 69] の最大値 69 が運の初期値の位置に来てしまうため、位置をずらさない
+ */
+function leadingFiniteNumbers(values: readonly unknown[]): number[] {
+  const result: number[] = [];
+  for (const value of values) {
+    if (!isFiniteNumber(value)) break;
+    result.push(value);
+  }
+  return result;
 }
 
 /** api_mst_ship の 1 行を、使う項目だけの ApiMstShipLike にする。艦 ID・艦名が読めない行は null */
@@ -40,9 +58,7 @@ function readMstShipRow(value: unknown): ApiMstShipLike | null {
   if (ctype !== undefined) row.api_ctype = ctype;
   const sortno = finiteNumberOrUndefined(value.api_sortno);
   if (sortno !== undefined) row.api_sortno = sortno;
-  if (Array.isArray(value.api_luck)) {
-    row.api_luck = value.api_luck.filter((n): n is number => typeof n === "number" && Number.isFinite(n));
-  }
+  if (Array.isArray(value.api_luck)) row.api_luck = leadingFiniteNumbers(value.api_luck);
   // 実物では文字列。数で入っていても改造先として読めるよう文字列にそろえる
   const after = value.api_aftershipid;
   if (typeof after === "string") row.api_aftershipid = after;
@@ -54,6 +70,7 @@ function readMstShipRow(value: unknown): ApiMstShipLike | null {
  * JSON として読んだ start2.json（中身は分からない値）から、マスタの生成に使う部分を取り出す。
  * - api_mst_ship が配列でなければ null
  * - 艦 ID（正の整数）・艦名（文字列）が読めない行は飛ばす。ほかの項目は型が合うものだけを写す
+ * - api_luck は先頭から数が続く分だけを写す（0 番目が数でなければ空の配列。最大値を運の初期値の位置に詰めない）
  */
 export function readStart2(data: unknown): Start2Like | null {
   if (!isRecord(data) || !Array.isArray(data.api_mst_ship)) return null;
@@ -63,6 +80,35 @@ export function readStart2(data: unknown): Start2Like | null {
     if (row !== null) rows.push(row);
   }
   return { api_mst_ship: rows };
+}
+
+/** 味方艦の行で、数でなければならない項目（api_luck は 0 番目〔運の初期値〕が数でなければならない） */
+export type InvalidFriendlyRowField = "api_sortno" | "api_stype" | "api_ctype" | "api_luck";
+
+/** マスタに必要な項目が数でない味方艦の行 */
+export interface InvalidFriendlyRow {
+  /** 艦 ID（api_id） */
+  id: number;
+  /** 数でなかった項目（api_sortno・api_stype・api_ctype・api_luck の順） */
+  fields: InvalidFriendlyRowField[];
+}
+
+/**
+ * 味方艦（api_id < 1500）の行のうち、api_sortno・api_stype・api_ctype が数でない、または api_luck の 0 番目が数でない行を返す。
+ * 生成（generateShipMaster）は、1 行でもあれば 0 で埋めずに失敗する（壊れたマスタを配らない）。深海棲艦の行は見ない
+ */
+export function findInvalidFriendlyRows(start2: Start2Like): InvalidFriendlyRow[] {
+  const result: InvalidFriendlyRow[] = [];
+  for (const row of start2.api_mst_ship) {
+    if (row.api_id >= FRIENDLY_SHIP_ID_LIMIT) continue;
+    const fields: InvalidFriendlyRowField[] = [];
+    if (!isFiniteNumber(row.api_sortno)) fields.push("api_sortno");
+    if (!isFiniteNumber(row.api_stype)) fields.push("api_stype");
+    if (!isFiniteNumber(row.api_ctype)) fields.push("api_ctype");
+    if (!isFiniteNumber(row.api_luck?.[0])) fields.push("api_luck");
+    if (fields.length > 0) result.push({ id: row.api_id, fields });
+  }
+  return result;
 }
 
 /** 図鑑番号の比べやすい値。図鑑番号がない・0 以下の艦は後回しにする（未実装の艦の行などを艦型の名前に使わない） */
@@ -99,6 +145,7 @@ function representativeByClass(rows: readonly ApiMstShipLike[]): Map<number, Api
  * - 結果は艦 ID の昇順（入力の順に左右されない）
  * - 同じ艦 ID の行が複数あるときは先の行を使う（deriveRemodelInfo と同じ）
  * - 項目が欠けている行は、文字は空、数は 0 で埋める
+ *   （生成〔generateShipMaster〕は、数の項目が欠けた味方艦の行を findInvalidFriendlyRows で見つけて、埋める前に止める）
  */
 export function buildShipMasterEntries(
   start2: Start2Like,
