@@ -1,0 +1,94 @@
+/* ホーム（モック Home.dc.html） */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 1040px;
+  padding: 20px 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+/* 「管理」の見出しの権限名のバッジ */
+.roleBadge {
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--color-admin);
+  color: var(--color-on-admin);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+/* タイル（リンクとボタンで同じ見た目） */
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 104px;
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.adminTile {
+  border-color: var(--color-admin-border);
+}
+
+.tile:hover {
+  background: var(--color-hover-bg);
+  border-color: var(--color-hover-border);
+}
+
+.tileHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tileIcon {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
+.adminTile .tileIcon {
+  color: var(--color-admin);
+}
+
+.tileTitle {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tileNote {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}

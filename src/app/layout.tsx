@@ -1,11 +1,19 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { AppShell } from "@/components/AppShell";
+import { SettingsDialog } from "@/components/SettingsDialog";
+import {
+  DEFAULT_THEME_MODE,
+  ThemeSync,
+  themeAttributeFor,
+} from "@/features/theme";
+import { APP_NAME } from "@/lib/app-name";
 import "@/styles/theme.css";
 import "@/styles/globals.css";
 
-// アプリ名は「札割りプランナー」（U4 で決定）。文字列を 1 か所にまとめるのは PR-03（T1-4）で行う
 export const metadata: Metadata = {
-  title: "札割りプランナー",
+  // 各画面は metadata.title に画面名だけを書く（例「札割り一覧 | 札割りプランナー」になる）
+  title: { default: APP_NAME, template: `%s | ${APP_NAME}` },
   description: "艦これのイベントで、特効を踏まえてどの艦をどの札に回すかを計画するツール",
 };
 
@@ -14,10 +22,16 @@ export default function RootLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  // data-theme はまだ付けない（付けていない間は端末の設定に従う）。切り替えは設定の機能で行う
+  // data-theme は画面モードの初期値で書き出す（読み込み直後に端末の設定の色が一瞬出ないように）。
+  // 切り替えたあとは ThemeSync が書き換える
   return (
-    <html lang="ja">
-      <body>{children}</body>
+    <html lang="ja" data-theme={themeAttributeFor(DEFAULT_THEME_MODE)}>
+      <body>
+        <ThemeSync />
+        <AppShell>{children}</AppShell>
+        {/* 設定のウィンドウは全画面で 1 つ。中身（設定の項目）は PR-08 で children に差し込む */}
+        <SettingsDialog />
+      </body>
     </html>
   );
 }

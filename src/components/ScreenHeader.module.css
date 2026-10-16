@@ -1,0 +1,22 @@
+/* 各画面の上部のヘッダー帯（モックの各画面の上部） */
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.note {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}

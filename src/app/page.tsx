@@ -1,12 +1,7 @@
-import styles from "./page.module.css";
+import { HomeScreen } from "@/features/home/HomeScreen";
 
 export default function HomePage() {
-  return (
-    <main className={styles.main}>
-      <h1 className={styles.title}>札割りプランナー</h1>
-      <p className={styles.lead}>
-        艦これのイベントで、特効を踏まえて「どの艦をどの札に回すか」を計画するためのツールです。
-      </p>
-    </main>
-  );
+  // TODO(T2-3)：公開定義から開催中のイベント名を読み込んで渡す。
+  // それまでは開催中のイベントが分からないため、仮の値として null（「開催中：」を出さない）を渡す
+  return <HomeScreen runningEventName={null} />;
 }
