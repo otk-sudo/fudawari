@@ -10,7 +10,7 @@ describe("トップ画面", () => {
 
     // 検証
     expect(
-      screen.getByRole("heading", { level: 1, name: "札割りプランナー" }),
+      screen.getByRole("heading", { level: 1, name: "札割りプランナー（CI 失敗確認）" }),
     ).toBeInTheDocument();
   });
 });

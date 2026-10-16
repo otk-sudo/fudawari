@@ -9,7 +9,7 @@ test.describe("トップ画面", () => {
     await expect(
       page.getByRole("heading", {
         level: 1,
-        name: "札割りプランナー",
+        name: "札割りプランナー（CI 失敗確認）",
         exact: true,
       }),
     ).toBeVisible();
