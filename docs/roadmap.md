@@ -166,8 +166,9 @@ T1-1a〜T1-1d に分ける。設定作業のため TDD の対象外。T1-1a〜c 
 - 担当：親（ユーザーのアカウントでの操作と許可が必要）
 - 依存：T1-1a
 - 受入条件
-  - PR ごとにプレビュー URL が作られ、main へのマージで本番がビルド・デプロイされる。
-  - Playwright は CI の中でビルドした静的出力に対して実行する（D1。2026-10-16 承認）。本番ブランチは main（D2）。
+  - 本番ブランチは `release`（D2。2026-10-16 に main から変更）。release への取り込みで本番がビルド・デプロイされる。PR の作業ブランチと main ではビルドしない（プレビュー用のビルドは止め、Cloudflare Pages のビルド回数を節約する）。
+  - Playwright は CI の中でビルドした静的出力に対して実行する（D1。2026-10-16 承認）。プレビュー URL は使わない。
+  - 状態：2026-10-16 にユーザーが Cloudflare Pages（`fudawari.pages.dev`）を作成し、本番ブランチを release、プレビューを止め、`docs/*` だけの変更はビルドしない設定にした。
 
 #### T1-2 ドメインの型、公開定義 JSON の形、テスト用の定義データ
 - 担当：tdd-test-engineer → frontend-react-developer → quality-reviewer
