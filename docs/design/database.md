@@ -3,7 +3,7 @@
 roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 イベント定義、3.8 協力者、5 データの流れ、13.1 決定事項）。作成：2026-10-16 親。
 
 **定義の文書**（`drafts.content`・`published_definitions.content` の jsonb）は、PR-02 の型 `PublicDefinition`（`src/domain/definition/types.ts`）と同じ形にする：`{ schemaVersion: 1, event: { id, name, startAt, endAt, versionDate }, areas: [{ id, name }], fudas: [{ id, name, color, gameNumber }], stages: [{ id, areaId, name, fudaId, importance, boosts: [{ id, name, multiplier, shipNames }] }] }`。並び順は配列の順。
-- イベントの名前・開始日時・終了日時の正は `events` 表。下書きの `content.event` は表示用の写しで、`publish_definition` が公開するときに `events` 表の値と版の日付（`versionDate`）で書き直してから公開版に保存する。
+- イベントの名前・開始日時・終了日時の正は `events` 表。下書きの `content.event` は表示用の写しで、`create_event` が `event.id` を作ったイベントの ID に書き直し、`publish_definition` が公開するときに `events` 表の値と版の日付（`versionDate`）で書き直してから公開版に保存する。
 - 画面は保存・公開の前に `validatePublicDefinition` で検証する。DB 側では `schemaVersion = 1` とオブジェクトであることだけを確かめる。
 
 ## 1. 方針
@@ -124,7 +124,7 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | FD002 | イベントが終了している（`ends_at <= now()`） |
 | FD003 | 更新できるイベントではない（協力者：最新のイベント以外。管理者：最新でも未公開でもないイベント。最新でないイベントを `p_make_latest = false` で公開しようとした） |
 | FD004 | 版が違う（`publish_definition` の `p_base_version` が今の下書きの版と違う） |
-| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、期限の選択肢、記録が配列でない など） |
+| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、終了日時が今以前、表示名が空、発行した ID でないアカウント、記録が配列でない など） |
 | FD006〜FD008 | （欠番。招待をやめたため） |
 | FD009 | 見つからない（イベント・アカウント・協力者） |
 | FD010 | すでに権限がある人を協力者に登録しようとした |
@@ -137,9 +137,9 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | `app_role() returns text` | だれでも（anon も） | 自分の `profiles.role`（'admin'／'collab'）。行がない・未ログインなら null。RLS の判定に使う |
 | `save_draft(p_event_id uuid, p_base_version integer, p_content jsonb, p_logs jsonb) returns jsonb` | 協力者・管理者 | `p_base_version` が今の版と同じなら `content` を保存して版を 1 増やし、`p_logs`（`[{ "mapLabel": "E2" または null, "summary": "…" }]`。空の配列も可）を 1 件ずつ `save_logs`（kind 'save'）に入れ、`{ "status": "saved", "version": 新しい版 }` を返す。違えば保存せず `{ "status": "conflict", "version": 今の版, "content": 今の内容, "updatedByName": 保存した人の表示名（外された人なら "不明"）, "updatedAt": 日時 }` を返す（画面で 3 方向マージする）。終了 → FD002、更新できない → FD003、文書の形 → FD005 |
 | `publish_definition(p_event_id uuid, p_base_version integer, p_make_latest boolean) returns jsonb` | 協力者・管理者（`p_make_latest = true` は管理者だけ。協力者なら FD001） | 下書きの版が `p_base_version` と同じなら、下書きの `content` の `event` を `events` 表の値で書き直して（`id`＝イベント ID の文字列、`name`、`startAt`・`endAt`＝日本時間の "YYYY-MM-DDTHH:MI:SS+09:00"（未定は null）、`versionDate`＝公開した日の日本時間の "YYYY-MM-DD"）`published_definitions` に保存し（`version_label`＝"YYYY/MM/DD 版"）、記録（kind 'publish'、`map_label` は null、文「公開（YYYY/MM/DD 版）」）を入れる。`p_make_latest` なら `app_state.latest_event_id` を切り替える。戻り値 `{ "status": "published", "id": 公開版の ID, "versionLabel": "…", "versionDate": "YYYY-MM-DD" }`。版が違う → FD004、終了 → FD002、最新でないのに `p_make_latest = false` → FD003 |
-| `create_event(p_name text, p_starts_at timestamptz, p_ends_at timestamptz, p_content jsonb) returns uuid` | 管理者 | イベントと下書き（版 1、`content` は `p_content`）を作り、イベント ID を返す。初期の文書（元にするイベントからのコピー・E1 だけの空の文書）は画面が `createDefinition`（PR-09）で作る。名前が空・`p_ends_at <= p_starts_at`・文書の形 → FD005 |
+| `create_event(p_name text, p_starts_at timestamptz, p_ends_at timestamptz, p_content jsonb) returns uuid` | 管理者 | イベントと下書き（版 1、`content` は `p_content`）を作り、イベント ID を返す。初期の文書（元にするイベントからのコピー・E1 だけの空の文書）は画面が `createDefinition`（PR-09）で作り、`content.event.id` は作ったイベントの ID に書き直して保存する。名前が空・`p_ends_at <= p_starts_at`・終了日時が今以前・文書の形 → FD005 |
 | `update_event_meta(p_event_id uuid, p_name text, p_starts_at timestamptz, p_ends_at timestamptz) returns void` | 協力者（終了日時だけ）・管理者 | 名前・開始日時・終了日時を更新する。終了 → FD002、更新できない → FD003、協力者が名前か開始日時を今と違う値にした → FD001、名前が空・終了日時が開始日時以前・終了日時が今以前（誤ってロックしない） → FD005。終了日時の null（未定）は可 |
-| `register_collaborator(p_user_id uuid, p_display_name text) returns void` | 管理者 | 管理者の画面が作ったアカウント（auth.users にいる人）を協力者にする。表示名が空 → FD005、auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010 |
+| `register_collaborator(p_user_id uuid, p_display_name text) returns void` | 管理者 | 管理者の画面が作ったアカウント（auth.users にいる人）を協力者にする。表示名が空・メールが `@fudawari.invalid` で終わらない（管理者が発行した ID でない） → FD005、auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010 |
 | `remove_collaborator(p_user_id uuid) returns void` | 管理者 | 協力者の行を消す。ない → FD009、相手が管理者（自分を含む） → FD011 |
 | `touch_profile(p_display_name text) returns void` | ログイン済み（行がある人） | 表示名を更新する。行がない → FD001 |
 

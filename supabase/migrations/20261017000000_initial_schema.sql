@@ -89,6 +89,9 @@ revoke all on table
   public.save_logs
 from public, anon, authenticated;
 
+-- 保存の記録の id（identity 列）のシーケンスにも、既定で付く権限を外す（書き込みは RPC だけ）
+revoke all on sequence public.save_logs_id_seq from public, anon, authenticated;
+
 grant select on table public.app_state, public.published_definitions to anon, authenticated;
 grant select on table
   public.profiles,
@@ -307,6 +310,13 @@ begin
   if not found then
     perform public._raise('FD009', '下書きが見つかりません');
   end if;
+  -- 同じ下書きを別の人が保存中だと、上の行ロックで待つ。待つ間に終了日時を過ぎていないか、ロックの後にもう一度確かめる
+  if exists (
+    select 1 from public.events
+    where id = p_event_id and ends_at is not null and ends_at <= clock_timestamp()
+  ) then
+    perform public._raise('FD002', 'このイベントは終了しているため更新できません');
+  end if;
 
   if v_draft.version is distinct from p_base_version then
     return jsonb_build_object(
@@ -377,14 +387,14 @@ begin
   -- 公開版を入れるまでイベントの名前・期間が変わらないよう、行をロックしたまま読む（_check_editable_event で共有ロック済み）
   select * into v_event from public.events where id = p_event_id for share;
   select * into v_draft from public.drafts where event_id = p_event_id for update;
+  if not found then
+    perform public._raise('FD009', '下書きが見つかりません');
+  end if;
 
   -- 公開日時・版の日付・版の表示は、ロックを取った後の 1 つの時刻から決める（日付の変わり目でロックを待っても食い違わない）
   v_now := clock_timestamp();
   v_today := (v_now at time zone 'Asia/Tokyo')::date;
   v_label := to_char(v_today, 'YYYY/MM/DD') || ' 版';
-  if not found then
-    perform public._raise('FD009', '下書きが見つかりません');
-  end if;
   if v_draft.version is distinct from p_base_version then
     perform public._raise('FD004', '下書きが更新されています。読み直してから公開してください');
   end if;
@@ -545,6 +555,12 @@ begin
   if exists (select 1 from public.profiles where user_id = p_user_id) then
     perform public._raise('FD010', 'すでに定義を編集できる権限があります');
   end if;
+  -- 管理者が発行した ID（ID@fudawari.invalid）のアカウントだけを協力者にする（実在のメールアドレスのアカウントを入れない）
+  if not exists (
+    select 1 from auth.users where id = p_user_id and lower(email) like '%@fudawari.invalid'
+  ) then
+    perform public._raise('FD005', '管理者が発行した ID のアカウントではありません');
+  end if;
   insert into public.profiles (user_id, display_name, role)
   values (p_user_id, btrim(p_display_name), 'collab');
 exception
@@ -598,7 +614,7 @@ begin
 end;
 $$;
 
--- RPC は authenticated だけが実行できる（anon・public からは取り消す）
+-- RPC は authenticated だけが実行できる（既定で付く権限をいったんすべて取り消してから、authenticated に与える）
 revoke execute on function
   public.save_draft(uuid, integer, jsonb, jsonb),
   public.publish_definition(uuid, integer, boolean),
@@ -607,7 +623,7 @@ revoke execute on function
   public.register_collaborator(uuid, text),
   public.remove_collaborator(uuid),
   public.touch_profile(text)
-from public, anon;
+from public, anon, authenticated;
 
 grant execute on function
   public.save_draft(uuid, integer, jsonb, jsonb),

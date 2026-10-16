@@ -107,8 +107,9 @@ jobs:
         run: |
           eval "$(npx supabase status -o env)"
           body='{"email":"ci-check@fudawari.invalid","password":"ci-check-password-0001"}'
-          curl -sS --fail-with-body -o /dev/null "$API_URL/auth/v1/signup" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body"
-          curl -sS --fail-with-body -o /dev/null "$API_URL/auth/v1/token?grant_type=password" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body"
+          # 失敗したときだけ応答の本文を表示する
+          curl -sS --fail-with-body -o /tmp/signup.json "$API_URL/auth/v1/signup" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body" || { cat /tmp/signup.json; exit 1; }
+          curl -sS --fail-with-body -o /tmp/token.json "$API_URL/auth/v1/token?grant_type=password" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body" || { cat /tmp/token.json; exit 1; }
       - name: ローカルの Supabase を止める
         if: ${{ always() }}
         run: npx supabase stop --no-backup
