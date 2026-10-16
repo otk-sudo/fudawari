@@ -2,20 +2,35 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { DefinitionLoadAlert } from "@/components/DefinitionLoadAlert";
 import { type IconName, LineIcon } from "@/components/LineIcon";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { openSettingsDialog } from "@/components/settings-dialog-store";
 import { type Role, useRole } from "@/features/auth";
 import { APP_NAME } from "@/lib/app-name";
+import type { DefinitionLoadError } from "@/lib/definition";
 import { ROUTES, type Route } from "@/lib/routes";
 import styles from "./HomeScreen.module.css";
 
+/**
+ * ホームに出す最新イベントの状態。
+ * ホームの画面（src/app/page.tsx）が、公開定義の読み込み（src/lib/definition）と今の時刻から決めて渡す
+ */
+export type HomeLatestEvent =
+  /** 定義の読み込み中 */
+  | { status: "loading" }
+  /** 定義の読み込み・検証の失敗（理由つき） */
+  | { status: "error"; error: DefinitionLoadError }
+  /** 最新イベントの開始前 */
+  | { status: "upcoming" }
+  /** 最新イベントの開催中（eventName はヘッダーの「開催中：（イベント名）」に出す。例 "2026夏イベ"） */
+  | { status: "running"; eventName: string }
+  /** 最新イベントの終了後 */
+  | { status: "ended" };
+
 export type HomeScreenProps = {
-  /**
-   * 開催中のイベント名（例 "2026夏イベ"）。開催中のイベントがなければ null。
-   * PR-03 では仮の値を渡す。T2-3（公開定義の読み込み）で本物につなぐ
-   */
-  runningEventName: string | null;
+  /** 最新イベントの状態（ヘッダーの「開催中：」、読み込みの失敗の警告、協力者のイベント定義の説明に使う） */
+  latestEvent: HomeLatestEvent;
 };
 
 type Tile = {
@@ -39,16 +54,29 @@ const ROLE_LABELS: Record<Exclude<Role, "user">, string> = {
   admin: "管理者",
 };
 
+// 協力者のイベント定義のタイルの説明（要件 3.1、U18）。
+// 最新のイベントが終了していなければ（開始前を含む）更新できる。読み込み中・失敗のときは、それと分かる文にする
+function collabDefinitionNote(latestEvent: HomeLatestEvent): string {
+  switch (latestEvent.status) {
+    case "loading":
+      return "イベントの情報を確認しています";
+    case "error":
+      return "イベントの情報を読み込めませんでした";
+    case "upcoming":
+    case "running":
+      return "最新イベントの札・段階・特効を更新";
+    case "ended":
+      return "更新できるイベントがありません（最新のイベントは終了しました）";
+  }
+}
+
 // 「管理」の区分のタイル（要件 3.1）。一般利用者には何も出さない
-function managementTiles(role: Role, isEventRunning: boolean): Tile[] {
+function managementTiles(role: Role, latestEvent: HomeLatestEvent): Tile[] {
   if (role === "user") return [];
 
+  // 管理者の説明は、最新イベントの状態によらず同じ
   const definitionNote =
-    role === "admin"
-      ? "札・段階・特効の設定、新規イベントの作成"
-      : isEventRunning
-        ? "開催中イベントの札・段階・特効を更新"
-        : "開催中のイベントがないため、いまは更新できるものはありません";
+    role === "admin" ? "札・段階・特効の設定、新規イベントの作成" : collabDefinitionNote(latestEvent);
   const tiles: Tile[] = [
     { title: "イベント定義", href: ROUTES.definition, icon: "plan", note: definitionNote },
   ];
@@ -83,21 +111,22 @@ function TileBody({
 /**
  * ホーム（要件 3.1、モック Home.dc.html）。権限は `@/features/auth` の useRole() から受け取る。
  *
- * - ヘッダー：見出し（h1）にアプリ名。開催中のイベントがあるときだけ「開催中：（イベント名）」
+ * - ヘッダー：見出し（h1）にアプリ名。最新イベントが開催中のときだけ「開催中：（イベント名）」
+ * - 定義の読み込みに失敗したら、ヘッダー帯の下に理由と次の行動（ほかの画面と同じ警告。role="alert"）
  * - 「札割り」の区分：一覧・割り振り・取り込み・差分（リンク）、設定（ボタン。設定のウィンドウを開く）
  * - 「管理」の区分（協力者・管理者のみ）：見出しに権限名のバッジ、イベント定義・協力者（管理者のみ）
  */
-export function HomeScreen({ runningEventName }: HomeScreenProps): ReactNode {
+export function HomeScreen({ latestEvent }: HomeScreenProps): ReactNode {
   const role = useRole();
-  const isEventRunning = runningEventName !== null && runningEventName !== "";
-  const adminTiles = managementTiles(role, isEventRunning);
+  const adminTiles = managementTiles(role, latestEvent);
 
   return (
     <>
       <ScreenHeader
         title={APP_NAME}
-        note={isEventRunning ? `開催中：${runningEventName}` : undefined}
+        note={latestEvent.status === "running" ? `開催中：${latestEvent.eventName}` : undefined}
       />
+      {latestEvent.status === "error" && <DefinitionLoadAlert error={latestEvent.error} />}
       <div className={styles.body}>
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>札割り</h2>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ScreenHeader } from "@/components/ScreenHeader";
+import { LatestEventScreenHeader } from "@/components/LatestEventScreenHeader";
 import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
 
 const TITLE = "計画と実際の札";
@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: TITLE };
 export default function DriftPage() {
   return (
     <>
-      <ScreenHeader title={TITLE} />
+      <LatestEventScreenHeader title={TITLE} />
       <ScreenPlaceholder />
     </>
   );
