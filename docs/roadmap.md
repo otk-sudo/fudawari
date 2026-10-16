@@ -457,7 +457,7 @@ T1-1a〜T1-1d に分ける。設定作業のため TDD の対象外。T1-1a〜c 
 - 担当：親 → レビュー quality-reviewer
 - 依存：T1-1c、T3-3
 - 受入条件
-  - main へのマージで本番 DB にマイグレーションが適用される。
+  - release への取り込みで本番 DB にマイグレーションが適用される（D2 の変更により main ではなく release。GitHub の `production` 環境は `release` だけが使える）。
   - 失敗したら CI が失敗し、対処の手順（Resume → 再実行）が文書にある。
 
 ### フェーズ 4：仕上げと公開
