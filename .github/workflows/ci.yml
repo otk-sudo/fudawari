@@ -74,6 +74,11 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - name: 画面テスト（CI の中でビルドした静的出力に対して実行）
+        # 接続先にダミーの値を入れてビルドする（秘密ではない）。一般の画面が Supabase に通信しないことの確認（e2e/no-supabase.spec.ts）が、
+        # 接続先のある本番と同じ条件で意味を持つようにする
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dummy
         run: npm run test:e2e
       - name: レポートを残す（再実行で通った不安定なテストの調査にも使う）
         if: ${{ !cancelled() }}

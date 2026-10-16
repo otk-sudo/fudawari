@@ -85,7 +85,7 @@ function managementTiles(role: Role, latestEvent: HomeLatestEvent): Tile[] {
       title: "協力者",
       href: ROUTES.collaborators,
       icon: "users",
-      note: "定義を編集できる人の招待・管理",
+      note: "定義を編集できる人の追加・管理",
     });
   }
   return tiles;

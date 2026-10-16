@@ -1,7 +1,5 @@
 // Supabase に接続するための設定（環境変数）を読む。
 // 使うのは管理者・協力者の画面（ログイン・協力者・イベント定義）だけ。一般利用者の画面は Supabase に通信しない（CLAUDE.md）
-//
-// PR-10b のテスト（config.test.ts）を先に書いた段階の入れ物。中身は実装の担当が書く
 
 /** Supabase の接続先 */
 export type SupabaseConfig = {
@@ -16,4 +14,12 @@ export type SupabaseConfig = {
  * Next.js は `process.env.NEXT_PUBLIC_…` をビルドのときに値へ書き換えるため、変数名をそのまま書いて読むこと。
  * 呼ぶたびに読む（テストでは vi.stubEnv で差し替える）
  */
-export const readSupabaseConfig: () => SupabaseConfig | null = () => null;
+export function readSupabaseConfig(): SupabaseConfig | null {
+  // 書き換えの対象にするため、process.env の分割代入や変数名の組み立てはしない
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (url === undefined || url === "" || publishableKey === undefined || publishableKey === "") {
+    return null;
+  }
+  return { url, publishableKey };
+}

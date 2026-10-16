@@ -10,13 +10,15 @@ export const ROUTES = {
   definition: "/definition",
   collaborators: "/collaborators",
   login: "/login",
-  invite: "/invite",
 } as const;
 
 export type Route = (typeof ROUTES)[keyof typeof ROUTES];
 
-/** 左メニューを出さない単独の画面（ログイン、招待。招待は /invite/（コード）でも開く） */
-const STANDALONE_ROUTES: readonly Route[] = [ROUTES.login, ROUTES.invite];
+/**
+ * 左メニューを出さない単独の画面（ログイン）。
+ * 招待（/invite）は 2026-10-17 にやめた（U3・U19）。古いリンクの案内のページは、ほかの画面と同じく左メニューを出す
+ */
+const STANDALONE_ROUTES: readonly Route[] = [ROUTES.login];
 
 // path が route そのもの、または route の下の階層かを返す（"/list" は "/list" と "/list/..." に当たり、"/listing" には当たらない）
 function isSameOrBelow(path: string, route: string): boolean {
