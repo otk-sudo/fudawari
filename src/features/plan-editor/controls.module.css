@@ -1,0 +1,215 @@
+/*
+ * イベント定義の画面で共通に使う入力欄・ボタン（モック PlanEditor.dc.html の形）。
+ * 色は theme.css の変数と、PlanEditor.module.css の .root に置いた --pe-* の変数を使う
+ */
+
+.input {
+  min-height: 34px;
+  padding: 0 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 1px;
+}
+
+/* ボタンの共通の形 */
+.primaryButton,
+.secondaryButton,
+.ghostButton,
+.dashedButton,
+.dangerButton,
+.dangerSolidButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible,
+.ghostButton:focus-visible,
+.dashedButton:focus-visible,
+.dangerButton:focus-visible,
+.dangerSolidButton:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 2px;
+}
+
+/* 主なボタン（「変更を公開する」「公開して最新にする」「追加する」など） */
+.primaryButton {
+  min-height: 36px;
+  padding: 0 14px;
+  background: var(--color-accent);
+  color: var(--pe-on-accent);
+  border: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.primaryButton:disabled {
+  background: var(--pe-disabled-bg);
+  color: var(--pe-disabled-text);
+  cursor: not-allowed;
+}
+
+/* 控えめなボタン（「下書きを保存」） */
+.secondaryButton {
+  min-height: 36px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  font-size: 13px;
+}
+
+.secondaryButton:disabled,
+.ghostButton:disabled,
+.dashedButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 小さな枠のボタン（「やめる」「終了日時を消す」「この海域を外す」） */
+.ghostButton {
+  min-height: 30px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  font-size: 12px;
+}
+
+/* 点線のボタン（「＋ 札を追加」「＋ 特効グループを追加」「＋ E4 を追加」） */
+.dashedButton {
+  min-height: 34px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--pe-link);
+  border: 1px dashed var(--color-border-strong);
+  font-size: 12px;
+}
+
+/* 削除のボタン（「この札を削除」） */
+.dangerButton {
+  min-height: 30px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--pe-danger);
+  border: 1px solid var(--pe-danger-border);
+  font-size: 12px;
+}
+
+.dangerButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 削除を決めるボタン（「削除する」） */
+.dangerSolidButton {
+  min-height: 32px;
+  padding: 0 12px;
+  background: var(--pe-danger-solid);
+  color: var(--pe-on-danger-solid);
+  border: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/*
+ * つながったボタンの並び（「既存を更新／新規作成」の切り替え、大事さ）。
+ * 切り替えはラジオボタン（.segmentItem・.segmentInput・.segmentLabel）、大事さは押した状態を持つボタン（.segmentButton）
+ */
+.segment {
+  display: inline-flex;
+  flex-wrap: wrap;
+}
+
+.segmentItem {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ラジオボタンは見えなくして、上に重ねる（押すとラベルの見た目が変わる） */
+.segmentInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segmentLabel,
+.segmentButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segmentButton {
+  min-height: 32px;
+}
+
+.segmentItem + .segmentItem .segmentLabel,
+.segmentButton + .segmentButton {
+  border-left: 0;
+}
+
+.segmentItem:first-child .segmentLabel,
+.segmentButton:first-child {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.segmentItem:last-child .segmentLabel,
+.segmentButton:last-child {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.segmentInput:checked + .segmentLabel,
+.segmentButton[aria-pressed="true"] {
+  background: var(--color-action);
+  color: var(--color-on-action);
+  font-weight: 700;
+}
+
+/* 大事さの「難所」は管理の橙で選ぶ（モック） */
+.segmentButtonStrong[aria-pressed="true"] {
+  background: var(--color-admin);
+  color: var(--color-on-admin);
+}
+
+.segmentInput:focus-visible + .segmentLabel,
+.segmentButton:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 2px;
+}
+
+.segmentInput:disabled {
+  cursor: not-allowed;
+}
+
+.segmentInput:disabled + .segmentLabel {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
