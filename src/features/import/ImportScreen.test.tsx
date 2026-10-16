@@ -13,6 +13,14 @@
 // - 完了の表示の件数は saveImport の戻り値（実際に外した件数）を使う
 // - 個体 ID がない古い形式は「割り当ては引き継げない」ことを知らせる（U9）
 // - ロック情報がない形式で「ロック済みだけ」を選んだら、効かなかったことを知らせる
+// - 確認の件数は、すべてのイベントの割り当ての合計のまま、「保存しているすべてのイベントの割り当てのうち n 件が外れます」
+//   の趣旨の文で分かるようにする（PR-04b のレビューの提案を受けて）
+//
+// PR-04b のレビュー・Codex の指摘を受けて足したもの
+// - レビュー担当の確認用テスト（P1〜P6。今の実装で通る守りのテスト）
+// - 取り込みの途中で公開定義が読めても、保存の後に札割りのデータを読み直す（Codex の指摘）
+// - 取り込みの処理中と確認の間は、貼り付け欄・取り込む範囲・Lv 下限の欄とボタンを操作できない（Codex の指摘）
+// - 同じ失敗を続けたら警告を作り直す・すぐ選べる Lv の今の値に aria-pressed（レビューの提案）
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import type { ReactNode } from "react";
@@ -22,12 +30,12 @@ import { createShipMaster } from "@/domain/master";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip } from "@/domain/ship/types";
 import { ImportScreen } from "@/features/import/ImportScreen";
-import { resetLatestDefinitionCache, useLatestDefinition } from "@/lib/definition";
+import { LATEST_DEFINITION_PATH, resetLatestDefinitionCache, useLatestDefinition } from "@/lib/definition";
 import { resetPlanDataCache, usePlanData } from "@/lib/plan";
 import { resetShipMasterCache, SHIP_MASTER_PATH, useShipMaster } from "@/lib/ship-master";
-import type { FudawariStorage } from "@/lib/storage";
+import type { FudawariStorage, SaveImportInput, SaveImportResult } from "@/lib/storage";
 import { expectInDocumentOrder } from "@/test/dom-order";
-import { type FetchMock, stubFetch } from "@/test/definition-fetch";
+import { type FetchMock, stubFetch, textResponse } from "@/test/definition-fetch";
 import { summer2026Definition, summer2026MasterEntries } from "@/test/fixtures";
 import {
   compactShip,
@@ -63,6 +71,8 @@ import { respondWithStaticData } from "@/test/static-data-fetch";
 
 /** 最新イベントの ID（"2026-summer"） */
 const EVENT_ID = summer2026Definition.event.id;
+/** 最新でない別のイベントの ID（保存先に割り当てが残っている前のイベント） */
+const OTHER_EVENT_ID = "2026-spring";
 /** テスト用の仮マスタ（保存先に入れる艦を作るときだけ使う。画面は fetch で同じ中身を読む） */
 const TEST_MASTER = createShipMaster(summer2026MasterEntries);
 
@@ -117,10 +127,17 @@ const LOCK_IGNORED_NOTICE = "ロックの情報がない";
 const CONFIRM_BUTTON = "外して取り込む";
 const CANCEL_BUTTON = "やめる";
 
-/** 確認に書く「n件の割り当てが外れます」 */
+/**
+ * 確認に書く「n件が外れます」。
+ * 文は「保存しているすべてのイベントの割り当てのうち n 件が外れます」の趣旨にする（2026-10-17 親の決定）ため、
+ * 前の文（「n件の割り当てが外れます」）と新しい文のどちらでも、件数と「外れます」が続いていればよい
+ */
 function willRemoveText(count: number): RegExp {
-  return new RegExp(`${count}\\s*件の割り当てが外れます`);
+  return new RegExp(`${count}\\s*件(?:の割り当て)?が外れます`);
 }
+
+/** 確認に書く「すべてのイベント」（件数がすべてのイベントの合計であることが分かる語句） */
+const ALL_EVENTS_PHRASE = "すべてのイベント";
 
 /** 完了の表示に書く「n件の割り当てを外しました」 */
 function removedText(count: number): RegExp {
@@ -192,10 +209,13 @@ function LoadStatusProbe(): ReactNode {
   return <p>{`${PROBE_LABEL}マスタ＝${master.status}／札割り＝${plan.status}`}</p>;
 }
 
-/** 読み込みの状態（艦船マスタ・札割りのデータ） */
+/**
+ * 読み込みの状態（艦船マスタ・札割りのデータ）。
+ * 公開定義を読み込めない・読み込み中のときは、札割りのデータは待機中（idle）になる
+ */
 interface ExpectedLoad {
-  master: "success" | "error";
-  plan: "ready" | "error";
+  master: "loading" | "success" | "error";
+  plan: "idle" | "ready" | "error";
 }
 
 /**
@@ -304,6 +324,153 @@ async function expectLastImport(monthDayTime: string, shipCount: number): Promis
   const [monthDay, time] = monthDayTime.split(" ");
   const pattern = new RegExp(`最終取り込み\\s*${monthDay}\\s+${time}\\s*／\\s*${shipCount}\\s*隻`);
   await waitFor(() => expect(lastImportText()).toHaveTextContent(pattern));
+}
+
+/** 止めておいた処理（保存先の操作・公開定義の取得）の続け方 */
+interface HeldCall {
+  /** 止めた処理が呼ばれたら解決する */
+  readonly reached: Promise<void>;
+  /** 止めていた処理を続ける */
+  release(): void;
+  /** 止めていた処理を、本物を呼ばずに失敗させる */
+  fail(error?: unknown): void;
+}
+
+/** release／fail まで待たせる門と、届いたことの知らせを作る */
+function createGate(defaultError: () => unknown): HeldCall & { arrive(): void; gate: Promise<void> } {
+  let arrive: () => void = () => {};
+  const reached = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  let open: () => void = () => {};
+  let reject: (error: unknown) => void = () => {};
+  const gate = new Promise<void>((resolve, rejectGate) => {
+    open = resolve;
+    reject = rejectGate;
+  });
+  // 届く前に fail しても、未処理の失敗として報告しない（届いた呼び出しには失敗が伝わる）
+  gate.catch(() => {});
+  return {
+    reached,
+    arrive: () => arrive(),
+    gate,
+    release: () => open(),
+    fail: (error: unknown = defaultError()) => reject(error),
+  };
+}
+
+/**
+ * このテストの保存先の previewImport・saveImport を、release／fail まで止める（取り込みの処理中の場面を作るため）。
+ * 画面は getPlanStorage()（この保存先を包んだもの。呼ぶたびに中のメソッドを読む）から呼ぶので、vi.spyOn で止められる。
+ * 前の取り込みを保存した後に呼ぶ（止めた後の呼び出しは、すべて同じ門を待つ）
+ */
+function holdStorageCall(method: "previewImport" | "saveImport"): HeldCall {
+  const real: (input: SaveImportInput) => Promise<SaveImportResult> = storage[method].bind(storage);
+  const held = createGate(() => new DOMException("空きが足りません", "QuotaExceededError"));
+  vi.spyOn(storage, method).mockImplementation(async (input: SaveImportInput) => {
+    held.arrive();
+    await held.gate;
+    return real(input);
+  });
+  return held;
+}
+
+/** 公開定義の取得を release まで止める（ほかの静的ファイル〔艦船マスタ〕はすぐに返す） */
+function holdDefinitionFetch(): HeldCall {
+  const held = createGate(() => new TypeError("Failed to fetch"));
+  respondWithStaticData(fetchMock, {
+    [LATEST_DEFINITION_PATH]: async () => {
+      held.arrive();
+      await held.gate;
+      return textResponse(JSON.stringify(summer2026Definition));
+    },
+  });
+  return held;
+}
+
+/**
+ * 取り込みの処理中と確認の間に操作できなくする部品
+ * - "text"：貼り付け欄・Lv 下限の欄（disabled か readOnly）
+ * - "choice"：取り込む範囲の選択肢・Lv 下限のボタン（disabled。readOnly は選択肢・ボタンには効かない）
+ * - "import"：「取り込む」（disabled か aria-disabled="true"。押せない間もフォーカスを残すため aria-disabled を使っている）
+ */
+type LockKind = "text" | "choice" | "import";
+
+interface LockableControl {
+  /** 失敗したときに読める名前 */
+  label: string;
+  element: HTMLElement;
+  kind: LockKind;
+}
+
+/**
+ * 取り込みの処理中と確認の間に操作できなくする部品の一覧。
+ * 確認を開いている間は、後ろの画面が支援技術から隠される（aria-hidden）ため、隠れた部品も探す
+ */
+function lockableControls(): LockableControl[] {
+  const byRole = (role: string, name: string | RegExp): HTMLElement =>
+    screen.getByRole(role, { name, hidden: true });
+  return [
+    { label: "貼り付け欄", element: byRole("textbox", "艦娘の情報を貼り付け"), kind: "text" },
+    { label: "すべての艦娘", element: byRole("radio", /^すべての艦娘/), kind: "choice" },
+    { label: "ロック済みだけ", element: byRole("radio", /^ロック済みだけ/), kind: "choice" },
+    { label: "Lv下限の欄", element: byRole("spinbutton", /Lv\s*下限/), kind: "text" },
+    { label: "Lv下限を下げる", element: byRole("button", /下げる/), kind: "choice" },
+    { label: "Lv下限を上げる", element: byRole("button", /上げる/), kind: "choice" },
+    ...["Lv1", "Lv50", "Lv99", "Lv150"].map(
+      (preset): LockableControl => ({ label: preset, element: byRole("button", preset), kind: "choice" }),
+    ),
+    { label: "取り込む", element: byRole("button", "取り込む"), kind: "import" },
+  ];
+}
+
+/** 部品が disabled か（disabled 属性、または disabled の fieldset の中） */
+function isDisabled(element: HTMLElement): boolean {
+  return element.hasAttribute("disabled") || element.closest("fieldset[disabled]") !== null;
+}
+
+/** 部品を操作できない状態か */
+function isLocked({ element, kind }: LockableControl): boolean {
+  switch (kind) {
+    case "text":
+      return (
+        isDisabled(element) ||
+        ((element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) && element.readOnly)
+      );
+    case "choice":
+      return isDisabled(element);
+    case "import":
+      return isDisabled(element) || element.getAttribute("aria-disabled") === "true";
+  }
+}
+
+/** まだ操作できる部品の名前 */
+function operableControlLabels(): string[] {
+  return lockableControls()
+    .filter((control) => !isLocked(control))
+    .map((control) => control.label);
+}
+
+/** 操作できなくなっている部品の名前 */
+function lockedControlLabels(): string[] {
+  return lockableControls()
+    .filter(isLocked)
+    .map((control) => control.label);
+}
+
+/** すべての部品を操作できなくなるまで待つ（できなければ、まだ操作できる部品の名前を出して失敗する） */
+async function expectControlsLocked(): Promise<void> {
+  await waitFor(() => expect(operableControlLabels()).toEqual([]));
+}
+
+/** すべての部品を操作できるようになるまで待つ（できなければ、操作できない部品の名前を出して失敗する） */
+async function expectControlsOperable(): Promise<void> {
+  await waitFor(() => expect(lockedControlLabels()).toEqual([]));
+}
+
+/** text を含む警告（role="alert"）の一覧 */
+function alertsContaining(text: string): HTMLElement[] {
+  return screen.queryAllByRole("alert").filter((alert) => (alert.textContent ?? "").includes(text));
 }
 
 // ---- テスト ----
@@ -442,6 +609,73 @@ describe("取り込み画面（ImportScreen）", () => {
       // 検証
       expect(lvInput()).toHaveValue(185);
     });
+
+    it("Lv 下限の欄に 200 を打って欄を離れると 185 に、0 を打って欄を離れると 1 に収める（PR-04b のレビューの確認 P5）", async () => {
+      // 準備
+      const user = await renderImportScreen();
+
+      // 実行・検証：200 を打って、貼り付け欄を押して離れる
+      await typeMinLevel(user, 200);
+      await user.click(pasteBox());
+      expect(lvInput()).toHaveValue(185);
+
+      // 実行・検証：0 を打って、Tab で離れる
+      await typeMinLevel(user, 0);
+      await user.tab();
+      expect(lvInput()).toHaveValue(1);
+    });
+  });
+
+  describe("すぐ選べる Lv の押された状態（aria-pressed。PR-04b のレビューの提案）", () => {
+    const PRESETS = ["Lv1", "Lv50", "Lv99", "Lv150"] as const;
+
+    /** すぐ選べる Lv のボタンごとの aria-pressed（属性がなければ null） */
+    function pressedStates(): Record<string, string | null> {
+      return Object.fromEntries(
+        PRESETS.map((preset) => [preset, screen.getByRole("button", { name: preset }).getAttribute("aria-pressed")]),
+      );
+    }
+
+    /**
+     * pressed のボタンだけが aria-pressed="true" で、ほかは "false"
+     * （押して切り替えるボタンであることが支援技術に伝わるよう、押されていないボタンにも "false" を付ける）
+     */
+    function onlyPressed(pressed: (typeof PRESETS)[number] | null): Record<string, string> {
+      return Object.fromEntries(PRESETS.map((preset) => [preset, preset === pressed ? "true" : "false"]));
+    }
+
+    it("最初（Lv 下限 1）は「Lv1」だけが aria-pressed=\"true\" で、ほかは \"false\"", async () => {
+      // 準備・実行
+      await renderImportScreen();
+
+      // 検証
+      expect(pressedStates()).toEqual(onlyPressed("Lv1"));
+    });
+
+    it.each(["Lv50", "Lv99", "Lv150"] as const)(
+      "「%s」を押すと、そのボタンだけが aria-pressed=\"true\" になる",
+      async (preset) => {
+        // 準備
+        const user = await renderImportScreen();
+
+        // 実行
+        await user.click(screen.getByRole("button", { name: preset }));
+
+        // 検証
+        expect(pressedStates()).toEqual(onlyPressed(preset));
+      },
+    );
+
+    it("すぐ選べる値でない Lv（120）を打つと、どのボタンも aria-pressed=\"true\" にならない", async () => {
+      // 準備
+      const user = await renderImportScreen();
+
+      // 実行
+      await typeMinLevel(user, 120);
+
+      // 検証
+      expect(pressedStates()).toEqual(onlyPressed(null));
+    });
   });
 
   describe("取り込みの流れ（貼り付け → 解析 → 保存 → 表示）", () => {
@@ -563,6 +797,116 @@ describe("取り込み画面（ImportScreen）", () => {
       expect(doneLine(region, "艦娘")).toHaveTextContent(/艦娘\s*1\s*隻/);
       expect(region).not.toHaveTextContent("名前が分からない艦");
     });
+
+    it("「取り込む」を同じ描画のうちに 2 回押しても、previewImport・saveImport は 1 回だけ呼ぶ（PR-04b のレビューの確認 P1）", async () => {
+      // 準備
+      const previewImport = vi.spyOn(storage, "previewImport");
+      const saveImport = vi.spyOn(storage, "saveImport");
+      const user = await renderImportScreen();
+      await pasteText(user, standardSvdataText);
+
+      // 実行：次の描画を待たずに 2 回押す
+      act(() => {
+        importButton().click();
+        importButton().click();
+      });
+
+      // 検証
+      await findDoneRegion();
+      expect(previewImport).toHaveBeenCalledTimes(1);
+      expect(saveImport).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("取り込みの途中で公開定義が読めたとき（PR-04b の Codex の指摘）", () => {
+    it("「取り込む」を押した時点で公開定義が読み込み中でも、保存の後に札割りのデータを読み直し、最終取り込みが今回の日時と隻数（10/17 21:40 ／ 3隻）になる", async () => {
+      // 準備：前の取り込み（5 隻、10/15 20:40）を保存し、公開定義の取得と previewImport・saveImport を止めておく
+      await seedPreviousImport();
+      const definitionFetch = holdDefinitionFetch();
+      const previewImport = holdStorageCall("previewImport");
+      const saveImport = holdStorageCall("saveImport");
+      const user = await renderImportScreen({ master: "success", plan: "idle" });
+      await definitionFetch.reached;
+      // 前提：定義の読み込み中は、札割りのデータを読んでいない（最終取り込みを出していない）
+      expect(screen.queryByText(/^最終取り込み/)).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Lv99" }));
+
+      // 実行：定義の読み込み中に取り込み、previewImport を待つ間に定義が読める
+      await pasteAndImport(user, standardSvdataText);
+      await previewImport.reached;
+      definitionFetch.release();
+      expect(
+        await screen.findByText(new RegExp(`${PROBE_LABEL}マスタ＝success／札割り＝(?:loading|ready)`)),
+      ).toBeInTheDocument();
+      previewImport.release();
+      // 札割りのデータは、保存の前の中身（前の取り込み）を読み終える。その後で保存を続ける
+      await expectLastImport("10/15 20:40", 5);
+      await saveImport.reached;
+      saveImport.release();
+
+      // 検証：保存の後に読み直し、今回の取り込みを出す
+      await findDoneRegion();
+      await expectLastImport("10/17 21:40", 3);
+    });
+  });
+
+  describe("取り込みの処理中は、入力を操作できない（PR-04b の Codex の指摘）", () => {
+    it("外れる割り当ての件数を数えている間（previewImport の待ち）は、貼り付け欄・取り込む範囲・Lv 下限の欄とボタンを操作できず、取り込み終えたら操作できる", async () => {
+      // 準備
+      const user = await renderImportScreen();
+      const previewImport = holdStorageCall("previewImport");
+      await pasteText(user, standardSvdataText);
+      await expectControlsOperable();
+
+      // 実行
+      await user.click(importButton());
+      await previewImport.reached;
+
+      // 検証：処理中
+      await expectControlsLocked();
+
+      // 実行・検証：終わった後
+      previewImport.release();
+      await findDoneRegion();
+      await expectControlsOperable();
+    });
+
+    it("保存している間（saveImport の待ち）は、貼り付け欄・取り込む範囲・Lv 下限の欄とボタンを操作できず、取り込み終えたら操作できる", async () => {
+      // 準備
+      const user = await renderImportScreen();
+      const saveImport = holdStorageCall("saveImport");
+      await pasteText(user, standardSvdataText);
+
+      // 実行
+      await user.click(importButton());
+      await saveImport.reached;
+
+      // 検証：処理中
+      await expectControlsLocked();
+
+      // 実行・検証：終わった後
+      saveImport.release();
+      await findDoneRegion();
+      await expectControlsOperable();
+    });
+
+    it("保存に失敗して終わったときも、理由の警告を出した後は操作できる", async () => {
+      // 準備
+      const user = await renderImportScreen();
+      const saveImport = holdStorageCall("saveImport");
+      await pasteText(user, standardSvdataText);
+      await user.click(importButton());
+      await saveImport.reached;
+      await expectControlsLocked();
+
+      // 実行
+      saveImport.fail();
+
+      // 検証
+      await findAlertContaining(SAVE_FAILED_REASON);
+      expectNoDoneRegion();
+      await expectControlsOperable();
+    });
   });
 
   describe("外れる割り当ての確認（2026-10-17 親の決定）", () => {
@@ -683,6 +1027,69 @@ describe("取り込み画面（ImportScreen）", () => {
       expect(region).toHaveTextContent(removedText(2));
       expect(region).toHaveTextContent(NO_UID_NOTICE);
       expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
+    });
+
+    it("確認の「外して取り込む」を同じ描画のうちに 2 回押しても、saveImport は 1 回だけ呼ぶ（PR-04b のレビューの確認 P2）", async () => {
+      // 準備：保存の見張りは、前の取り込みを保存した後に付ける
+      const user = await openWithAssignments();
+      const saveImport = vi.spyOn(storage, "saveImport");
+      const dialog = await importLockedOnly(user);
+      const confirmButton = within(dialog).getByRole("button", { name: CONFIRM_BUTTON });
+
+      // 実行：次の描画を待たずに 2 回押す
+      act(() => {
+        confirmButton.click();
+        confirmButton.click();
+      });
+
+      // 検証
+      await findDoneRegion();
+      expect(saveImport).toHaveBeenCalledTimes(1);
+    });
+
+    it("確認を開くとフォーカスは「やめる」にあり、Esc で閉じると保存せず、フォーカスは「取り込む」に戻る（PR-04b のレビューの確認 P3）", async () => {
+      // 準備：保存の見張りは、前の取り込みを保存した後に付ける
+      const user = await openWithAssignments();
+      const saveImport = vi.spyOn(storage, "saveImport");
+      const dialog = await importLockedOnly(user);
+      await waitFor(() => expect(within(dialog).getByRole("button", { name: CANCEL_BUTTON })).toHaveFocus());
+
+      // 実行
+      await user.keyboard("{Escape}");
+
+      // 検証
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+      expect(saveImport).not.toHaveBeenCalled();
+      await waitFor(() => expect(importButton()).toHaveFocus());
+      expect(importButton()).toHaveAttribute("aria-disabled", "false");
+    });
+
+    it("確認を開いている間は、貼り付け欄・取り込む範囲・Lv 下限の欄とボタンを操作できず、「やめる」で閉じたら操作できる（PR-04b の Codex の指摘）", async () => {
+      // 準備
+      const user = await openWithAssignments();
+      const dialog = await importLockedOnly(user);
+
+      // 検証：確認の間
+      await expectControlsLocked();
+
+      // 実行・検証：「やめる」で閉じた後
+      await user.click(within(dialog).getByRole("button", { name: CANCEL_BUTTON }));
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+      await expectControlsOperable();
+    });
+
+    it("確認の文で、件数が保存しているすべてのイベントの割り当ての合計だと分かる（「すべてのイベント」と、2 つのイベントの合計 3 件。PR-04b のレビューの提案）", async () => {
+      // 準備：最新イベント（103・105 の 2 件が外れる）に加え、別のイベントにも割り当てを保存しておく（103 の 1 件が外れ、101 は残る）
+      await seedPreviousImport(ASSIGNED);
+      await storage.saveAssignments(OTHER_EVENT_ID, { "101": "e1", "103": "e2" });
+      const user = await renderImportScreen();
+
+      // 実行
+      const dialog = await importLockedOnly(user);
+
+      // 検証
+      expect(dialog).toHaveTextContent(ALL_EVENTS_PHRASE);
+      expect(dialog).toHaveTextContent(willRemoveText(3));
     });
   });
 
@@ -898,9 +1305,62 @@ describe("取り込み画面（ImportScreen）", () => {
       await findAlertContaining(EMPTY_MESSAGE);
       expectNoDoneRegion();
     });
+
+    it("同じ失敗を続けて起こしたとき（何も貼り付けずに 2 回押す）も、2 回目に警告を作り直す（読み上げ直されるように。PR-04b のレビューの提案）", async () => {
+      // 準備：1 回目の警告を出しておく
+      const user = await renderImportScreen();
+      await user.click(importButton());
+      const first = await findAlertContaining(EMPTY_MESSAGE);
+
+      // 実行
+      await user.click(importButton());
+
+      // 検証：同じ理由の警告が 1 つだけあり、1 回目の要素とは別のもの（1 回目の要素は外れている）
+      await waitFor(() => {
+        expect(alertsContaining(EMPTY_MESSAGE)).toHaveLength(1);
+        expect(first.isConnected, "1 回目の警告の要素が残っている（作り直していない）").toBe(false);
+      });
+    });
   });
 
-  describe("艦船マスタ・ブラウザ内の保存が使えないとき", () => {
+  describe("艦船マスタ・公開定義・ブラウザ内の保存が使えないとき（読み込み中を含む）", () => {
+    it("艦船マスタの読み込み中は、「取り込む」が aria-disabled=\"true\" で説明「艦船マスタを読み込んでいます」が付き、押しても取り込まず警告も出さない（PR-04b のレビューの確認 P6）", async () => {
+      // 準備：艦船マスタの取得を返さないままにする
+      respondWithStaticData(fetchMock, {
+        [SHIP_MASTER_PATH]: () => new Promise<Response>(() => {}),
+      });
+      const previewImport = vi.spyOn(storage, "previewImport");
+      const user = await renderImportScreen({ master: "loading", plan: "ready" });
+
+      // 検証：押す前
+      expect(importButton()).toHaveAttribute("aria-disabled", "true");
+      expect(importButton()).toHaveAccessibleDescription("艦船マスタを読み込んでいます");
+
+      // 実行
+      await user.click(importButton());
+
+      // 検証：押した後
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(previewImport).not.toHaveBeenCalled();
+      expectNoDoneRegion();
+    });
+
+    it("公開定義を読み込めない（404）ときも、取り込んで保存できる（PR-04b のレビューの確認 P4）", async () => {
+      // 準備：公開定義だけを 404 にし、定義の警告が出るまで待つ
+      respondWithStaticData(fetchMock, {
+        [LATEST_DEFINITION_PATH]: () => new Response("Not Found", { status: 404 }),
+      });
+      const user = await renderImportScreen({ master: "success", plan: "idle" });
+      await findAlertContaining("イベントの定義を読み込めませんでした");
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(doneLine(await findDoneRegion(), "艦娘")).toHaveTextContent(/艦娘\s*5\s*隻/);
+      await waitFor(async () => expect(await storedUids()).toEqual(["101", "102", "103", "104", "105"]));
+    });
+
     it("艦船マスタを読み込めないと、「艦船マスタを読み込めませんでした」と理由（状態コード 404）を警告で出し、取り込んでも保存しない", async () => {
       // 準備：艦船マスタだけを 404 にする
       respondWithStaticData(fetchMock, {

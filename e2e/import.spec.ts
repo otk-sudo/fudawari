@@ -1,10 +1,10 @@
-import { expect, type Locator, type Page, type Request, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Request, test, type WebSocket } from "@playwright/test";
 import { kyouka, svShip, toSvdataText } from "../src/test/fixtures/importSamples";
 
 // 取り込み画面（roadmap T2-4、要件 3.4・5 章・11 章）を、ビルドした静的書き出しで確かめる
 //
 // - 貼り付け → 取り込む → 隻数が表示される（再読み込みしても、ブラウザ内に保存した最終取り込みが出る）
-// - 取り込みの操作の間に、貼り付けた内容を含む通信や、外への送信が起きない（静的ファイルの取得だけ）
+// - 取り込みの操作の間に、貼り付けた内容を含む通信や、外への送信が起きない（静的ファイルの取得だけ。WebSocket も開かない）
 //
 // 艦船マスタはビルドで生成した実データ（public/data/ship-master.json）を使う。
 // マスタの中身（名前が分からない艦の数など）に左右されないよう、隻数だけを確かめる。
@@ -16,9 +16,15 @@ const SHIP_MASTER_PATH = "/data/ship-master.json";
 /** 貼り付けた内容が通信に乗っていないかを調べるための目印（取り込みの解析では使わない項目に入れる） */
 const MARKER = "fudawari-e2e-paste-marker-7f3a9c";
 
+/**
+ * 解析した後も残る値（個体 ID）が通信に乗っていないかを調べるための目印。
+ * 個体 ID は解析した艦に残り、ブラウザ内に保存される。ほかの URL（ファイル名の hash など）に偶然現れない、珍しい値にする
+ */
+const RARE_UID = 987654321;
+
 /** 貼り付ける内容（svdata 形式の 3 隻。すべての艦娘・Lv1 以上なら 3 隻を取り込む） */
 const PASTED_TEXT = toSvdataText([
-  svShip({ api_id: 9001, api_ship_id: 961, api_lv: 175, api_kyouka: kyouka(39), api_locked: 1, api_memo: MARKER }),
+  svShip({ api_id: RARE_UID, api_ship_id: 961, api_lv: 175, api_kyouka: kyouka(39), api_locked: 1, api_memo: MARKER }),
   svShip({ api_id: 9002, api_ship_id: 145, api_lv: 99, api_kyouka: kyouka(7), api_sally_area: 3, api_locked: 1 }),
   svShip({ api_id: 9003, api_ship_id: 656, api_lv: 168, api_kyouka: kyouka(20), api_locked: 0 }),
 ]);
@@ -86,10 +92,13 @@ test.describe("取り込み画面", () => {
     await expect(page.getByText(/最終取り込み.*3\s*隻/)).toBeVisible();
   });
 
-  test("取り込みの操作の間に、貼り付けた内容を含む通信や外への送信は起きない（同じサイトの静的ファイルの取得だけ）", async ({
+  test("取り込みの操作の間に、貼り付けた内容を含む通信や外への送信は起きない（同じサイトの静的ファイルの取得だけ。WebSocket も開かない）", async ({
     page,
     baseURL,
   }) => {
+    // 準備：画面を開く前から、ページが開く WebSocket をすべて記録する（開いた時点で数えるため、早めに張る）
+    const sockets: WebSocket[] = [];
+    page.on("websocket", (socket) => sockets.push(socket));
     // 準備：画面を開いた後から、ページが出すリクエストをすべて記録する
     await openImportScreen(page);
     const requests: Request[] = [];
@@ -105,6 +114,14 @@ test.describe("取り込み画面", () => {
       (request) => request.url().includes(MARKER) || (request.postData() ?? "").includes(MARKER),
     );
     expect(leaking.map(describeRequest)).toEqual([]);
+    // 検証：解析した後も残る値（珍しい個体 ID）を URL にも本文にも含むリクエストがない
+    const leakingParsed = requests.filter(
+      (request) =>
+        request.url().includes(String(RARE_UID)) || (request.postData() ?? "").includes(String(RARE_UID)),
+    );
+    expect(leakingParsed.map(describeRequest)).toEqual([]);
+    // 検証：画面を開いてから取り込み終えるまでに、WebSocket を 1 つも開いていない
+    expect(sockets.map((socket) => socket.url())).toEqual([]);
     // 検証：取得（GET）以外のリクエスト（POST・sendBeacon など、何かを送るもの）がない。
     // HEAD は本文を持たず何も送れない。Next の静的書き出しでは、左メニューのリンクの先読みが行き先へ HEAD を送るため数えない
     // （URL に目印を含まないことは上で確かめている）
