@@ -13,7 +13,7 @@ import styles from "./HomeScreen.module.css";
 export type HomeScreenProps = {
   /**
    * 開催中のイベント名（例 "2026夏イベ"）。開催中のイベントがなければ null。
-   * PR-03 では仮の値を渡す。T2-3（公開定義の読み込み）で本物につなぐ
+   * ホームの画面（src/app/page.tsx）が、公開定義の読み込み（src/lib/definition）と開催中の判定から渡す
    */
   runningEventName: string | null;
 };

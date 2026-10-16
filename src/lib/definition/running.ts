@@ -1,6 +1,4 @@
 // 「開催中」の判定（要件 3.1 のホームの「開催中：〇〇」）
-//
-// TODO(T2-3 実装担当)：中身はまだない（テストを先に書いた段階。running.test.ts を参照）
 import type { EventInfo } from "@/domain/definition";
 
 /**
@@ -13,7 +11,11 @@ export function isEventRunning(
   event: Pick<EventInfo, "startAt" | "endAt">,
   now: Date,
 ): boolean {
-  void event;
-  void now;
-  throw new Error("未実装");
+  // 時差つきの日時を瞬間（ミリ秒）にして比べる。秒を省いた形（"2026-08-07T12:00+09:00"）も Date.parse で読める。
+  // 読めない値（NaN）とはどう比べても false になるため、開催中ではないとみなす
+  const nowTime = now.getTime();
+  const startTime = Date.parse(event.startAt);
+  if (!(startTime <= nowTime)) return false;
+  if (event.endAt === null) return true;
+  return nowTime < Date.parse(event.endAt);
 }

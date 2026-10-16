@@ -20,3 +20,16 @@
   font-size: 12px;
   color: var(--color-text-muted);
 }
+
+/*
+ * 最新イベント名（モックの画面名の右の札型の表示）。
+ * モックの札型の下地の色に当たる CSS 変数がまだないため、下地はヘッダー帯と同じにして、枠で札の形を見せる
+ */
+.eventName {
+  padding: 2px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
