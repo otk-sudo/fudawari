@@ -9,8 +9,10 @@
 //   自分に落としても変わらない。ドラッグを始めると選択が外れる。
 // - 元に戻す：割り当ての変更だけが対象（選択・開閉は対象外）。20 手まで。
 // - 保存：割り当てが変わるたびに、外から渡した保存の関数（src/lib/storage の saveAssignments と同じ形）を呼ぶ。
+//   保存の結果は待たずに画面の操作を続け、失敗したら saveError に理由を入れる（次の保存が成功したら null に戻す）。
 //
-// 【未実装】T2-5 の実装担当が中身を書く。いまは型を通すための空の入れ物（操作しても何も変わらない）
+// 割り当てが変わらない操作（今の札へ落とす、控えどうしを重ねるなど）は、保存も「元に戻す」の対象にもしない。
+// 定義から消えた札の割り当ては、ストアを作る前に控えに戻しておく（U17。保存の returnOrphanedAssignments）。
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { ShipUid } from "@/domain/ship/types";
@@ -41,6 +43,11 @@ export interface AssignState {
   readonly openUids: readonly ShipUid[];
   /** 「元に戻す」を押せるか（戻せる変更が 1 つ以上ある） */
   readonly canUndo: boolean;
+  /**
+   * 最後の保存が失敗したときの理由の文（保存の関数が投げたエラーのメッセージ）。初めと、保存に成功した後は null。
+   * 画面は「保存できませんでした」などの文を添えて知らせる
+   */
+  readonly saveError: string | null;
 
   /** 艦（カード）を押す。選んでいなければ選んで開く。選んでいる艦なら選択を外して閉じる */
   pressShip(uid: ShipUid): void;
@@ -65,22 +72,121 @@ export interface AssignState {
 /** 割り振りのストア（zustand の vanilla ストア） */
 export type AssignStore = StoreApi<AssignState>;
 
+/** 個体の札の変更（札 ID。undefined は控えに戻す） */
+type Reassignment = readonly [uid: ShipUid, fudaId: string | undefined];
+
+/** 保存の失敗の理由が分からないときの文 */
+const UNKNOWN_SAVE_ERROR = "原因の分からないエラー";
+
+/** 個体の今の札（控えなら undefined）。自分自身のキーだけを見る（Object.prototype の項目を拾わない） */
+function fudaOf(assignments: AssignmentMap, uid: ShipUid): string | undefined {
+  return Object.hasOwn(assignments, uid) ? assignments[uid] : undefined;
+}
+
+/** 札を変えた新しい割り当てを作る。控えに戻す個体はキーを消す。渡した割り当ては書き換えない */
+function applyReassignments(assignments: AssignmentMap, changes: readonly Reassignment[]): AssignmentMap {
+  const next: Partial<Record<ShipUid, string>> = { ...assignments };
+  for (const [uid, fudaId] of changes) {
+    if (fudaId === undefined) {
+      delete next[uid];
+    } else {
+      next[uid] = fudaId;
+    }
+  }
+  return next;
+}
+
+/** 保存の関数が投げたものから、失敗の理由の文を取り出す */
+function describeSaveError(error: unknown): string {
+  if (error instanceof Error && error.message !== "") return error.message;
+  if (typeof error === "string" && error !== "") return error;
+  return UNKNOWN_SAVE_ERROR;
+}
+
 /** 割り振りのストアを作る。割り振り画面を開くたびに作る */
 export function createAssignStore(options: AssignStoreOptions): AssignStore {
-  // 【未実装】空の入れ物：初めの割り当てを持つだけで、操作しても何も変わらない
-  return createStore<AssignState>()(() => ({
-    assignments: options.assignments,
-    selectedUid: null,
-    openUids: [],
-    canUndo: false,
-    pressShip: () => {},
-    clearSelection: () => {},
-    closeAll: () => {},
-    placeSelected: () => {},
-    startDrag: () => {},
-    dropOnFuda: () => {},
-    dropOnShip: () => {},
-    dropOnTray: () => {},
-    undo: () => {},
-  }));
+  const { eventId, save } = options;
+
+  return createStore<AssignState>()((set, get) => {
+    /** 戻せる割り当て（古い順。UNDO_LIMIT 個まで）。ストアごとに持ち、画面を移ると一緒に消える */
+    let past: AssignmentMap[] = [];
+    /** 保存を頼んだ回数（最後に頼んだ保存の結果だけを saveError に映すための番号） */
+    let saveRequest = 0;
+
+    /** 割り当てを保存する。結果は待たず、失敗は saveError に入れる（Promise の拒否を外に漏らさない） */
+    const persist = (assignments: AssignmentMap): void => {
+      saveRequest += 1;
+      const request = saveRequest;
+      const settle = (saveError: string | null): void => {
+        // 後から頼んだ保存があれば、その結果に任せる（割り当ては丸ごと置き換えて保存するので、最後の保存の結果が今の状態）
+        if (request === saveRequest) set({ saveError });
+      };
+      try {
+        save(eventId, assignments).then(
+          () => settle(null),
+          (error: unknown) => settle(describeSaveError(error)),
+        );
+      } catch (error) {
+        // 保存の関数がその場で例外を投げても、画面の操作は止めずに保存の失敗として扱う
+        settle(describeSaveError(error));
+      }
+    };
+
+    /** 札を変える。1 隻も変わらなければ何もしない。変わったら前の割り当てを履歴に積んで保存する */
+    const reassign = (changes: readonly Reassignment[]): void => {
+      const current = get().assignments;
+      if (changes.every(([uid, fudaId]) => fudaOf(current, uid) === fudaId)) return;
+      const next = applyReassignments(current, changes);
+      past = [...past, current].slice(-UNDO_LIMIT);
+      set({ assignments: next, canUndo: true });
+      persist(next);
+    };
+
+    return {
+      assignments: options.assignments,
+      selectedUid: null,
+      openUids: [],
+      canUndo: false,
+      saveError: null,
+
+      pressShip: (uid) => {
+        const { selectedUid, openUids } = get();
+        if (selectedUid === uid) {
+          set({ selectedUid: null, openUids: openUids.filter((open) => open !== uid) });
+        } else {
+          // ほかの開いた艦は閉じない
+          set({ selectedUid: uid, openUids: openUids.includes(uid) ? openUids : [...openUids, uid] });
+        }
+      },
+      clearSelection: () => set({ selectedUid: null }),
+      closeAll: () => set({ selectedUid: null, openUids: [] }),
+      placeSelected: (fudaId) => {
+        const { selectedUid } = get();
+        if (selectedUid === null) return;
+        reassign([[selectedUid, fudaId]]);
+        // 開いたカードは開いたまま（モック Assign.dc.html の placeTo どおり）
+        set({ selectedUid: null });
+      },
+      // ドラッグ中の艦は画面（dnd-kit）が持つ。ストアは選択を外すだけ
+      startDrag: () => set({ selectedUid: null }),
+      dropOnFuda: (uid, fudaId) => reassign([[uid, fudaId]]),
+      dropOnShip: (uid, targetUid) => {
+        if (uid === targetUid) return;
+        const { assignments } = get();
+        // 控えどうし・同じ札どうしなら札は変わらない（reassign が何もしない）
+        reassign([
+          [uid, fudaOf(assignments, targetUid)],
+          [targetUid, fudaOf(assignments, uid)],
+        ]);
+      },
+      dropOnTray: (uid) => reassign([[uid, undefined]]),
+      undo: () => {
+        const previous = past.at(-1);
+        if (previous === undefined) return;
+        past = past.slice(0, -1);
+        set({ assignments: previous, canUndo: past.length > 0 });
+        persist(previous);
+      },
+    };
+  });
 }
