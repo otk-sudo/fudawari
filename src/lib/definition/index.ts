@@ -4,9 +4,11 @@ export {
   loadLatestDefinition,
 } from "./load";
 export type { DefinitionLoadError, DefinitionLoadResult } from "./load";
-export { isEventRunning } from "./running";
+export { eventPhase, isEventRunning, nextEventBoundary } from "./running";
+export type { EventPhase } from "./running";
 export {
   resetLatestDefinitionCache,
   useLatestDefinition,
 } from "./useLatestDefinition";
 export type { LatestDefinitionState } from "./useLatestDefinition";
+export { useEventClock } from "./useEventClock";

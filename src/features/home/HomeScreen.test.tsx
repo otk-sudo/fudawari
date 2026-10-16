@@ -9,10 +9,18 @@ import { expectInDocumentOrder } from "@/test/dom-order";
 
 const RUNNING_EVENT = "2026夏イベ";
 
-// 権限と開催中のイベントを決めてホームを描く
+// 権限と開催中のイベントを決めてホームを描く（開催中のイベントがない〔null〕ときは、最新のイベントは終了したものとして描く）
 function renderHome(role: Role, runningEventName: string | null): void {
   setRole(role);
-  render(<HomeScreen runningEventName={runningEventName} />);
+  render(
+    <HomeScreen
+      latestEvent={
+        runningEventName === null
+          ? { status: "ended" }
+          : { status: "running", eventName: runningEventName }
+      }
+    />,
+  );
 }
 
 // タイルの名前は「タイトル＋説明」になることがあるため、タイトルの前方一致で探す
@@ -115,7 +123,7 @@ describe("ホーム（HomeScreen）", () => {
       setRole("user");
       render(
         <>
-          <HomeScreen runningEventName={null} />
+          <HomeScreen latestEvent={{ status: "ended" }} />
           <SettingsDialog />
         </>,
       );

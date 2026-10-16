@@ -1,4 +1,4 @@
-/* 公開定義を読み込めなかったときの理由（ヘッダー帯の下） */
+/* 公開定義を読み込めなかったときの警告（ヘッダー帯の下） */
 
 .body {
   padding: 12px 14px 0;
@@ -21,13 +21,18 @@
   color: var(--color-text);
 }
 
-.alertTitle {
+.title {
   margin: 0;
   font-weight: 700;
 }
 
-.alertReason {
+.reason {
   margin: 0;
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
+}
+
+/* 次の行動（再読み込み） */
+.advice {
+  margin: 0;
 }
