@@ -7,9 +7,10 @@ import type { ImportFilter } from "@/domain/import/types";
 import { returnOrphanedAssignments as returnOrphaned } from "@/domain/plan/orphan";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip, ShipUid } from "@/domain/ship/types";
-import { DEFAULT_THEME_MODE, type ThemeMode } from "@/features/theme";
+// 画面モードは型と初期値だけのファイルから読む（入口 @/features/theme は React の部品や zustand も読み込むため）
+import { DEFAULT_THEME_MODE, type ThemeMode } from "@/features/theme/theme-mode-base";
 import { STORAGE_SCHEMA_VERSIONS, STORAGE_TABLES, type StorageSchemaVersion } from "./schema";
-import type { FontSize, FudawariStorage, ImportRecord, Settings, TraySort, TrayView } from "./types";
+import type { FontSize, FudawariStorage, ImportRecord, SaveImportInput, Settings, TraySort, TrayView } from "./types";
 
 /** 既定の DB 名 */
 export const DEFAULT_STORAGE_NAME = "fudawari";
@@ -95,19 +96,38 @@ function copyAssignments(assignments: AssignmentMap | undefined): Record<ShipUid
   return result;
 }
 
-/** 割り当てから、残す個体の一覧にない個体を外す。外した個体がなければ null */
-function keepOnlyShips(
-  assignments: AssignmentMap,
-  uids: ReadonlySet<ShipUid>,
-): Record<ShipUid, string> | null {
-  const kept: Record<ShipUid, string> = {};
-  let removed = false;
-  for (const [uid, fudaId] of Object.entries(assignments)) {
-    if (typeof fudaId !== "string") continue;
-    if (uids.has(uid)) kept[uid] = fudaId;
-    else removed = true;
+/** 取り込みで割り当てを外した結果（previewImport・saveImport で共通に使う） */
+interface AssignmentRemoval {
+  /** 外れる割り当ての件数（すべてのイベントの「個体 ID → 札 ID」の組の数の合計） */
+  removedCount: number;
+  /** 外した後の行（外れる割り当てがあったイベントの行だけ） */
+  changedRows: AssignmentRow[];
+}
+
+/**
+ * すべてのイベントの割り当てから、残す個体の一覧にない個体の割り当てを外す（DB には書かない）。
+ * 外す規則（どの個体を残すか）は keepUidsOf で決める
+ */
+function removeAssignmentsOfMissingShips(
+  rows: readonly AssignmentRow[],
+  keepUids: ReadonlySet<ShipUid>,
+): AssignmentRemoval {
+  let removedCount = 0;
+  const changedRows: AssignmentRow[] = [];
+  for (const row of rows) {
+    const kept: Record<ShipUid, string> = {};
+    let removedInRow = 0;
+    for (const [uid, fudaId] of Object.entries(row.assignments)) {
+      if (typeof fudaId !== "string") continue;
+      if (keepUids.has(uid)) kept[uid] = fudaId;
+      else removedInRow += 1;
+    }
+    if (removedInRow > 0) {
+      removedCount += removedInRow;
+      changedRows.push({ eventId: row.eventId, assignments: kept });
+    }
   }
-  return removed ? kept : null;
+  return { removedCount, changedRows };
 }
 
 // ---- 個体 ----
@@ -126,8 +146,22 @@ function uniqueShips(ships: readonly OwnedShip[]): OwnedShip[] {
   return [...byUid.values()];
 }
 
+/**
+ * 取り込みの後も割り当てを残す個体 ID（saveImport・previewImport で共通の規則）
+ * - 個体 ID がある形式：今回の取り込みにいる個体（同じ個体 ID は先の個体だけを保存するので、それにそろえる）
+ * - 個体 ID がない古い形式：どの個体が同じ艦か分からないため、残さない（すべての割り当てを外す。U9）
+ */
+function keepUidsOf(input: SaveImportInput, newShips: readonly OwnedShip[]): ReadonlySet<ShipUid> {
+  return input.hasUid ? new Set(newShips.map((ship) => ship.uid)) : new Set();
+}
+
 function copyFilter(filter: ImportFilter): ImportFilter {
   return { lockedOnly: filter.lockedOnly, minLevel: filter.minLevel };
+}
+
+/** 実際に効いた取り込みの条件（ロックの情報がない形式では「ロック済みだけ」が効かないため lockedOnly: false） */
+function effectiveFilter(input: SaveImportInput): ImportFilter {
+  return { lockedOnly: input.filter.lockedOnly && input.hasLockInfo, minLevel: input.filter.minLevel };
 }
 
 /** ブラウザ内の保存を開く（DB への接続は最初の読み書きのときに行う） */
@@ -151,31 +185,35 @@ export function openStorage(options: OpenStorageOptions = {}): FudawariStorage {
   return {
     async saveImport(input) {
       const newShips = uniqueShips(input.ships);
-      const keepUids = new Set(newShips.map((ship) => ship.uid));
-      await db.transaction("rw", [ships, importRecords, assignments], async () => {
+      const keepUids = keepUidsOf(input, newShips);
+      return db.transaction("rw", [ships, importRecords, assignments], async () => {
         await ships.clear();
         await ships.bulkPut(newShips);
         await importRecords.put({
           id: LAST_IMPORT_ID,
           importedAt: input.importedAt,
-          filter: copyFilter(input.filter),
+          filter: effectiveFilter(input),
           shipCount: newShips.length,
           hasUid: input.hasUid,
         });
 
+        // 外す件数は previewImport と同じ関数で数える（確認で知らせた件数と、実際に外した件数をそろえる）
+        const removal = removeAssignmentsOfMissingShips(await assignments.toArray(), keepUids);
         if (!input.hasUid) {
           // 個体 ID がない古い形式：どの個体が同じ艦か分からないため、すべてのイベントの割り当てを消す（U9）
           await assignments.clear();
-          return;
+        } else if (removal.changedRows.length > 0) {
+          // 個体 ID がある形式：今回の取り込みにいない個体の割り当てを、すべてのイベントで外す
+          await assignments.bulkPut(removal.changedRows);
         }
-        // 個体 ID がある形式：今回の取り込みにいない個体の割り当てを、すべてのイベントで外す
-        const changed: AssignmentRow[] = [];
-        for (const row of await assignments.toArray()) {
-          const kept = keepOnlyShips(row.assignments, keepUids);
-          if (kept !== null) changed.push({ eventId: row.eventId, assignments: kept });
-        }
-        if (changed.length > 0) await assignments.bulkPut(changed);
+        return { removedAssignmentCount: removal.removedCount };
       });
+    },
+
+    async previewImport(input) {
+      const keepUids = keepUidsOf(input, uniqueShips(input.ships));
+      const removal = removeAssignmentsOfMissingShips(await assignments.toArray(), keepUids);
+      return { removedAssignmentCount: removal.removedCount };
     },
 
     async loadShips() {

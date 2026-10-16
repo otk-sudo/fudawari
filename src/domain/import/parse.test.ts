@@ -91,12 +91,34 @@ describe("parseImportText：svdata= 形式", () => {
     expect(uidsOf(result.ships)).toEqual(["101", "102"]);
   });
 
-  it("条件に合う艦が 1 隻もなければ、成功として 0 隻を返す", () => {
-    const result = expectSuccess(parseImportText(standardSvdataText, master, { lockedOnly: false, minLevel: 185 }));
+  // 仕様の変更（PR-04a のレビュー対応、2026-10-17 親が決定）：以前は「成功として 0 隻を返す」だった。
+  // 0 隻の取り込みを保存すると、割り当てが知らせずに全部外れるため、失敗（noShips）にする
+  it("条件に合う艦が 1 隻もなければ、失敗（理由 noShips）を返す", () => {
+    const result = parseImportText(standardSvdataText, master, { lockedOnly: false, minLevel: 185 });
 
-    expect(result.ships).toEqual([]);
-    expect(result.unknownShipCount).toBe(0);
-    expect(result.taggedShipCount).toBe(0);
+    expect(result).toEqual({ ok: false, reason: "noShips" });
+  });
+
+  it("Lv 下限で 1 隻だけ残るなら成功（0 隻との境界）", () => {
+    // 101 だけが Lv 175
+    const result = expectSuccess(parseImportText(standardSvdataText, master, { lockedOnly: false, minLevel: 175 }));
+
+    expect(uidsOf(result.ships)).toEqual(["101"]);
+  });
+
+  it("同じ個体 ID（api_id）の要素が 2 つあれば、先の要素を使う", () => {
+    const text = toSvdataText([
+      svShip({ api_id: 5, api_ship_id: 145, api_lv: 80 }),
+      svShip({ api_id: 6, api_ship_id: 961, api_lv: 90 }),
+      svShip({ api_id: 5, api_ship_id: 961, api_lv: 120 }), // 個体 ID 5 の 2 つ目 → 使わない
+    ]);
+
+    const result = expectSuccess(parseImportText(text, master, ALL));
+
+    expect(result.ships.map(({ uid, shipId, level }) => ({ uid, shipId, level }))).toEqual([
+      { uid: "5", shipId: 145, level: 80 },
+      { uid: "6", shipId: 961, level: 90 },
+    ]);
   });
 
   it("api_ship_id が 0・欠けている要素と、オブジェクトでない要素は飛ばす", () => {
@@ -204,6 +226,19 @@ describe("parseImportText：短縮形式（新しい形式。ship_id あり）",
     expect(result.ships).toEqual([{ uid: "9", shipId: 145, level: 1, luck: 15, sallyArea: 0 }]);
   });
 
+  it("同じ個体 ID（id）の要素が 2 つあれば、先の要素を使う", () => {
+    const text = toCompactText([
+      compactShip({ id: 8, ship_id: 961, lv: 150 }),
+      compactShip({ id: 8, ship_id: 145, lv: 60 }), // 個体 ID 8 の 2 つ目 → 使わない
+    ]);
+
+    const result = expectSuccess(parseImportText(text, master, ALL));
+
+    expect(result.ships.map(({ uid, shipId, level }) => ({ uid, shipId, level }))).toEqual([
+      { uid: "8", shipId: 961, level: 150 },
+    ]);
+  });
+
   it("st がない艦の運は運の初期値のまま、area が null・false の艦の札は 0", () => {
     const text = toCompactText([
       compactShip({ id: 1, ship_id: 145, lv: 80, st: undefined, area: null }),
@@ -253,6 +288,56 @@ describe("parseImportText：古い短縮形式（ship_id なし。個体 ID な�
   });
 });
 
+describe("parseImportText：取り込む艦が 0 隻（理由 noShips。保存すると割り当てが知らせずに全部外れるため失敗にする）", () => {
+  it("svdata 形式で「ロック済みだけ」を選び、ロック済みの艦が 1 隻もなければ noShips", () => {
+    const text = toSvdataText([
+      svShip({ api_id: 1, api_ship_id: 145, api_lv: 80, api_locked: 0 }),
+      svShip({ api_id: 2, api_ship_id: 961, api_lv: 90, api_locked: 0 }),
+    ]);
+
+    const result = parseImportText(text, master, { lockedOnly: true, minLevel: 1 });
+
+    expect(result).toEqual({ ok: false, reason: "noShips" });
+  });
+
+  it("svdata 形式で api_ship が空の配列なら noShips（形は正しいので unexpectedShape ではない）", () => {
+    const result = parseImportText(toSvdataText([]), master, ALL);
+
+    expect(result).toEqual({ ok: false, reason: "noShips" });
+  });
+
+  it("svdata 形式で、読める要素が 1 つもない（艦の ID が 0・オブジェクトでない）なら noShips", () => {
+    const text = toSvdataText([svShip({ api_id: 1, api_ship_id: 0, api_lv: 50 }), null, "時雨"]);
+
+    const result = parseImportText(text, master, ALL);
+
+    expect(result).toEqual({ ok: false, reason: "noShips" });
+  });
+
+  it("短縮形式（新しい形式）で Lv 下限を満たす艦が 1 隻もなければ noShips", () => {
+    const result = parseImportText(standardCompactText, master, { lockedOnly: false, minLevel: 185 });
+
+    expect(result).toEqual({ ok: false, reason: "noShips" });
+  });
+
+  it("短縮形式（新しい形式）で、ship_id が読める要素が 1 つもなければ noShips", () => {
+    // ship_id を持つ要素があるので新しい形式として読むが、どれも艦の ID が 0
+    const text = toCompactText([compactShip({ id: 1, ship_id: 0, lv: 50 }), compactShip({ id: 2, ship_id: 0, lv: 60 })]);
+
+    const result = parseImportText(text, master, ALL);
+
+    expect(result).toEqual({ ok: false, reason: "noShips" });
+  });
+
+  it("古い短縮形式で Lv 下限を満たす艦が 1 隻もなければ noShips", () => {
+    const text = toCompactText([compactShip({ id: 961, lv: 175 }), compactShip({ id: 145, lv: 98 })]);
+
+    const result = parseImportText(text, master, { lockedOnly: false, minLevel: 176 });
+
+    expect(result).toEqual({ ok: false, reason: "noShips" });
+  });
+});
+
 describe("parseImportText：艦船マスタにない艦（名前が分からない艦）", () => {
   it("運は近代化改修の運だけで求め、名前が分からない艦として数える（取り込みは続ける）", () => {
     const text = toCompactText([
@@ -280,9 +365,18 @@ describe("parseImportText：壊れた入力（例外を投げず、理由を返�
     ["途中で切れた JSON 配列", "invalidJson", '[{"id":1,"ship_id":145'],
     ["svdata= の後ろが空", "invalidJson", "svdata="],
     ["svdata= の後ろが壊れた JSON", "invalidJson", 'svdata={"api_data":'],
+    // 数字だけの文字列（123）は JSON の数として読めるため、invalidJson ではなく unexpectedShape
     ["数", "unexpectedShape", "123"],
+    ["前後に空白がある数", "unexpectedShape", "  123\n"],
+    ["数字だけの JSON の文字列", "unexpectedShape", '"123"'],
+    ["svdata= の後ろが数", "unexpectedShape", "svdata=123"],
     ["null", "unexpectedShape", "null"],
     ["文字列", "unexpectedShape", '"時雨"'],
+    // 空の配列は、関係のない JSON 配列と見分けられないため、noShips ではなく unexpectedShape のまま
+    // （svdata の api_ship: [] は形が正しいので noShips）
+    ["空の配列", "unexpectedShape", "[]"],
+    ["艦を表すオブジェクト（id・ship_id を持つ）がない配列", "unexpectedShape", '[{"foo":1}]'],
+    ["オブジェクトでない要素だけの配列", "unexpectedShape", '[1,"x",null]'],
     ["svdata= のない API 応答のオブジェクト", "unexpectedShape", '{"api_data":{"api_ship":[]}}'],
     ["svdata= の後ろに api_data がない", "unexpectedShape", 'svdata={"api_result":1}'],
     ["svdata= の後ろに api_ship がない", "unexpectedShape", 'svdata={"api_result":1,"api_data":{}}'],

@@ -23,7 +23,8 @@ async function main(): Promise<void> {
   }
 
   const result = await generateShipMaster({
-    fetch: (url) => fetch(url),
+    // 応答が返らないまま止まらないよう、1 回の取得は 30 秒で打ち切る（打ち切りは通信の失敗として再試行される）
+    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(30_000) }),
     writeFile: async (path, content) => {
       const absolute = resolve(process.cwd(), path);
       await mkdir(dirname(absolute), { recursive: true });

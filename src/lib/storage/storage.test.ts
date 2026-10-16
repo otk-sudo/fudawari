@@ -62,6 +62,7 @@ const firstImport: SaveImportInput = {
   importedAt: "2026-10-15T20:40:00.000+09:00",
   filter: { lockedOnly: true, minLevel: 50 },
   hasUid: true,
+  hasLockInfo: true,
 };
 
 /** 2 回目の取り込み（個体 ID あり。101 は Lv が上がった。103 はいなくなり、104 が増えた） */
@@ -70,6 +71,7 @@ const secondImport: SaveImportInput = {
   importedAt: "2026-10-16T21:00:00.000+09:00",
   filter: ALL,
   hasUid: true,
+  hasLockInfo: true,
 };
 
 /** 並び順に左右されないよう、個体 ID の順に並べる */
@@ -117,6 +119,19 @@ describe("ブラウザ内の保存：取り込んだ個体と取り込みの情�
       importedAt: "2026-10-16T21:00:00.000+09:00",
       shipCount: 3,
     });
+  });
+
+  it("「ロック済みだけ」を指定しても、ロックの情報がない形式なら、最終取り込みの条件は lockedOnly: false で記録する（実際に効いた条件）", async () => {
+    // 準備
+    const name = newDbName();
+    const storage = open(name);
+
+    // 実行：短縮形式（ロックの情報なし）を「ロック済みだけ」・Lv 50 以上で取り込んだ
+    await storage.saveImport({ ...secondImport, filter: { lockedOnly: true, minLevel: 50 }, hasLockInfo: false });
+    const reopened = reopen(storage, name);
+
+    // 検証：Lv 下限は効いたのでそのまま、「ロック済みだけ」は効かなかったので false
+    expect((await reopened.loadLastImport())?.filter).toEqual({ lockedOnly: false, minLevel: 50 });
   });
 
   it("0 隻の取り込みも保存でき、最終取り込みの隻数は 0 になる", async () => {
@@ -205,7 +220,7 @@ describe("ブラウザ内の保存：割り当て（イベントごと。U17）"
 
     // 実行：古い形式の取り込み（個体 ID は取り込み時に振った連番。前の個体 ID と同じ値になっていても別の艦かもしれない）
     const legacyShips = [ship("1", 419, 131, 48), ship("2", 543, 152, 31), ship("3", 145, 60, 15)];
-    await storage.saveImport({ ships: legacyShips, importedAt: "2026-10-16T22:00:00.000+09:00", filter: ALL, hasUid: false });
+    await storage.saveImport({ ships: legacyShips, importedAt: "2026-10-16T22:00:00.000+09:00", filter: ALL, hasUid: false, hasLockInfo: false });
     const reopened = reopen(storage, name);
 
     // 検証：取り込んだ艦はどのイベントでも控えから始まる
@@ -221,11 +236,11 @@ describe("ブラウザ内の保存：割り当て（イベントごと。U17）"
   it("古い形式で 2 回続けて取り込んでも、1 回目のあとに付けた割り当ては 2 回目の艦に引き継がない", async () => {
     const storage = open(newDbName());
     const legacy1 = [ship("1", 961, 175, 59), ship("2", 145, 98, 22)];
-    await storage.saveImport({ ships: legacy1, importedAt: "2026-10-16T22:00:00.000+09:00", filter: ALL, hasUid: false });
+    await storage.saveImport({ ships: legacy1, importedAt: "2026-10-16T22:00:00.000+09:00", filter: ALL, hasUid: false, hasLockInfo: false });
     await storage.saveAssignments("summer2026", { "1": "rengo", "2": "s31" });
 
     const legacy2 = [ship("1", 145, 98, 22), ship("2", 961, 175, 59)];
-    await storage.saveImport({ ships: legacy2, importedAt: "2026-10-16T23:00:00.000+09:00", filter: ALL, hasUid: false });
+    await storage.saveImport({ ships: legacy2, importedAt: "2026-10-16T23:00:00.000+09:00", filter: ALL, hasUid: false, hasLockInfo: false });
 
     const assignments = await storage.loadAssignments("summer2026");
     expect(assignments["1"]).toBeUndefined();
@@ -257,6 +272,161 @@ describe("ブラウザ内の保存：割り当て（イベントごと。U17）"
 
     expect(result).toEqual({ assignments: { "101": "rengo" }, returnedCount: 0 });
     expect(await storage.loadAssignments("summer2026")).toEqual({ "101": "rengo" });
+  });
+});
+
+describe("ブラウザ内の保存：取り込みで外れる割り当て（件数を保存の前に知らせる）", () => {
+  /** 1 回目：101・102・103 を取り込む（個体 ID あり） */
+  const threeShips: SaveImportInput = {
+    ships: [ship("101", 961, 175, 59), ship("102", 145, 98, 22), ship("103", 656, 168, 72)],
+    importedAt: "2026-10-16T20:00:00.000+09:00",
+    filter: ALL,
+    hasUid: true,
+    hasLockInfo: true,
+  };
+
+  /** 2 回目：101・102 だけを取り込み直す（103 はいなくなった） */
+  const twoShips: SaveImportInput = {
+    ...threeShips,
+    ships: [ship("101", 961, 176, 59), ship("102", 145, 99, 22)],
+    importedAt: "2026-10-17T20:00:00.000+09:00",
+  };
+
+  /** 101・102・103 を取り込み、2 つのイベントで 101・103 に割り当てる（102 は控え） */
+  async function prepareTwoEvents(storage: FudawariStorage): Promise<void> {
+    await storage.saveImport(threeShips);
+    await storage.saveAssignments("summer2026", { "101": "rengo", "103": "s31" });
+    await storage.saveAssignments("spring2026", { "101": "e1-fuda", "103": "e2-fuda" });
+  }
+
+  it("個体 ID がある形式で取り込み直すと、今回いない個体（103）の割り当てはすべてのイベントで外れ、いる個体（101）の割り当ては残る（再読み込み後も）", async () => {
+    // 準備
+    const name = newDbName();
+    const storage = open(name);
+    await prepareTwoEvents(storage);
+
+    // 実行
+    await storage.saveImport(twoShips);
+    const reopened = reopen(storage, name);
+
+    // 検証
+    expect(await reopened.loadAssignments("summer2026")).toEqual({ "101": "rengo" });
+    expect(await reopened.loadAssignments("spring2026")).toEqual({ "101": "e1-fuda" });
+  });
+
+  it("previewImport は、その取り込みで外れる割り当ての件数（すべてのイベントの合計）を返す：103 が 2 つのイベントで外れるので 2", async () => {
+    const storage = open(newDbName());
+    await prepareTwoEvents(storage);
+
+    const preview = await storage.previewImport(twoShips);
+
+    expect(preview).toEqual({ removedAssignmentCount: 2 });
+  });
+
+  it("previewImport は保存しない：個体・最終取り込み・どのイベントの割り当ても変わらない", async () => {
+    // 準備
+    const name = newDbName();
+    const storage = open(name);
+    await prepareTwoEvents(storage);
+
+    // 実行
+    await storage.previewImport(twoShips);
+    const reopened = reopen(storage, name);
+
+    // 検証：1 回目の取り込みのまま
+    expect(byUid(await reopened.loadShips())).toEqual(byUid(threeShips.ships));
+    expect(await reopened.loadLastImport()).toMatchObject({ importedAt: threeShips.importedAt, shipCount: 3 });
+    expect(await reopened.loadAssignments("summer2026")).toEqual({ "101": "rengo", "103": "s31" });
+    expect(await reopened.loadAssignments("spring2026")).toEqual({ "101": "e1-fuda", "103": "e2-fuda" });
+  });
+
+  it("saveImport は、実際に外した割り当ての件数（すべてのイベントの合計）を返す：2", async () => {
+    const storage = open(newDbName());
+    await prepareTwoEvents(storage);
+
+    const saved = await storage.saveImport(twoShips);
+
+    expect(saved).toEqual({ removedAssignmentCount: 2 });
+  });
+
+  it("previewImport の件数と、続けて同じ取り込みを saveImport したときの件数は同じ", async () => {
+    const storage = open(newDbName());
+    await prepareTwoEvents(storage);
+
+    const preview = await storage.previewImport(twoShips);
+    const saved = await storage.saveImport(twoShips);
+
+    expect(preview.removedAssignmentCount).toBe(2);
+    expect(saved.removedAssignmentCount).toBe(preview.removedAssignmentCount);
+  });
+
+  it("個体 ID がない古い形式では、取り込まなかった個体 ID（999）の割り当ても含めて、すべてのイベントの割り当てが外れる", async () => {
+    // 準備：個体 ID "1"・"999" と "2" に割り当てがある（999 は今回の取り込みにいない）
+    const name = newDbName();
+    const storage = open(name);
+    await storage.saveAssignments("summer2026", { "1": "rengo", "999": "s31" });
+    await storage.saveAssignments("spring2026", { "2": "e1-fuda" });
+
+    // 実行
+    const legacy: SaveImportInput = {
+      ships: [ship("1", 961, 175, 59), ship("2", 145, 98, 22)],
+      importedAt: "2026-10-17T21:00:00.000+09:00",
+      filter: ALL,
+      hasUid: false,
+      hasLockInfo: false,
+    };
+    await storage.saveImport(legacy);
+    const reopened = reopen(storage, name);
+
+    // 検証
+    expect(await reopened.loadAssignments("summer2026")).toEqual({});
+    expect(await reopened.loadAssignments("spring2026")).toEqual({});
+  });
+
+  it("個体 ID がない古い形式では、previewImport・saveImport の件数はすべての割り当ての数（取り込まなかった個体 ID の分も数える）", async () => {
+    // 準備：割り当ては 3 件（summer2026 に 2 件〔うち 999 は今回の取り込みにいない〕、spring2026 に 1 件）
+    const storage = open(newDbName());
+    await storage.saveAssignments("summer2026", { "1": "rengo", "999": "s31" });
+    await storage.saveAssignments("spring2026", { "2": "e1-fuda" });
+    const legacy: SaveImportInput = {
+      ships: [ship("1", 961, 175, 59), ship("2", 145, 98, 22)],
+      importedAt: "2026-10-17T21:00:00.000+09:00",
+      filter: ALL,
+      hasUid: false,
+      hasLockInfo: false,
+    };
+
+    // 実行
+    const preview = await storage.previewImport(legacy);
+    const saved = await storage.saveImport(legacy);
+
+    // 検証
+    expect(preview).toEqual({ removedAssignmentCount: 3 });
+    expect(saved).toEqual({ removedAssignmentCount: 3 });
+  });
+
+  it("割り当てがないときは、previewImport・saveImport とも件数 0", async () => {
+    const storage = open(newDbName());
+    await storage.saveImport(threeShips);
+
+    const preview = await storage.previewImport(twoShips);
+    const saved = await storage.saveImport(twoShips);
+
+    expect(preview).toEqual({ removedAssignmentCount: 0 });
+    expect(saved).toEqual({ removedAssignmentCount: 0 });
+  });
+
+  it("割り当てのある個体がすべて今回の取り込みにいるときは、件数 0 で、割り当ては変わらない", async () => {
+    const storage = open(newDbName());
+    await storage.saveImport(threeShips);
+    await storage.saveAssignments("summer2026", { "101": "rengo", "102": "s31" });
+
+    const preview = await storage.previewImport(twoShips);
+    const saved = await storage.saveImport(twoShips);
+
+    expect(preview).toEqual({ removedAssignmentCount: 0 });
+    expect(saved).toEqual({ removedAssignmentCount: 0 });
+    expect(await storage.loadAssignments("summer2026")).toEqual({ "101": "rengo", "102": "s31" });
   });
 });
 
