@@ -20,6 +20,12 @@ create table public.profiles (
   last_edited_note text
 );
 
+-- 外したアカウント（外した ID は登録し直せない。もう一度協力してもらうには新しい ID を発行する。U3）
+create table public.removed_accounts (
+  user_id uuid primary key,
+  removed_at timestamptz not null default now()
+);
+
 -- イベント（名前・期間の正）
 create table public.events (
   id uuid primary key default gen_random_uuid(),
@@ -86,7 +92,8 @@ revoke all on table
   public.app_state,
   public.drafts,
   public.published_definitions,
-  public.save_logs
+  public.save_logs,
+  public.removed_accounts
 from public, anon, authenticated;
 
 -- 保存の記録の id（identity 列）のシーケンスにも、既定で付く権限を外す（書き込みは RPC だけ）
@@ -106,6 +113,7 @@ alter table public.app_state enable row level security;
 alter table public.drafts enable row level security;
 alter table public.published_definitions enable row level security;
 alter table public.save_logs enable row level security;
+alter table public.removed_accounts enable row level security;
 
 -- 自分の権限（'admin'／'collab'）。行がない・未ログインなら null。RLS の判定に使う
 create function public.app_role()
@@ -158,8 +166,9 @@ end;
 $$;
 
 -- ログインしていて、許された権限を持つことを確かめ、権限を返す（なければ FD001）
--- 自分の profiles の行を FOR KEY SHARE でロックする。協力者を外す操作（行の削除）は、実行中の保存・公開が終わるまで待つ
--- （外した後に保存がコミットされ、記録が残らない、を防ぐ）。FOR KEY SHARE は同じ人の保存どうし・表示名の更新とは衝突しない。
+-- 自分の profiles の行を FOR NO KEY UPDATE でロックする。協力者を外す操作（行の削除）は、実行中の保存・公開が終わるまで待つ
+-- （外した後に保存がコミットされ、記録が残らない、を防ぐ）。保存・公開の最後の「最後に編集」の更新で、ロックを格上げしない
+-- （外す操作が待っている間の格上げで行き詰まらない）。同じ人の保存・公開どうしは、この行で 1 つずつになる。
 -- ロックの順は、自分の profiles → app_state → イベント → 下書き
 create function public._require_role(p_allowed text[] default array['admin', 'collab'])
 returns text
@@ -174,7 +183,7 @@ begin
   if auth.uid() is null then
     perform public._raise('FD001', 'ログインしてください');
   end if;
-  select role into v_role from public.profiles where user_id = auth.uid() for key share;
+  select role into v_role from public.profiles where user_id = auth.uid() for no key update;
   if v_role is null or not (v_role = any (p_allowed)) then
     perform public._raise('FD001', 'この操作をする権限がありません');
   end if;
@@ -301,6 +310,7 @@ declare
   v_uid uuid := auth.uid();
   v_draft public.drafts%rowtype;
   v_version integer;
+  v_now timestamptz;
 begin
   perform public._check_editable_event(p_event_id, v_role);
   perform public._check_document(p_content);
@@ -331,19 +341,21 @@ begin
     );
   end if;
 
+  -- 保存の日時（下書き・記録・最後に編集）は、行ロックを取った後の 1 つの時刻にそろえる（記録の並びを保存の順に合わせる）
+  v_now := clock_timestamp();
   update public.drafts
-  set version = version + 1, content = p_content, updated_by = v_uid, updated_at = now()
+  set version = version + 1, content = p_content, updated_by = v_uid, updated_at = v_now
   where event_id = p_event_id
   returning version into v_version;
 
-  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary)
-  select p_event_id, v_uid, p.display_name, 'save', l.item ->> 'mapLabel', l.item ->> 'summary'
+  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary, created_at)
+  select p_event_id, v_uid, p.display_name, 'save', l.item ->> 'mapLabel', l.item ->> 'summary', v_now
   from jsonb_array_elements(p_logs) with ordinality as l (item, n)
   cross join (select display_name from public.profiles where user_id = v_uid) as p
   order by l.n;
 
   update public.profiles
-  set last_edited_at = now(), last_edited_note = '下書きを保存'
+  set last_edited_at = v_now, last_edited_note = '下書きを保存'
   where user_id = v_uid;
 
   return jsonb_build_object('status', 'saved', 'version', v_version);
@@ -417,8 +429,8 @@ begin
   values (p_event_id, v_label, v_content, v_draft.version, v_uid, v_now)
   returning id into v_id;
 
-  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary)
-  select p_event_id, v_uid, display_name, 'publish', null, '公開（' || v_label || '）'
+  insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary, created_at)
+  select p_event_id, v_uid, display_name, 'publish', null, '公開（' || v_label || '）', v_now
   from public.profiles
   where user_id = v_uid;
 
@@ -427,7 +439,7 @@ begin
   end if;
 
   update public.profiles
-  set last_edited_at = now(), last_edited_note = '公開'
+  set last_edited_at = v_now, last_edited_note = '公開'
   where user_id = v_uid;
 
   return jsonb_build_object(
@@ -537,7 +549,8 @@ end;
 $$;
 
 -- 管理者が発行したアカウント（auth.users にいる人）を協力者にする
---   管理者だけ。相手が auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010、表示名が空 → FD005
+--   管理者だけ。相手が auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010、
+--   表示名が空・外したアカウント・メールが @fudawari.invalid で終わらない → FD005
 create function public.register_collaborator(p_user_id uuid, p_display_name text)
 returns void
 language plpgsql
@@ -555,11 +568,16 @@ begin
   if exists (select 1 from public.profiles where user_id = p_user_id) then
     perform public._raise('FD010', 'すでに定義を編集できる権限があります');
   end if;
-  -- 管理者が発行した ID（ID@fudawari.invalid）のアカウントだけを協力者にする（実在のメールアドレスのアカウントを入れない）
+  -- 外したアカウントは登録し直せない（外した ID の古いパスワードで、また編集できるようにしない）
+  if exists (select 1 from public.removed_accounts where user_id = p_user_id) then
+    perform public._raise('FD005', '外した ID は使えません。新しい ID を発行してください');
+  end if;
+  -- ID の形（ID@fudawari.invalid）のアカウントだけを協力者にする（実在のメールアドレスのアカウントを入れない。
+  -- 発行した本人のアカウントかどうかは、画面が自分の signUp で返った user ID を渡すことで決まる）
   if not exists (
     select 1 from auth.users where id = p_user_id and lower(email) like '%@fudawari.invalid'
   ) then
-    perform public._raise('FD005', '管理者が発行した ID のアカウントではありません');
+    perform public._raise('FD005', 'ID の形のアカウントではありません');
   end if;
   insert into public.profiles (user_id, display_name, role)
   values (p_user_id, btrim(p_display_name), 'collab');
@@ -571,7 +589,7 @@ exception
 end;
 $$;
 
--- 協力者を外す（管理者は外せない。自分自身も）
+-- 協力者を外す（管理者は外せない。自分自身も）。外したアカウントは removed_accounts に記録し、登録し直せないようにする
 create function public.remove_collaborator(p_user_id uuid)
 returns void
 language plpgsql
@@ -590,27 +608,7 @@ begin
     perform public._raise('FD011', '管理者は外せません');
   end if;
   delete from public.profiles where user_id = p_user_id;
-end;
-$$;
-
--- 自分の表示名を更新する
-create function public.touch_profile(p_display_name text)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if auth.uid() is null then
-    perform public._raise('FD001', 'ログインしてください');
-  end if;
-  if p_display_name is null or btrim(p_display_name) = '' then
-    perform public._raise('FD005', '表示名がありません');
-  end if;
-  update public.profiles set display_name = btrim(p_display_name) where user_id = auth.uid();
-  if not found then
-    perform public._raise('FD001', 'この操作をする権限がありません');
-  end if;
+  insert into public.removed_accounts (user_id) values (p_user_id) on conflict (user_id) do nothing;
 end;
 $$;
 
@@ -621,8 +619,7 @@ revoke execute on function
   public.create_event(text, timestamptz, timestamptz, jsonb),
   public.update_event_meta(uuid, text, timestamptz, timestamptz),
   public.register_collaborator(uuid, text),
-  public.remove_collaborator(uuid),
-  public.touch_profile(text)
+  public.remove_collaborator(uuid)
 from public, anon, authenticated;
 
 grant execute on function
@@ -631,6 +628,5 @@ grant execute on function
   public.create_event(text, timestamptz, timestamptz, jsonb),
   public.update_event_meta(uuid, text, timestamptz, timestamptz),
   public.register_collaborator(uuid, text),
-  public.remove_collaborator(uuid),
-  public.touch_profile(text)
+  public.remove_collaborator(uuid)
 to authenticated;

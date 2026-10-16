@@ -28,7 +28,8 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | last_edited_note | text | 例「特効を更新」 |
 
 - 行がない人＝一般利用者（ログインしていても権限なし）。
-- 協力者を外す＝行を削除する（これまでの編集の記録は `save_logs` に残る。名前は記録側に複写しておく）。
+- 協力者を外す＝行を削除し、`removed_accounts`（user_id、removed_at。RLS 有効・anon と authenticated は読めない）に記録する。外した ID は登録し直せない（古いパスワードでまた編集できるようにしない）。これまでの編集の記録は `save_logs` に残る（名前は記録側に複写しておく）。
+- 表示名は管理者が登録のときに決め、本人は変えられない（なりすましを防ぐため、表示名を変える RPC は作らない）。
 - 最初の管理者は、Supabase の管理画面（Authentication → Users → Add user）で ID のアカウント（`ID@fudawari.invalid` とパスワード、Auto Confirm）を作り、SQL で行を入れる（運用手順書）。
 
 ### 2.1.1 ログイン（U3。2026-10-17 にユーザーの指示で Discord から変更）
@@ -107,12 +108,12 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | save_logs | × | × | 全行 | 全行 |
 
 - 判定には `public.app_role()`（`profiles` から自分の role を返す `security definer` 関数）を使う。`current_role` は SQL の予約語と重なるため使わない。
-- 表の権限：`anon`・`authenticated` には、上の表で読める表の SELECT だけを与える（Supabase のクラウドの既定では public の新しい表・関数に anon・authenticated の権限が自動で付くため、マイグレーションで明示に REVOKE してから GRANT する。CI の config.toml も `auto_expose_new_tables = true` にして、本番と同じ条件でテストする）。
+- 表の権限：`anon`・`authenticated` には、上の表で読める表の SELECT だけを与える（Supabase のクラウドの既定では public の新しい表・関数に anon・authenticated の権限が自動で付くため、マイグレーションで明示に REVOKE してから GRANT する。CI の config.toml も `auto_expose_new_tables = true` にして、本番と同じ条件でテストする）。public の表のシーケンス（`save_logs_id_seq`）の既定の権限も外す。
 - ビルド時の取得は anon キーで `app_state` と `published_definitions` を読む。サーバー専用のキー（service_role）はビルドにも画面にも置かない。
 
 ## 4. RPC（書き込み）
 
-すべて `security definer`、`set search_path = public`。最初に `app_role()` で権限を確かめ、条件に合わなければ例外を返す。実行の権限は `authenticated` だけに与える（`anon`・`public` からは取り消す）。
+すべて `security definer`、`set search_path = public`。最初に `app_role()` で権限を確かめ、条件に合わなければ例外を返す。実行の権限は `authenticated` だけに与える（`public`・`anon`・`authenticated` からいったん取り消してから `authenticated` に与える）。
 
 ### 4.1 例外のコード（SQLSTATE）
 
@@ -124,7 +125,7 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | FD002 | イベントが終了している（`ends_at <= now()`） |
 | FD003 | 更新できるイベントではない（協力者：最新のイベント以外。管理者：最新でも未公開でもないイベント。最新でないイベントを `p_make_latest = false` で公開しようとした） |
 | FD004 | 版が違う（`publish_definition` の `p_base_version` が今の下書きの版と違う） |
-| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、終了日時が今以前、表示名が空、発行した ID でないアカウント、記録が配列でない など） |
+| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、終了日時が今以前、表示名が空、ID の形でないアカウント、記録が配列でない など） |
 | FD006〜FD008 | （欠番。招待をやめたため） |
 | FD009 | 見つからない（イベント・アカウント・協力者） |
 | FD010 | すでに権限がある人を協力者に登録しようとした |
@@ -139,14 +140,13 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | `publish_definition(p_event_id uuid, p_base_version integer, p_make_latest boolean) returns jsonb` | 協力者・管理者（`p_make_latest = true` は管理者だけ。協力者なら FD001） | 下書きの版が `p_base_version` と同じなら、下書きの `content` の `event` を `events` 表の値で書き直して（`id`＝イベント ID の文字列、`name`、`startAt`・`endAt`＝日本時間の "YYYY-MM-DDTHH:MI:SS+09:00"（未定は null）、`versionDate`＝公開した日の日本時間の "YYYY-MM-DD"）`published_definitions` に保存し（`version_label`＝"YYYY/MM/DD 版"）、記録（kind 'publish'、`map_label` は null、文「公開（YYYY/MM/DD 版）」）を入れる。`p_make_latest` なら `app_state.latest_event_id` を切り替える。戻り値 `{ "status": "published", "id": 公開版の ID, "versionLabel": "…", "versionDate": "YYYY-MM-DD" }`。版が違う → FD004、終了 → FD002、最新でないのに `p_make_latest = false` → FD003 |
 | `create_event(p_name text, p_starts_at timestamptz, p_ends_at timestamptz, p_content jsonb) returns uuid` | 管理者 | イベントと下書き（版 1、`content` は `p_content`）を作り、イベント ID を返す。初期の文書（元にするイベントからのコピー・E1 だけの空の文書）は画面が `createDefinition`（PR-09）で作り、`content.event.id` は作ったイベントの ID に書き直して保存する。名前が空・`p_ends_at <= p_starts_at`・終了日時が今以前・文書の形 → FD005 |
 | `update_event_meta(p_event_id uuid, p_name text, p_starts_at timestamptz, p_ends_at timestamptz) returns void` | 協力者（終了日時だけ）・管理者 | 名前・開始日時・終了日時を更新する。終了 → FD002、更新できない → FD003、協力者が名前か開始日時を今と違う値にした → FD001、名前が空・終了日時が開始日時以前・終了日時が今以前（誤ってロックしない） → FD005。終了日時の null（未定）は可 |
-| `register_collaborator(p_user_id uuid, p_display_name text) returns void` | 管理者 | 管理者の画面が作ったアカウント（auth.users にいる人）を協力者にする。表示名が空・メールが `@fudawari.invalid` で終わらない（管理者が発行した ID でない） → FD005、auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010 |
-| `remove_collaborator(p_user_id uuid) returns void` | 管理者 | 協力者の行を消す。ない → FD009、相手が管理者（自分を含む） → FD011 |
-| `touch_profile(p_display_name text) returns void` | ログイン済み（行がある人） | 表示名を更新する。行がない → FD001 |
+| `register_collaborator(p_user_id uuid, p_display_name text) returns void` | 管理者 | 管理者の画面が作ったアカウント（auth.users にいる人）を協力者にする。表示名が空・外したアカウント（`removed_accounts` にいる）・メールが `@fudawari.invalid` で終わらない（ID の形のアカウントでない。実在のメールアドレスのアカウントを入れないため。発行した本人のアカウントかどうかは、画面が自分の signUp で返った user ID を渡すことで決まる） → FD005、auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010 |
+| `remove_collaborator(p_user_id uuid) returns void` | 管理者 | 協力者の行を消し、`removed_accounts` に記録する（外した ID は登録し直せない）。ない → FD009、相手が管理者（自分を含む） → FD011 |
 
 - **更新できるイベント**：協力者は `app_state.latest_event_id` のイベントだけ。管理者は、最新のイベントと、まだ公開していない（`published_definitions` に行がない）イベント（U18）。どちらも終了していないこと。
 - 保存・公開をしたら、`profiles.last_edited_at` を今に、`last_edited_note` を「下書きを保存」か「公開」にする。
 - 新規作成は管理者だけ。
-- **ロックの順**：どの RPC でも「自分の profiles（FOR KEY SHARE）→ app_state → イベント → 下書き」。`_require_role` が自分の行をロックするので、協力者を外す操作は実行中の保存・公開が終わるまで待つ。`_check_editable_event` は app_state とイベントを共有ロックし、`publish_definition` は app_state を、`update_event_meta` はイベントを最初に排他ロックする。新しい RPC もこの順に従う。
+- **ロックの順**：どの RPC でも「自分の profiles（FOR NO KEY UPDATE。最後の「最後に編集」の更新で格上げしない）→ app_state → イベント → 下書き」。他人の profiles の行（remove_collaborator）は自分の行の後に取る。`_require_role` が自分の行をロックするので、協力者を外す操作は実行中の保存・公開が終わるまで待つ。`_check_editable_event` は app_state とイベントを共有ロックし、`publish_definition` は app_state を、`update_event_meta` はイベントを最初に排他ロックする。新しい RPC もこの順に従う。
 
 ## 5. リアルタイム（編集中の表示）
 

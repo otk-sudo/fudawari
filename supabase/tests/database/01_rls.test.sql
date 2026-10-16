@@ -3,6 +3,7 @@
 --   anon：app_state・published_definitions だけ読める（ほかの表は SELECT の権限がなく 42501）
 --   権限なしのログイン利用者：profiles は自分の行だけ（行がないので 0 件）。events・drafts・save_logs は 0 件
 --   協力者・管理者：profiles 全行・events・drafts・save_logs・published_definitions・app_state を読める
+--   removed_accounts（外したアカウント）：anon・authenticated とも権限がなく、管理者でも読めない（42501）
 --   どの役も表に直接 insert／update／delete できない（書き込みの権限を与えていないため 42501）
 -- 注意：結果の並べ替え（order by）をすると TAP の番号の順が乱れるため、まとめて確かめる select では並べ替えない
 begin;
@@ -10,7 +11,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(66);
+select plan(74);
 
 -- ---------------------------------------------------------------------------
 -- 演じ分けの補助（pg_temp に作るので rollback で消える）
@@ -68,7 +69,7 @@ insert into public.save_logs (event_id, user_id, user_name, kind, map_label, sum
    '管理者テスト', 'save', 'E1', 'RLS テストの記録');
 
 -- ---------------------------------------------------------------------------
--- 1. anon（未ログイン）（26 件）
+-- 1. anon（未ログイン）（30 件）
 -- ---------------------------------------------------------------------------
 select pg_temp.act_as_anon();
 
@@ -84,24 +85,24 @@ select is(
   'anon は published_definitions を読める'
 );
 
--- 読めない表（SELECT の権限がない）（4 件）
+-- 読めない表（SELECT の権限がない）（5 件）
 select throws_ok(
   format('select count(*) from public.%I', t),
   '42501', null,
   format('anon は %s を読めない（権限なし）', t)
 )
-from unnest(array['profiles', 'events', 'drafts', 'save_logs']) as t;
+from unnest(array['profiles', 'events', 'drafts', 'save_logs', 'removed_accounts']) as t;
 
 select is(public.app_role(), null::text, 'anon の app_role() は null');
 
--- 直接の書き込み（insert 6 件・update 6 件・delete 6 件）
+-- 直接の書き込み（insert 7 件・update 7 件・delete 7 件）
 select throws_ok(
   format('insert into public.%I default values', t),
   '42501', null,
   format('anon は %s に直接 insert できない', t)
 )
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'removed_accounts'
 ]) as t;
 
 select throws_ok(
@@ -115,7 +116,8 @@ from (values
   ('app_state', 'latest_event_id'),
   ('drafts', 'version'),
   ('published_definitions', 'version_label'),
-  ('save_logs', 'summary')
+  ('save_logs', 'summary'),
+  ('removed_accounts', 'removed_at')
 ) as v (t, c);
 
 select throws_ok(
@@ -124,7 +126,7 @@ select throws_ok(
   format('anon は %s から直接 delete できない', t)
 )
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'removed_accounts'
 ]) as t;
 
 reset role;
@@ -200,7 +202,7 @@ select is(public.app_role(), 'collab', '協力者の app_role() は collab');
 reset role;
 
 -- ---------------------------------------------------------------------------
--- 4. 管理者（7 件）
+-- 4. 管理者（8 件）
 -- ---------------------------------------------------------------------------
 select pg_temp.act_as('11111111-1111-4111-8111-111111111111');
 
@@ -238,9 +240,14 @@ select is(
   '管理者は app_state を読める'
 );
 select is(public.app_role(), 'admin', '管理者の app_role() は admin');
+select throws_ok(
+  $$ select count(*) from public.removed_accounts $$,
+  '42501', null,
+  '管理者（authenticated）でも removed_accounts は読めない（権限なし）'
+);
 
 -- ---------------------------------------------------------------------------
--- 5. ログインした人（最も強い管理者で確かめる）も表に直接書き込めない（insert 6 件・update 6 件・delete 6 件）
+-- 5. ログインした人（最も強い管理者で確かめる）も表に直接書き込めない（insert 7 件・update 7 件・delete 7 件）
 --    書き込みの権限は役（authenticated）ごとなので、協力者・権限なしの人も同じ
 --    （協力者の登録も profiles への直接の insert ではなく register_collaborator を通す）
 -- ---------------------------------------------------------------------------
@@ -250,7 +257,7 @@ select throws_ok(
   format('ログインした人（管理者）も %s に直接 insert できない', t)
 )
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'removed_accounts'
 ]) as t;
 
 select throws_ok(
@@ -264,7 +271,8 @@ from (values
   ('app_state', 'latest_event_id'),
   ('drafts', 'version'),
   ('published_definitions', 'version_label'),
-  ('save_logs', 'summary')
+  ('save_logs', 'summary'),
+  ('removed_accounts', 'removed_at')
 ) as v (t, c);
 
 select throws_ok(
@@ -273,7 +281,7 @@ select throws_ok(
   format('ログインした人（管理者）も %s から直接 delete できない', t)
 )
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'removed_accounts'
 ]) as t;
 
 reset role;

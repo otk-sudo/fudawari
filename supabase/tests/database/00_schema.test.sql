@@ -1,24 +1,26 @@
 -- DB の土台：表・列の型・RLS の有効化・関数の戻り値と security definer・関数の実行権限・初期データ・表の制約
 -- 設計：docs/design/database.md の 2 章（表）・3 章（RLS）・4 章（RPC）
 -- ログインは管理者が発行する ID とパスワード（Supabase Auth のメール＋パスワード）。招待（invites 表・招待の RPC）はない
+-- 表示名は管理者が登録するときに決める（協力者が自分で書き換えて、なりすませないよう touch_profile はない）
+-- 外したアカウントは removed_accounts に残し、登録し直せないようにする
 -- 注意：結果の並べ替え（order by）をすると TAP の番号の順が乱れるため、まとめて確かめる select では並べ替えない
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(103);
+select plan(104);
 
 -- ---------------------------------------------------------------------------
--- 1. 表がある（6 件）
+-- 1. 表がある（7 件）
 -- ---------------------------------------------------------------------------
 select has_table('public'::name, t::name, format('%s 表がある', t))
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'removed_accounts'
 ]) as t;
 
 -- ---------------------------------------------------------------------------
--- 2. 列と型（設計 2 章の表のとおり。34 件）
+-- 2. 列と型（設計 2 章の表と removed_accounts。36 件）
 -- ---------------------------------------------------------------------------
 select col_type_is('public'::name, v.t::name, v.c::name, v.typ, format('%s.%s の型が %s', v.t, v.c, v.typ))
 from (values
@@ -55,11 +57,13 @@ from (values
   ('save_logs', 'kind', 'text'),
   ('save_logs', 'map_label', 'text'),
   ('save_logs', 'summary', 'text'),
-  ('save_logs', 'created_at', 'timestamp with time zone')
+  ('save_logs', 'created_at', 'timestamp with time zone'),
+  ('removed_accounts', 'user_id', 'uuid'),
+  ('removed_accounts', 'removed_at', 'timestamp with time zone')
 ) as v (t, c, typ);
 
 -- ---------------------------------------------------------------------------
--- 3. すべての表で RLS が有効（6 件）
+-- 3. すべての表で RLS が有効（7 件）
 -- ---------------------------------------------------------------------------
 select ok(
   coalesce(
@@ -72,11 +76,11 @@ select ok(
   format('%s 表で RLS が有効', t)
 )
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'removed_accounts'
 ]) as t;
 
 -- ---------------------------------------------------------------------------
--- 4. 関数の引数・戻り値（8 件）と security definer（8 件）
+-- 4. 関数の引数・戻り値（7 件）と security definer（7 件）
 -- ---------------------------------------------------------------------------
 select function_returns('public'::name, v.f::name, v.args::name[], v.ret, format('%s(%s) があり、%s を返す', v.f, array_to_string(v.args, ', '), v.ret))
 from (values
@@ -86,8 +90,7 @@ from (values
   ('create_event', array['text', 'timestamp with time zone', 'timestamp with time zone', 'jsonb'], 'uuid'),
   ('update_event_meta', array['uuid', 'text', 'timestamp with time zone', 'timestamp with time zone'], 'void'),
   ('register_collaborator', array['uuid', 'text'], 'void'),
-  ('remove_collaborator', array['uuid'], 'void'),
-  ('touch_profile', array['text'], 'void')
+  ('remove_collaborator', array['uuid'], 'void')
 ) as v (f, args, ret);
 
 select is_definer('public'::name, v.f::name, v.args::name[], format('%s は security definer', v.f))
@@ -98,13 +101,12 @@ from (values
   ('create_event', array['text', 'timestamp with time zone', 'timestamp with time zone', 'jsonb']),
   ('update_event_meta', array['uuid', 'text', 'timestamp with time zone', 'timestamp with time zone']),
   ('register_collaborator', array['uuid', 'text']),
-  ('remove_collaborator', array['uuid']),
-  ('touch_profile', array['text'])
+  ('remove_collaborator', array['uuid'])
 ) as v (f, args);
 
 -- ---------------------------------------------------------------------------
 -- 5. 関数の実行権限（設計 4 章：RPC は authenticated だけ。app_role はだれでも。内部の補助はだれも）
---    authenticated（14 件）と anon（14 件）
+--    authenticated（13 件）と anon（13 件）
 -- ---------------------------------------------------------------------------
 create temporary table fn_privs (f text, args text[], kind text) on commit drop;
 insert into fn_privs (f, args, kind) values
@@ -115,7 +117,6 @@ insert into fn_privs (f, args, kind) values
   ('update_event_meta', array['uuid', 'text', 'timestamp with time zone', 'timestamp with time zone'], 'rpc'),
   ('register_collaborator', array['uuid', 'text'], 'rpc'),
   ('remove_collaborator', array['uuid'], 'rpc'),
-  ('touch_profile', array['text'], 'rpc'),
   ('_raise', array['text', 'text'], 'internal'),
   ('_require_role', array['text[]'], 'internal'),
   ('_check_editable_event', array['uuid', 'text'], 'internal'),
@@ -144,13 +145,15 @@ select function_privs_are(
 from fn_privs p;
 
 -- ---------------------------------------------------------------------------
--- 6. 招待の仕組みはない（ログインは管理者が発行する ID とパスワードに変えたため）（4 件）
---    残っていると、コードを知る人が自分で協力者になれる経路が残るため、消えていることを確かめる
+-- 6. やめた仕組みの表・関数はない（5 件）
+--    招待：ログインは管理者が発行する ID とパスワードに変えた。残ると、コードを知る人が自分で協力者になれる経路が残る
+--    touch_profile：協力者が自分の表示名を書き換えて、ほかの人になりすませるため削除した（どの引数の形でもない）
 -- ---------------------------------------------------------------------------
 select hasnt_table('public'::name, 'invites'::name, 'invites 表はない');
 select hasnt_function('public'::name, 'create_invite'::name, 'create_invite はない');
 select hasnt_function('public'::name, 'revoke_invite'::name, 'revoke_invite はない');
 select hasnt_function('public'::name, 'accept_invite'::name, 'accept_invite はない（自分で協力者になる経路がない）');
+select hasnt_function('public'::name, 'touch_profile'::name, 'touch_profile はない（自分の表示名を書き換えて、なりすませない）');
 
 -- ---------------------------------------------------------------------------
 -- 7. app_state は初期データの 1 行だけ（2 件）
