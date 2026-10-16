@@ -1,0 +1,317 @@
+/*
+ * 控え（モック Assign.dc.html の <section aria-label="控えの艦">）。
+ * 色は theme.css の変数と、割り振り画面の変数（AssignScreen.module.css の .screen で決める --assign-*）を使う
+ */
+
+.tray {
+  display: flex;
+  flex: 1 1 280px;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 300px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+
+/* 見出し「控え」と「表示数 / 総数」・表示の詰め具合 */
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.titleSide {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.viewToggle {
+  display: flex;
+}
+
+.viewButton {
+  min-height: 26px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px 0 0 3px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.viewButton + .viewButton {
+  border-left: 0;
+  border-radius: 0 3px 3px 0;
+}
+
+.viewButton[aria-pressed="true"] {
+  background: var(--color-action);
+  color: var(--color-on-action);
+}
+
+/* 検索欄（虫眼鏡付き） */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--assign-highlight);
+  border-bottom: 1px solid var(--assign-band-button-border);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--color-text);
+  border: 0;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* 「絞り込み」「リセット」・並び順 */
+.toolRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.filterButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-text-secondary);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 開いているときは色を反転する */
+.filterButton[aria-expanded="true"] {
+  background: var(--color-text);
+  color: var(--color-surface);
+}
+
+/* 条件の数のバッジ */
+.badge {
+  padding: 0 5px;
+  background: var(--assign-highlight);
+  color: var(--assign-on-highlight);
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.resetButton {
+  flex: 0 0 auto;
+  min-height: 32px;
+  white-space: nowrap;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 0;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.sort {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.sortSelect {
+  min-width: 0;
+  min-height: 30px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 0;
+  border-bottom: 1px solid var(--assign-select-underline);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+/* 絞り込みの条件 */
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--assign-card-border);
+  border-radius: var(--radius-md);
+}
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  width: 100%;
+  padding: 0 0 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--color-action);
+}
+
+/* 艦種タブ */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2px;
+  margin: 0 -4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  min-height: 32px;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--assign-selected-bg);
+  color: var(--color-selected-text);
+  border-bottom-color: var(--assign-highlight);
+  font-weight: 700;
+}
+
+/* 「特効を表示中：n隻」の帯 */
+.band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 8px 0;
+  padding: 4px 4px 4px 10px;
+  background: var(--assign-band-bg);
+  border: 1px solid var(--assign-band-border);
+  border-radius: var(--radius-md);
+}
+
+.bandText {
+  font-size: 12px;
+  color: var(--assign-band-text);
+}
+
+.closeAll {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 10px;
+  background: var(--color-selected-bg);
+  color: var(--color-selected-text);
+  border: 1px solid var(--assign-band-button-border);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 艦の一覧。この部分だけをスクロールさせる */
+.list {
+  display: flex;
+  flex-direction: column;
+  max-height: 760px;
+  padding: 4px 8px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.empty {
+  margin: 0;
+  padding: 16px 4px;
+  font-size: 12px;
+  color: var(--assign-faint-text);
+  text-align: center;
+}
+
+.viewButton:focus-visible,
+.searchInput:focus-visible,
+.filterButton:focus-visible,
+.resetButton:focus-visible,
+.sortSelect:focus-visible,
+.checkbox:focus-visible,
+.tab:focus-visible,
+.closeAll:focus-visible {
+  outline: 2px solid var(--assign-highlight);
+  outline-offset: 2px;
+}
