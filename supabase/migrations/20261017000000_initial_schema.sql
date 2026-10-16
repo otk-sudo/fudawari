@@ -1,10 +1,10 @@
 -- 札割りプランナーの DB の初版（roadmap T3-3。設計は docs/design/database.md）
 --
 -- - 表への書き込みは、すべて RPC（security definer の関数）を通す。表には直接の INSERT／UPDATE／DELETE の権限を与えない。
--- - 読み取りは RLS で権限ごとに絞る。anon・authenticated には読める表の SELECT だけを与える（auto_expose_new_tables = false）。
+-- - 読み取りは RLS で権限ごとに絞る。anon・authenticated には読める表の SELECT だけを与える（Supabase の既定の権限は明示の REVOKE で外す）。
+-- - ログインは、管理者が発行した ID とパスワード（Supabase Auth のメール＋パスワード。ID は内部で「ID@fudawari.invalid」の形）。
+--   アカウントは管理者の画面が作り、register_collaborator で協力者にする（U3。2026-10-17 変更）。
 -- - 例外のコードは FD001〜FD011（設計書 4.1）。画面は supabase-js の error.code で出し分ける。
-
-create extension if not exists pgcrypto with schema extensions;
 
 -- ===========================================================================
 -- 表
@@ -76,18 +76,6 @@ create table public.save_logs (
 
 create index save_logs_event_idx on public.save_logs (event_id, created_at desc, id desc);
 
--- 招待（コード自体は保存せず、SHA-256 の 16 進だけを持つ）
-create table public.invites (
-  id uuid primary key default gen_random_uuid(),
-  code_hash text not null unique,
-  created_by uuid not null,
-  expires_at timestamptz not null,
-  used_by uuid,
-  used_at timestamptz,
-  revoked_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
 -- ===========================================================================
 -- 表の権限と RLS（読み取り。書き込みのポリシーは作らない）
 -- ===========================================================================
@@ -98,8 +86,7 @@ revoke all on table
   public.app_state,
   public.drafts,
   public.published_definitions,
-  public.save_logs,
-  public.invites
+  public.save_logs
 from public, anon, authenticated;
 
 grant select on table public.app_state, public.published_definitions to anon, authenticated;
@@ -107,8 +94,7 @@ grant select on table
   public.profiles,
   public.events,
   public.drafts,
-  public.save_logs,
-  public.invites
+  public.save_logs
 to authenticated;
 
 alter table public.profiles enable row level security;
@@ -117,7 +103,6 @@ alter table public.app_state enable row level security;
 alter table public.drafts enable row level security;
 alter table public.published_definitions enable row level security;
 alter table public.save_logs enable row level security;
-alter table public.invites enable row level security;
 
 -- 自分の権限（'admin'／'collab'）。行がない・未ログインなら null。RLS の判定に使う
 create function public.app_role()
@@ -153,9 +138,6 @@ create policy drafts_select on public.drafts
 create policy save_logs_select on public.save_logs
   for select to authenticated using (public.app_role() is not null);
 
-create policy invites_select on public.invites
-  for select to authenticated using (public.app_role() = 'admin');
-
 -- ===========================================================================
 -- 内部の補助（RPC の中からだけ使う。外からは実行できない）
 -- ===========================================================================
@@ -173,10 +155,13 @@ end;
 $$;
 
 -- ログインしていて、許された権限を持つことを確かめ、権限を返す（なければ FD001）
+-- 自分の profiles の行を FOR KEY SHARE でロックする。協力者を外す操作（行の削除）は、実行中の保存・公開が終わるまで待つ
+-- （外した後に保存がコミットされ、記録が残らない、を防ぐ）。FOR KEY SHARE は同じ人の保存どうし・表示名の更新とは衝突しない。
+-- ロックの順は、自分の profiles → app_state → イベント → 下書き
 create function public._require_role(p_allowed text[] default array['admin', 'collab'])
 returns text
 language plpgsql
-stable
+volatile
 security definer
 set search_path = public
 as $$
@@ -186,7 +171,7 @@ begin
   if auth.uid() is null then
     perform public._raise('FD001', 'ログインしてください');
   end if;
-  select role into v_role from public.profiles where user_id = auth.uid();
+  select role into v_role from public.profiles where user_id = auth.uid() for key share;
   if v_role is null or not (v_role = any (p_allowed)) then
     perform public._raise('FD001', 'この操作をする権限がありません');
   end if;
@@ -409,8 +394,9 @@ begin
     )
   );
 
-  insert into public.published_definitions (event_id, version_label, content, draft_version, published_by)
-  values (p_event_id, v_label, v_content, v_draft.version, v_uid)
+  -- 公開日時は clock_timestamp()（トランザクションの開始時刻ではなく、app_state のロックを取った後の時刻。公開の順と並びを合わせる）
+  insert into public.published_definitions (event_id, version_label, content, draft_version, published_by, published_at)
+  values (p_event_id, v_label, v_content, v_draft.version, v_uid, clock_timestamp())
   returning id into v_id;
 
   insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary)
@@ -461,6 +447,9 @@ begin
   end if;
   if p_ends_at is not null and p_ends_at <= p_starts_at then
     perform public._raise('FD005', '終了日時は開始日時より後にしてください');
+  end if;
+  if p_ends_at is not null and p_ends_at <= now() then
+    perform public._raise('FD005', '終了日時は今より後にしてください');
   end if;
   perform public._check_document(p_content);
 
@@ -520,103 +509,32 @@ begin
 end;
 $$;
 
--- 招待を作り、コードを 1 度だけ返す（コードは乱数 24 バイトの base64url。32 文字）
-create function public.create_invite(p_expires_in text)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_code text;
-  v_id uuid;
-  v_expires_at timestamptz;
-begin
-  perform public._require_role(array['admin']);
-  if p_expires_in is null or p_expires_in not in ('24 hours', '3 days', '7 days') then
-    perform public._raise('FD005', '招待の期限は 24 時間・3 日・7 日から選んでください');
-  end if;
-
-  v_code := translate(encode(extensions.gen_random_bytes(24), 'base64'), '+/', '-_');
-
-  insert into public.invites (code_hash, created_by, expires_at)
-  values (
-    encode(extensions.digest(v_code, 'sha256'), 'hex'),
-    auth.uid(),
-    now() + p_expires_in::interval
-  )
-  returning id, expires_at into v_id, v_expires_at;
-
-  return jsonb_build_object('id', v_id, 'code', v_code, 'expiresAt', v_expires_at);
-end;
-$$;
-
--- 招待を取り消す（取り消し済みならそのまま）
-create function public.revoke_invite(p_invite_id uuid)
+-- 管理者が発行したアカウント（auth.users にいる人）を協力者にする
+--   管理者だけ。相手が auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010、表示名が空 → FD005
+create function public.register_collaborator(p_user_id uuid, p_display_name text)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  v_invite public.invites%rowtype;
 begin
   perform public._require_role(array['admin']);
-  select * into v_invite from public.invites where id = p_invite_id for update;
-  if not found then
-    perform public._raise('FD009', '招待が見つかりません');
+  if p_display_name is null or btrim(p_display_name) = '' then
+    perform public._raise('FD005', '表示名を入れてください');
   end if;
-  if v_invite.used_at is not null then
-    perform public._raise('FD006', 'この招待は使用済みです');
+  if not exists (select 1 from auth.users where id = p_user_id) then
+    perform public._raise('FD009', 'アカウントが見つかりません');
   end if;
-  if v_invite.revoked_at is null then
-    update public.invites set revoked_at = now() where id = p_invite_id;
-  end if;
-end;
-$$;
-
--- 招待を受けて協力者になる（同時に 2 人が使えないよう、招待の行をロックして確かめる）
-create function public.accept_invite(p_code text, p_display_name text)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_uid uuid := auth.uid();
-  v_invite public.invites%rowtype;
-begin
-  if v_uid is null then
-    perform public._raise('FD001', 'ログインしてください');
-  end if;
-  if exists (select 1 from public.profiles where user_id = v_uid) then
+  if exists (select 1 from public.profiles where user_id = p_user_id) then
     perform public._raise('FD010', 'すでに定義を編集できる権限があります');
   end if;
-
-  select * into v_invite
-  from public.invites
-  where code_hash = encode(extensions.digest(coalesce(p_code, ''), 'sha256'), 'hex')
-  for update;
-  if not found then
-    perform public._raise('FD009', '招待が見つかりません');
-  end if;
-  if v_invite.revoked_at is not null then
-    perform public._raise('FD008', 'この招待は取り消されています');
-  end if;
-  if v_invite.used_at is not null then
-    perform public._raise('FD006', 'この招待は使用済みです');
-  end if;
-  if v_invite.expires_at <= now() then
-    perform public._raise('FD007', 'この招待は期限が切れています');
-  end if;
-  if p_display_name is null or btrim(p_display_name) = '' then
-    perform public._raise('FD005', '表示名がありません');
-  end if;
-
   insert into public.profiles (user_id, display_name, role)
-  values (v_uid, btrim(p_display_name), 'collab');
-
-  update public.invites set used_by = v_uid, used_at = now() where id = v_invite.id;
+  values (p_user_id, btrim(p_display_name), 'collab');
+exception
+  when unique_violation then
+    perform public._raise('FD010', 'すでに定義を編集できる権限があります');
+  when foreign_key_violation then
+    perform public._raise('FD009', 'アカウントが見つかりません');
 end;
 $$;
 
@@ -642,7 +560,7 @@ begin
 end;
 $$;
 
--- 自分の表示名を更新する（ログイン時に Discord の表示名で呼ぶ）
+-- 自分の表示名を更新する
 create function public.touch_profile(p_display_name text)
 returns void
 language plpgsql
@@ -669,9 +587,7 @@ revoke execute on function
   public.publish_definition(uuid, integer, boolean),
   public.create_event(text, timestamptz, timestamptz, jsonb),
   public.update_event_meta(uuid, text, timestamptz, timestamptz),
-  public.create_invite(text),
-  public.revoke_invite(uuid),
-  public.accept_invite(text, text),
+  public.register_collaborator(uuid, text),
   public.remove_collaborator(uuid),
   public.touch_profile(text)
 from public, anon;
@@ -681,9 +597,7 @@ grant execute on function
   public.publish_definition(uuid, integer, boolean),
   public.create_event(text, timestamptz, timestamptz, jsonb),
   public.update_event_meta(uuid, text, timestamptz, timestamptz),
-  public.create_invite(text),
-  public.revoke_invite(uuid),
-  public.accept_invite(text, text),
+  public.register_collaborator(uuid, text),
   public.remove_collaborator(uuid),
   public.touch_profile(text)
 to authenticated;

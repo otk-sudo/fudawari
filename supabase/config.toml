@@ -20,8 +20,9 @@ max_rows = 1000
 # `postgres` are reachable through the Data API roles (`anon`, `authenticated`, `service_role`)
 # without explicit GRANTs, matching the cloud default. Set to `false` to require explicit GRANTs
 # instead. Left unset, a fresh project falls back to `true`.
-# fudawari：表を Data API に出す範囲はマイグレーションの GRANT で明示する（docs/design/database.md）
-auto_expose_new_tables = false
+# fudawari：本番（クラウドの既定 true）と同じにして、マイグレーションの明示の REVOKE・GRANT が効いていることを
+# CI のテストで確かめる（false にすると、REVOKE の書き忘れをテストで見つけられない。docs/design/database.md 3 章）
+auto_expose_new_tables = true
 
 [api.tls]
 # Enable HTTPS endpoints locally using a self-signed certificate.

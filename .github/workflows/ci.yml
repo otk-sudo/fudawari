@@ -103,6 +103,12 @@ jobs:
         run: npx supabase db reset
       - name: 権限ごとの可否などの DB のテスト（pgTAP）
         run: npx supabase test db
+      - name: ID とパスワードでアカウントを作り、ログインできることを確かめる（ID は「ID@fudawari.invalid」の形。U3）
+        run: |
+          eval "$(npx supabase status -o env)"
+          body='{"email":"ci-check@fudawari.invalid","password":"ci-check-password-0001"}'
+          curl -sS --fail-with-body -o /dev/null "$API_URL/auth/v1/signup" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body"
+          curl -sS --fail-with-body -o /dev/null "$API_URL/auth/v1/token?grant_type=password" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" -d "$body"
       - name: ローカルの Supabase を止める
         if: ${{ always() }}
         run: npx supabase stop --no-backup
@@ -124,7 +130,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - run: npm ci
+      # 本番の秘密の値を扱うので、依存のインストールスクリプトは走らせない（supabase CLI は optionalDependencies のバイナリで動く）
+      - run: npm ci --ignore-scripts
       - name: マイグレーションを適用する
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -134,4 +141,4 @@ jobs:
             exit 1
           fi
           # 失敗したら、まず Supabase のプロジェクトが停止していないか確かめる（無料プランは約 7 日で停止する）
-          npx supabase db push --db-url "${SUPABASE_DB_URL}" --include-all
+          npx supabase db push --db-url "${SUPABASE_DB_URL}" --include-all --yes
