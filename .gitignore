@@ -13,6 +13,9 @@ next-env.d.ts
 # TypeScript
 *.tsbuildinfo
 
+# ビルド時に生成する艦船マスタ（ゲームのデータから作るのでコミットしない。U1）
+/public/data/ship-master.json
+
 # テスト（Vitest のカバレッジ、Playwright の結果・レポート・キャッシュ）
 /coverage/
 /test-results/

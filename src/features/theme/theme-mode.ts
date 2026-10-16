@@ -1,14 +1,10 @@
 // 画面モード（ダーク／ライト／端末に合わせる）の切り替えの入口。保存（このブラウザへの記録）は PR-08 で足す
 import { create } from "zustand";
+import { DEFAULT_THEME_MODE, type ThemeMode } from "./theme-mode-base";
 
-/** 画面モード。"system" は端末の設定（prefers-color-scheme）に合わせる */
-export type ThemeMode = "dark" | "light" | "system";
-
-/**
- * 画面モードの初期値。モックの設定の初期値がダークで、ライトの色がまだ仮のためダークにする。
- * レイアウトの `<html data-theme>` の初期値もここから決める（読み込み直後に色が切り替わって見えないように）
- */
-export const DEFAULT_THEME_MODE: ThemeMode = "dark";
+// 型と初期値は theme-mode-base.ts（React・zustand を読み込まない）に置き、ここからも読み込めるようにしておく
+export { DEFAULT_THEME_MODE };
+export type { ThemeMode };
 
 /**
  * 画面モードに対応する `<html data-theme>` の値を返す。
