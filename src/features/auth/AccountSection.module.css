@@ -1,0 +1,56 @@
+/* 設定のウィンドウの「アカウント」欄（モック SettingsDialog.dc.html） */
+
+.section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.title {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 14px;
+}
+
+.info {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.role {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.signOut {
+  min-height: 34px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.signOut:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

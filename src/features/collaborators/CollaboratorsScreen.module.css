@@ -1,0 +1,447 @@
+/*
+ * 協力者画面（モック Collaborators.dc.html）。
+ * モックの赤系（「外す」・外すときの確認）と青系（発行した ID とパスワードの枠）に当たる CSS 変数はまだないため、
+ * ほかの画面の警告（DefinitionLoadAlert）と同じく、既存の変数の枠・強調の線・下地で見分けられるようにしている
+ */
+
+/* ---- ヘッダー帯（CollaboratorsHeader） ---- */
+
+/* 「管理者専用」のバッジ */
+.adminOnlyBadge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-admin);
+  color: var(--color-on-admin);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.headerNote {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ---- 管理者以外の表示 ---- */
+
+.denied {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+  margin: 40px auto;
+  padding: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.deniedTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.deniedNote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* 文の中のリンク（強調の金。ダーク・ライトのどちらでも下地と見分けられる） */
+.link {
+  color: var(--color-accent);
+}
+
+/* ---- 本文 ---- */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 960px;
+  padding: 16px 14px;
+}
+
+.section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.sectionTitle {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* 見出しと人数を並べる帯 */
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sectionHeadTitle {
+  margin: 0;
+  font-size: 14px;
+}
+
+.count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.description {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.status {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--color-text-muted);
+}
+
+/* 失敗の理由（role="alert"） */
+.alert {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.alert p {
+  margin: 0;
+}
+
+/* ---- 協力者を追加 ---- */
+
+.issueForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
+.field {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.labelRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.input {
+  min-height: 34px;
+  padding: 0 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/*
+ * 「発行する」（モックの強調の金のボタン）。強調の金の上の文字に当たる変数がないため、
+ * 同じ濃さの下地に使う「管理の橙の上の文字」（ダークは黒・ライトは白）を使う
+ */
+.primaryButton {
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--color-accent);
+  color: var(--color-on-admin);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+/* 発行した ID とパスワード */
+.issued {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-hover-border);
+  border-radius: var(--radius-md);
+}
+
+.issuedTitle {
+  margin: 0;
+  font-size: 13px;
+}
+
+.credentials {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.credentialLabel {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.credentialValue {
+  margin: 0;
+  min-width: 0;
+}
+
+/* 手で写すときに、まとめて選べるようにする */
+.code {
+  font-family: Consolas, monospace;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.copyRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.copyButton {
+  min-height: 32px;
+  padding: 0 12px;
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.copyStatus {
+  font-size: 12px;
+}
+
+.notice {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---- 編集できる人（表） ---- */
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  padding: 8px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.table td {
+  padding: 10px 8px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: 14px;
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: 14px;
+}
+
+.table td.nameCell {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.dateCell {
+  font-family: Consolas, monospace;
+}
+
+.actionCell {
+  text-align: right;
+}
+
+.adminBadge,
+.collabBadge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.adminBadge {
+  background: var(--color-admin);
+  color: var(--color-on-admin);
+}
+
+.collabBadge {
+  background: var(--color-selected-bg);
+  color: var(--color-selected-text);
+  border: 1px solid var(--color-hover-border);
+}
+
+.rowRemoveButton {
+  min-height: 30px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rowRemoveButton[aria-expanded="true"] {
+  border-color: var(--color-admin);
+  color: var(--color-text);
+}
+
+/* ---- 外すときの確認（表の下にその場で開く） ---- */
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 14px 14px;
+  padding: 12px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-admin);
+  border-radius: var(--radius-md);
+}
+
+.confirmTitle {
+  margin: 0;
+  font-weight: 700;
+}
+
+.confirmText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.confirmCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-admin);
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.removeButton {
+  min-height: 32px;
+  padding: 0 14px;
+  background: var(--color-admin);
+  color: var(--color-on-admin);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.removeButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.cancelButton {
+  min-height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 画面には出さず、読み上げには残す文（表の操作の列の見出し） */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

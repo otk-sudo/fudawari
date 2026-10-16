@@ -1,0 +1,161 @@
+/*
+ * 選択中の艦のパネル（モック Assign.dc.html の <section aria-label="選択中の艦">）。
+ * 札のブロックの左端の線と ■ は札の色（style で渡す）
+ */
+
+.panel {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--assign-band-border);
+  border-radius: 6px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--assign-selected-bg);
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--assign-panel-sub);
+}
+
+/* 「×」（選択をやめる） */
+.close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  color: var(--assign-band-text);
+  border: 1px solid var(--assign-band-button-border);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.caption {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* 札ごとのブロック */
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--assign-card-bg);
+  border: 1px solid var(--assign-card-border);
+  border-radius: 5px;
+}
+
+/* いまいる札のブロック */
+.blockHere {
+  border-color: var(--assign-highlight);
+}
+
+.blockHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot {
+  flex: 0 0 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.blockName {
+  flex: 1;
+  font-weight: 700;
+}
+
+.score {
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  color: var(--color-accent);
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.lineLabel {
+  flex: 1;
+}
+
+.multiplier {
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  color: var(--assign-on-accent);
+  background: var(--color-accent);
+}
+
+/* 「（札名）に置く」 */
+.place {
+  min-height: 34px;
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.here {
+  font-size: 12px;
+  color: var(--assign-highlight);
+}
+
+.none {
+  font-size: 12px;
+  color: var(--assign-faint-text);
+}
+
+.close:focus-visible,
+.place:focus-visible {
+  outline: 2px solid var(--assign-highlight);
+  outline-offset: 2px;
+}

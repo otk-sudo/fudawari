@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
-import { ScreenHeader } from "@/components/ScreenHeader";
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { ImportScreen } from "@/features/import/ImportScreen";
+import { IMPORT_SCREEN_TITLE } from "@/features/import/import-screen-text";
 
-const TITLE = "艦娘の取り込み";
+export const metadata: Metadata = { title: IMPORT_SCREEN_TITLE };
 
-export const metadata: Metadata = { title: TITLE };
-
-// 取り込み（要件 3.4、モック Import.dc.html）。中身は PR-04 で作る
+// 取り込み（要件 3.4、モック Import.dc.html）。画面名（h1）を含むヘッダー帯も ImportScreen が描く
+// （ヘッダーに札割りのデータの「最終取り込み」を出すため）
 export default function ImportPage() {
-  return (
-    <>
-      <ScreenHeader title={TITLE} />
-      <ScreenPlaceholder />
-    </>
-  );
+  return <ImportScreen />;
 }
