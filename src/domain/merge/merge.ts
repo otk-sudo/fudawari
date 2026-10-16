@@ -672,6 +672,8 @@ function runMerge(input: MergeInput, choose: Chooser): MergeResult {
     merged,
     autoMerged: all.flatMap((r) => r.autoMerged),
     conflicts: all.flatMap((r) => r.conflicts),
+    // 空の入れ物（PR-09 の指摘対応で実装担当が、合わせた文書の問題を入れる）
+    issues: [],
   };
 }
 
@@ -696,7 +698,7 @@ function choiceOf(choices: ConflictChoices, id: string): ConflictChoice | undefi
 export function resolveMerge(input: MergeInput, choices: ConflictChoices): ResolveResult {
   const { conflicts } = mergeDefinitions(input);
   const unresolved = conflicts.filter((c) => choiceOf(choices, c.id) === undefined).map((c) => c.id);
-  if (unresolved.length > 0) return { ok: false, unresolved };
+  if (unresolved.length > 0) return { ok: false, code: "unresolved", unresolved };
   // 選んだ側で合わせ直す。選択によって新しく生じた衝突（通常は起きない）は、選んでいる間の表示と同じく自分の内容にする
   const { merged } = runMerge(input, (id) => choiceOf(choices, id) ?? "mine");
   return { ok: true, doc: merged };

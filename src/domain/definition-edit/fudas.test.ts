@@ -91,6 +91,18 @@ describe("updateFuda（札の名前・色・札番号の変更）", () => {
     expect(fudaIdsOf(doc)).toEqual(fudaIdsOf(def));
   });
 
+  it("名前は前後の空白を除いて入れる（addFuda と同じ）", () => {
+    const doc = expectOk(updateFuda(def, "rengo", { name: " 　連合艦隊（後段）　 " }));
+
+    expect(fudaOf(doc, "rengo").name).toBe("連合艦隊（後段）");
+  });
+
+  it("空白だけの名前は空にする（入力の途中の空の名前は弾かず、保存・公開のときの検証で弾く）", () => {
+    const doc = expectOk(updateFuda(def, "rengo", { name: " 　 " }));
+
+    expect(fudaOf(doc, "rengo").name).toBe("");
+  });
+
   it("用意した色にない色には変えられない（invalid_value）", () => {
     expectEditError(updateFuda(def, "rengo", { color: "#000001" }), "invalid_value");
   });

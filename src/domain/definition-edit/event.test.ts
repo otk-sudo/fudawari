@@ -1,6 +1,7 @@
 // イベントの情報（名前・日時）の編集と検証、終了の判定（roadmap T3-6）のテスト
 // 今の時刻は引数で渡す（テストでは 2026-10-15 23:42 JST に固定）。
 import { describe, expect, it } from "vitest";
+import { validatePublicDefinition } from "@/domain/definition";
 import { summer2026Definition } from "@/test/fixtures";
 import { isEventEnded, updateEvent, validateEventInfo } from "./event";
 import { expectOk } from "./test-helpers";
@@ -38,6 +39,20 @@ describe("updateEvent（イベントの名前・日時の変更）", () => {
 
     expect(cleared.event.endAt).toBeNull();
   });
+
+  it("終了日時に空文字や空白だけを渡したら、未定（null）にそろえる", () => {
+    const withEnd = expectOk(updateEvent(def, { endAt: "2026-10-20T11:00+09:00" }));
+
+    expect(expectOk(updateEvent(withEnd, { endAt: "" })).event.endAt).toBeNull();
+    expect(expectOk(updateEvent(withEnd, { endAt: " 　 " })).event.endAt).toBeNull();
+  });
+
+  it("終了日時を空文字で消した文書は、公開定義の検証の日時の規則に合う", () => {
+    const withEnd = expectOk(updateEvent(def, { endAt: "2026-10-20T11:00+09:00" }));
+    const cleared = expectOk(updateEvent(withEnd, { endAt: "" }));
+
+    expect(validatePublicDefinition(cleared).ok).toBe(true);
+  });
 });
 
 describe("validateEventInfo（イベントの情報の検証）", () => {
@@ -62,6 +77,11 @@ describe("validateEventInfo（イベントの情報の検証）", () => {
 
     it("終了日時の空文字は未定として扱う（エラーにしない）", () => {
       expect(validateEventInfo(input({ endAt: "" }))).toEqual([]);
+    });
+
+    it("終了日時の空白だけも未定として扱う（新規・更新とも。updateEvent が null にそろえるのと同じ扱い）", () => {
+      expect(validateEventInfo(input({ endAt: " 　 " }))).toEqual([]);
+      expect(validateEventInfo(input({ mode: "update", startAt: START, endAt: " 　 " }))).toEqual([]);
     });
 
     it("終了日時が開始日時より後ならエラーなし", () => {

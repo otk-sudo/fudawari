@@ -1,5 +1,5 @@
 // 3 方向マージ（同時編集の B 案。要件 3.7「同時編集」、roadmap T3-8 の単体部分）と保存の記録の文の型
-import type { DefinitionDoc } from "@/domain/definition-edit/types";
+import type { DefinitionDoc, DocumentIssue } from "@/domain/definition-edit/types";
 
 /** イベントの情報の項目 */
 export type EventField = "name" | "startAt" | "endAt" | "versionDate";
@@ -75,8 +75,13 @@ export interface MergeResult {
   merged: DefinitionDoc;
   /** 自動で合わせた所 */
   autoMerged: AutoMergedChange[];
-  /** 衝突（なければ空。空ならそのまま merged を保存してよい） */
+  /** 衝突（なければ空。空で、issues も空なら、そのまま merged を保存してよい） */
   conflicts: MergeConflict[];
+  /**
+   * 合わせた文書（merged）の問題（段階が 0、終了日時が開始日時以前、札番号の重複。なければ空）。
+   * findDocumentIssues(merged) と同じ
+   */
+  issues: DocumentIssue[];
 }
 
 /** 衝突ごとの選択。相手の内容／自分の内容 */
@@ -85,8 +90,16 @@ export type ConflictChoice = "theirs" | "mine";
 /** 衝突の ID → 選択 */
 export type ConflictChoices = Readonly<Record<string, ConflictChoice>>;
 
-/** 選択から最終的な文書を作った結果。選んでいない衝突があれば、その ID を返す */
-export type ResolveResult = { ok: true; doc: DefinitionDoc } | { ok: false; unresolved: string[] };
+/**
+ * 選択から最終的な文書を作った結果
+ * - ok: true：最終的な文書（衝突をすべて選び、文書の問題もない）
+ * - code "unresolved"：選んでいない衝突がある（その ID）。文書の問題より先に確かめる
+ * - code "issues"：すべて選んだが、最終的な文書に問題がある（問題の一覧と、その文書）。保存してはいけない
+ */
+export type ResolveResult =
+  | { ok: true; doc: DefinitionDoc }
+  | { ok: false; code: "unresolved"; unresolved: string[] }
+  | { ok: false; code: "issues"; issues: DocumentIssue[]; doc: DefinitionDoc };
 
 /** 保存の記録・未公開の変更の 1 件 */
 export interface DefinitionChange {

@@ -4,7 +4,8 @@
 // （定義の編集の関数を使わず、マージだけを確かめるため）。入力はすべて凍結してあるので、
 // マージが入力を書き換えると例外になる。
 import { describe, expect, it } from "vitest";
-import type { DefinitionDoc } from "@/domain/definition-edit/types";
+import { findDocumentIssues } from "@/domain/definition-edit";
+import type { DefinitionDoc, DocumentIssue, DocumentIssueCode } from "@/domain/definition-edit/types";
 import {
   areaIdsOf,
   editDoc,
@@ -55,7 +56,13 @@ function chooseAll(conflicts: MergeConflict[], choice: ConflictChoice): Record<s
 
 /** 最終的な文書ができたことを確かめて返す */
 function expectResolved(result: ResolveResult): DefinitionDoc {
-  if (!result.ok) throw new Error(`選んでいない衝突があります：${result.unresolved.join("、")}`);
+  if (!result.ok) {
+    const detail =
+      result.code === "unresolved"
+        ? `選んでいない衝突があります：${result.unresolved.join("、")}`
+        : `最終的な文書に問題があります：${result.issues.map((i) => i.code).join("、")}`;
+    throw new Error(detail);
+  }
   return result.doc;
 }
 
@@ -460,7 +467,12 @@ describe("resolveMerge：衝突ごとの選択から最終的な文書を作る"
   it("選んでいない衝突があると、最終的な文書を作らず、その衝突の ID を返す", () => {
     const { input, result } = run(mine, theirs);
 
-    expect(resolveMerge(input, {})).toEqual({ ok: false, unresolved: result.conflicts.map((c) => c.id) });
+    // 文書の問題（code "issues"）と区別できるよう、code "unresolved" を付ける（PR-09 のレビュー指摘で形を変えた）
+    expect(resolveMerge(input, {})).toEqual({
+      ok: false,
+      code: "unresolved",
+      unresolved: result.conflicts.map((c) => c.id),
+    });
   });
 
   it("衝突がなければ、選ばなくても最終的な文書を作れる（merged と同じ。関係ない ID は無視する）", () => {
@@ -774,5 +786,293 @@ describe("mergeDefinitions・resolveMerge：並び順", () => {
     expect(result.autoMerged).toContainEqual(
       expect.objectContaining({ location: { kind: "stage", stageId: "E3-G", field: "areaId" }, change: "modified" }),
     );
+  });
+});
+
+// ---- 合わせた後の文書の問題（PR-09 のレビュー指摘：Codex 3 件・レビュー 1） ----
+//
+// 項目ごとに合わせると、片方ずつなら守られていた前提が、合わせた結果では崩れることがある。
+// 段階が 0・終了日時が開始日時以前・札番号の重複を、マージの結果の問題（issues）として返す。
+
+const MSG_END_BEFORE_START = "終了日時は開始日時より後にしてください";
+
+/** 文書の問題の種類だけを並べる */
+function issueCodes(issues: readonly DocumentIssue[]): DocumentIssueCode[] {
+  return issues.map((i) => i.code);
+}
+
+/** テストの準備：段階を E1 ギミック〜ゲージ3（E1-1）と E2 ゲージ3（E2-3）の 2 つだけにした文書 */
+const twoStages = editDoc(base, (d) => {
+  d.stages = d.stages.filter((s) => s.id === "E1-1" || s.id === "E2-3");
+});
+
+/** テストの準備：終了日時（2026-10-30 11:00）を入れた文書（開始日時は 2026-08-07 12:00） */
+const withEnd = editDoc(base, (d) => {
+  d.event.endAt = "2026-10-30T11:00+09:00";
+});
+
+describe("mergeDefinitions：合わせた後の文書の問題（issues）", () => {
+  it("変更がない・片方だけの変更・前提を崩さない違う所の変更では、issues は空", () => {
+    const mine = editDoc(base, (d) => {
+      stageOf(d, "E2-3").importance = "important";
+      fudaOf(d, "tago").gameNumber = 9;
+      d.event.startAt = "2026-08-08T12:00+09:00";
+    });
+    const theirs = editDoc(base, (d) => {
+      d.event.endAt = "2026-10-20T11:00+09:00";
+      removeStageFrom(d, "E3-G");
+    });
+
+    expect(run(base, base).result.issues).toEqual([]);
+    expect(run(mine, base).result.issues).toEqual([]);
+    expect(run(base, theirs).result.issues).toEqual([]);
+    expect(run(mine, theirs).result.issues).toEqual([]);
+  });
+
+  it("残り 2 段階を 2 人が 1 つずつ削除して段階が 0 になったら、no_stages を返す（場所は空）", () => {
+    const mine = editDoc(twoStages, (d) => {
+      removeStageFrom(d, "E1-1");
+    });
+    const theirs = editDoc(twoStages, (d) => {
+      removeStageFrom(d, "E2-3");
+    });
+
+    const { result } = run(mine, theirs, twoStages);
+
+    expect(result.merged.stages).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+    expect(result.issues).toEqual([{ code: "no_stages", message: expect.any(String), locations: [] }]);
+    expect(result.issues.map((i) => i.message.trim())).not.toContain("");
+  });
+
+  it("一方が開始日時を遅らせ、もう一方が終了日時を早めて、終了が開始以前になったら end_before_start を返す", () => {
+    const mine = editDoc(withEnd, (d) => {
+      d.event.startAt = "2026-10-25T12:00+09:00";
+    });
+    const theirs = editDoc(withEnd, (d) => {
+      d.event.endAt = "2026-10-20T11:00+09:00";
+    });
+
+    const { result } = run(mine, theirs, withEnd);
+
+    expect(result.conflicts).toEqual([]);
+    expect(result.merged.event).toMatchObject({
+      startAt: "2026-10-25T12:00+09:00",
+      endAt: "2026-10-20T11:00+09:00",
+    });
+    expect(result.issues).toEqual([
+      {
+        code: "end_before_start",
+        message: MSG_END_BEFORE_START,
+        locations: [
+          { kind: "event", field: "startAt" },
+          { kind: "event", field: "endAt" },
+        ],
+      },
+    ]);
+  });
+
+  it("2 人が同じ札番号の札を別々に追加したら、duplicate_game_number を返す（場所は 2 つの札の札番号）", () => {
+    const mine = editDoc(base, (d) => {
+      d.fudas.push({ id: "m-kido", name: "機動部隊", color: "#E5484D", gameNumber: 6 });
+    });
+    const theirs = editDoc(base, (d) => {
+      d.fudas.push({ id: "t-yugeki", name: "遊撃部隊", color: "#C9A227", gameNumber: 6 });
+    });
+
+    const { result } = run(mine, theirs);
+
+    expect(result.conflicts).toEqual([]);
+    expect(fudaIdsOf(result.merged)).toEqual(expect.arrayContaining(["m-kido", "t-yugeki"]));
+    expect(issueCodes(result.issues)).toEqual(["duplicate_game_number"]);
+    expect(result.issues[0]?.locations).toHaveLength(2);
+    expect(result.issues[0]?.locations).toEqual(
+      expect.arrayContaining([
+        { kind: "fuda", fudaId: "m-kido", field: "gameNumber" },
+        { kind: "fuda", fudaId: "t-yugeki", field: "gameNumber" },
+      ]),
+    );
+  });
+
+  it("2 人が別々の既存の札を同じ札番号に変えたら、duplicate_game_number を返す（場所は札の並び順）", () => {
+    const mine = editDoc(base, (d) => {
+      fudaOf(d, "tago").gameNumber = 7;
+    });
+    const theirs = editDoc(base, (d) => {
+      fudaOf(d, "ulithi").gameNumber = 7;
+    });
+
+    const { result } = run(mine, theirs);
+
+    expect(result.conflicts).toEqual([]);
+    expect(result.issues).toEqual([
+      {
+        code: "duplicate_game_number",
+        message: expect.any(String),
+        locations: [
+          { kind: "fuda", fudaId: "tago", field: "gameNumber" },
+          { kind: "fuda", fudaId: "ulithi", field: "gameNumber" },
+        ],
+      },
+    ]);
+  });
+
+  it("issues は合わせた文書に findDocumentIssues を使った結果と同じで、場所は衝突と同じ形（ChangeLocation）で扱える", () => {
+    // 終了が開始以前と、札番号の重複が同時に起きる例
+    const mine = editDoc(withEnd, (d) => {
+      d.event.startAt = "2026-10-25T12:00+09:00";
+      fudaOf(d, "tago").gameNumber = 7;
+    });
+    const theirs = editDoc(withEnd, (d) => {
+      d.event.endAt = "2026-10-20T11:00+09:00";
+      fudaOf(d, "ulithi").gameNumber = 7;
+    });
+
+    const { result } = run(mine, theirs, withEnd);
+    // 型の確認：問題の場所は、衝突・自動で合わせた所の場所（ChangeLocation）として扱える
+    const locations: ChangeLocation[] = result.issues.flatMap((i) => i.locations);
+
+    expect(issueCodes(result.issues)).toEqual(["end_before_start", "duplicate_game_number"]);
+    expect(result.issues).toEqual(findDocumentIssues(result.merged));
+    expect(locations).toHaveLength(4);
+  });
+});
+
+describe("resolveMerge：最終的な文書の問題", () => {
+  it("衝突がなくても、最終的な文書に問題があれば成功にせず、問題の一覧とその文書を返す", () => {
+    const mine = editDoc(twoStages, (d) => {
+      removeStageFrom(d, "E1-1");
+    });
+    const theirs = editDoc(twoStages, (d) => {
+      removeStageFrom(d, "E2-3");
+    });
+    const { input, result } = run(mine, theirs, twoStages);
+
+    const resolved = resolveMerge(input, {});
+
+    expect(resolved).toEqual({
+      ok: false,
+      code: "issues",
+      issues: [{ code: "no_stages", message: expect.any(String), locations: [] }],
+      doc: result.merged,
+    });
+  });
+
+  it("選び方によって問題が出るなら、その選び方では成功にしない（終了日時の衝突で相手を選ぶと、終了が開始以前）", () => {
+    const theirs = editDoc(base, (d) => {
+      d.event.endAt = "2026-10-20T11:00+09:00";
+    });
+    const mine = editDoc(base, (d) => {
+      d.event.startAt = "2026-10-25T12:00+09:00";
+      d.event.endAt = "2026-10-30T11:00+09:00";
+    });
+    const { input, result } = run(mine, theirs);
+    const conflict = conflictAt(result.conflicts, { kind: "event", field: "endAt" });
+
+    // 選んでいる間の文書（衝突は自分の内容）には問題がなく、自分の内容を選べば保存できる
+    expect(result.issues).toEqual([]);
+    expect(expectResolved(resolveMerge(input, { [conflict.id]: "mine" })).event.endAt).toBe("2026-10-30T11:00+09:00");
+
+    const chosenTheirs = resolveMerge(input, { [conflict.id]: "theirs" });
+
+    expect(chosenTheirs).toEqual({
+      ok: false,
+      code: "issues",
+      issues: [
+        {
+          code: "end_before_start",
+          message: MSG_END_BEFORE_START,
+          locations: [
+            { kind: "event", field: "startAt" },
+            { kind: "event", field: "endAt" },
+          ],
+        },
+      ],
+      doc: expect.objectContaining({
+        event: expect.objectContaining({ startAt: "2026-10-25T12:00+09:00", endAt: "2026-10-20T11:00+09:00" }),
+      }),
+    });
+  });
+
+  it("選んでいない衝突があれば、文書の問題より先に unresolved を返す（衝突の未選択と文書の問題は code で区別できる）", () => {
+    const mine = editDoc(withEnd, (d) => {
+      d.event.startAt = "2026-10-25T12:00+09:00";
+      stageOf(d, "E2-3").importance = "normal";
+    });
+    const theirs = editDoc(withEnd, (d) => {
+      d.event.endAt = "2026-10-20T11:00+09:00";
+      stageOf(d, "E2-3").importance = "important";
+    });
+    const { input, result } = run(mine, theirs, withEnd);
+
+    expect(result.conflicts).toHaveLength(1);
+    expect(resolveMerge(input, {})).toEqual({
+      ok: false,
+      code: "unresolved",
+      unresolved: result.conflicts.map((c) => c.id),
+    });
+    expect(resolveMerge(input, chooseAll(result.conflicts, "mine"))).toMatchObject({
+      ok: false,
+      code: "issues",
+      issues: [expect.objectContaining({ code: "end_before_start" })],
+    });
+  });
+});
+
+describe("resolveMerge：選択によって衝突が増減しうる（今の動きを固定する）", () => {
+  // 札の削除と変更の衝突は、合わせた後の段階がその札を使うか（＝段階の札の衝突でどちらを選ぶか）で、出たり消えたりする。
+  // mergeDefinitions の衝突の一覧は「すべて自分の内容を選んだ場合」のもので、resolveMerge は選択を使って合わせ直す
+  const withSpare = editDoc(base, (d) => {
+    d.fudas.push({ id: "spare", name: "予備の札", color: "#3FB37F", gameNumber: 6 });
+  });
+
+  it("選んだ後に新しく生じた衝突は一覧に出ず、自分の内容にする（相手の札を選ぶと、使われなくなった札の衝突が生じる）", () => {
+    const mine = editDoc(withSpare, (d) => {
+      stageOf(d, "E2-3").fudaId = "spare";
+      fudaOf(d, "spare").color = "#E5484D";
+    });
+    const theirs = editDoc(withSpare, (d) => {
+      stageOf(d, "E2-3").fudaId = "sixth";
+      d.fudas = d.fudas.filter((f) => f.id !== "spare");
+    });
+    const { input, result } = run(mine, theirs, withSpare);
+    const stageFuda = conflictAt(result.conflicts, { kind: "stage", stageId: "E2-3", field: "fudaId" });
+
+    // 自分の内容では E2-3 が予備の札を使うので、札の削除と変更は衝突にならない（参照の整合で残す）
+    expect(result.conflicts).toEqual([stageFuda]);
+
+    const doc = expectResolved(resolveMerge(input, { [stageFuda.id]: "theirs" }));
+
+    // 相手の札を選ぶと予備の札が使われなくなり、削除（相手）と変更（自分）の衝突が生じるが、自分の内容（残す）にする
+    expect(stageOf(doc, "E2-3").fudaId).toBe("sixth");
+    expect(fudaOf(doc, "spare")).toEqual({ id: "spare", name: "予備の札", color: "#E5484D", gameNumber: 6 });
+  });
+
+  it("選び方によって意味がなくなる衝突も、選ぶまでは unresolved に残り、そこで選んだ内容は使われない", () => {
+    const theirs = editDoc(withSpare, (d) => {
+      stageOf(d, "E2-3").fudaId = "spare";
+      fudaOf(d, "spare").color = "#E5484D";
+    });
+    const mine = editDoc(withSpare, (d) => {
+      stageOf(d, "E2-3").fudaId = "sixth";
+      d.fudas = d.fudas.filter((f) => f.id !== "spare");
+    });
+    const { input, result } = run(mine, theirs, withSpare);
+    const stageFuda = conflictAt(result.conflicts, { kind: "stage", stageId: "E2-3", field: "fudaId" });
+    const spare = conflictAt(result.conflicts, { kind: "fuda", fudaId: "spare", field: null });
+
+    expect(result.conflicts).toHaveLength(2);
+    // 段階の札に相手（予備の札）を選んでも、札の衝突を選ぶまでは最終的な文書を作らない
+    expect(resolveMerge(input, { [stageFuda.id]: "theirs" })).toEqual({
+      ok: false,
+      code: "unresolved",
+      unresolved: [spare.id],
+    });
+
+    const doc = expectResolved(resolveMerge(input, { [stageFuda.id]: "theirs", [spare.id]: "mine" }));
+
+    // 札の衝突で自分の内容（削除）を選んでも、E2-3 が使うので札は残る（相手の内容で）
+    expect(stageOf(doc, "E2-3").fudaId).toBe("spare");
+    expect(fudaOf(doc, "spare")).toEqual({ id: "spare", name: "予備の札", color: "#E5484D", gameNumber: 6 });
   });
 });

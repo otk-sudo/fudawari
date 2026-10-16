@@ -6,6 +6,9 @@ export type {
   BoostGroupPatch,
   CreateDefinitionInput,
   DefinitionDoc,
+  DocumentIssue,
+  DocumentIssueCode,
+  DocumentIssueLocation,
   EditError,
   EditErrorCode,
   EditMode,
@@ -35,7 +38,10 @@ export {
   updateBoostGroup,
 } from "./boosts";
 export { createDefinition } from "./create";
+export { formatDateTimeJst, fromDateTimeLocalValue, toDateTimeLocalValue } from "./datetime";
+export { validateDraftDefinition } from "./draft";
 export { isEventEnded, updateEvent, validateEventInfo } from "./event";
 export { addFuda, canDeleteFuda, deleteFuda, FUDA_COLOR_CHOICES, moveFuda, updateFuda } from "./fudas";
+export { findDocumentIssues } from "./issues";
 export { checkUpdatePermission, editPermissions } from "./permissions";
 export { addStage, canDeleteStage, deleteStage, moveStage, updateStage } from "./stages";

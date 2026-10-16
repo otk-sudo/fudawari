@@ -31,6 +31,53 @@ describe("addArea（海域の追加）", () => {
     expect(areaIdsOf(doc)).toEqual(["E1", "E2", "E3", "E4", "E5"]);
     expect(doc.areas[4]).toEqual({ id: "E5", name: "E5" });
   });
+
+  it("番号は海域の数ではなく、既にある海域の名前の「E＋数字」の最大＋1（E1・E2・E3・E5 なら E6）", () => {
+    const gapped = editDoc(def, (d) => {
+      d.areas.push({ id: "E5", name: "E5" });
+    });
+
+    const doc = expectOk(addArea(gapped));
+
+    expect(doc.areas).toEqual([...gapped.areas, { id: "E6", name: "E6" }]);
+  });
+
+  it("番号は数として比べる（E10 は E9 より大きい）", () => {
+    const withE10 = editDoc(def, (d) => {
+      d.areas = [
+        { id: "E1", name: "E1" },
+        { id: "E9", name: "E9" },
+        { id: "E10", name: "E10" },
+      ];
+    });
+
+    expect(expectOk(addArea(withE10)).areas[3]).toEqual({ id: "E11", name: "E11" });
+  });
+
+  it("「E＋数字」でない名前の海域は番号に数えない", () => {
+    const withExtra = editDoc(def, (d) => {
+      d.areas.push({ id: "EX", name: "EX" });
+    });
+
+    expect(expectOk(addArea(withExtra)).areas[4]).toEqual({ id: "E4", name: "E4" });
+  });
+
+  it("新しい海域の ID は、既にある海域の ID と重ならない（名前と同じ ID が使われていれば別の ID にする）", () => {
+    const idTaken = editDoc(def, (d) => {
+      d.areas = [
+        { id: "E1", name: "E1" },
+        { id: "E2", name: "E2" },
+        { id: "E4", name: "E3" },
+      ];
+    });
+
+    const doc = expectOk(addArea(idTaken));
+    const added = doc.areas[3];
+
+    expect(added?.name).toBe("E4");
+    expect(["E1", "E2", "E4"]).not.toContain(added?.id);
+    expect(new Set(areaIdsOf(doc)).size).toBe(4);
+  });
 });
 
 describe("removeArea・canRemoveArea（海域を外す）", () => {

@@ -84,3 +84,29 @@ export function formatDateTimeJst(text: string): string {
   const date = `${jst.getUTCFullYear()}/${pad2(jst.getUTCMonth() + 1)}/${pad2(jst.getUTCDate())}`;
   return `${date} ${pad2(jst.getUTCHours())}:${pad2(jst.getUTCMinutes())}`;
 }
+
+// ---- 画面の日時の入力欄（<input type="datetime-local">）との変換（PR-11 の定義画面で使う） ----
+//
+// 入力欄の値は時差のない "YYYY-MM-DDTHH:mm"（例 "2026-08-07T12:00"）。日本時間として解釈する。
+// 文書の値は時差つきの ISO 8601（例 "2026-08-07T12:00+09:00"）。日時は分まで扱う（要件 3.7）。
+// 読めない値・実在しない日時は null を返す（例外は投げない）。
+
+/**
+ * 文書の日時（時差つき）を、入力欄の値（日本時間の "YYYY-MM-DDTHH:mm"）にする。
+ * 時差の書き方（"+09:00"・"Z" など）が違っても日本時間に直す。null・空文字・読めない値は null
+ */
+export function toDateTimeLocalValue(value: string | null): string | null {
+  // 空の入れ物（PR-09 の指摘対応で実装担当が中身を書く）
+  void value;
+  return null;
+}
+
+/**
+ * 入力欄の値（"YYYY-MM-DDTHH:mm"、日本時間）を、文書の日時（"YYYY-MM-DDTHH:mm+09:00"）にする。
+ * 空文字・形式違い（時差つき、空白区切りなど）・実在しない日時は null
+ */
+export function fromDateTimeLocalValue(value: string): string | null {
+  // 空の入れ物（PR-09 の指摘対応で実装担当が中身を書く）
+  void value;
+  return null;
+}

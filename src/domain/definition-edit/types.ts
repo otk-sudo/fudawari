@@ -171,6 +171,34 @@ export interface EventInfoInput {
   now: Date;
 }
 
+// ---- 文書の問題（3 方向マージの結果、保存の前の確認） ----
+
+/**
+ * 文書の問題の種類（項目ごとの編集・検証では見つからない、文書全体の前提が崩れたもの）
+ * - no_stages：段階が 1 つもない（例：残り 2 段階を 2 人が 1 つずつ削除した）
+ * - end_before_start：終了日時が開始日時以前（どちらも読める日時のときだけ。
+ *   例：一方が開始日時を遅らせ、もう一方が終了日時を早めた）
+ * - duplicate_game_number：別々の札に同じ札番号が付いている（例：2 人が同じ札番号の札を追加した）
+ */
+export type DocumentIssueCode = "no_stages" | "end_before_start" | "duplicate_game_number";
+
+/**
+ * 文書の問題の場所。3 方向マージの場所（src/domain/merge/ の ChangeLocation）と同じ形の一部なので、
+ * 画面の「場所を見る」で同じように扱える
+ */
+export type DocumentIssueLocation =
+  | { kind: "event"; field: "startAt" | "endAt" }
+  | { kind: "fuda"; fudaId: string; field: "gameNumber" };
+
+/** 文書の問題 */
+export interface DocumentIssue {
+  code: DocumentIssueCode;
+  /** 画面に出す文（日本語） */
+  message: string;
+  /** 関係する場所（段階がないときは空） */
+  locations: DocumentIssueLocation[];
+}
+
 // ---- 権限（要件 2.3、U18） ----
 
 /** 権限（要件 2.1）。ログインの仕組み（src/features/auth/）の型ができたら、そちらとそろえる */
