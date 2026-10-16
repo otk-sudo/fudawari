@@ -7,8 +7,9 @@
 // - 時刻・乱数には頼らない（取り込みの日時は固定の値）。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssignmentMap } from "@/domain/plan/types";
+import type { OwnedShip } from "@/domain/ship/types";
 import { createPlanDataStore, type PlanDataStore, type PlanDataStoreState } from "@/lib/plan";
-import type { FudawariStorage } from "@/lib/storage";
+import type { FudawariStorage, SaveImportInput } from "@/lib/storage";
 import { summer2026Assignments, summer2026Definition, summer2026Ships, shipByUid } from "@/test/fixtures";
 import {
   byUid,
@@ -31,6 +32,11 @@ const FUDA_IDS = summer2026Definition.fudas.map((fuda) => fuda.id);
 
 /** 割り当てを 1 隻だけ変えた例：初霜改二を第三十一戦隊から連合艦隊へ */
 const MOVED: AssignmentMap = { ...summer2026Assignments, hatsushimo: "rengo" };
+
+/** 前の取り込みの日時（importInput の既定の値） */
+const FIRST_IMPORTED_AT = "2026-10-16T21:00:00.000+09:00";
+/** 取り込み直したときの日時 */
+const NEXT_IMPORTED_AT = "2026-10-17T09:00:00.000+09:00";
 
 // ---- 補助 ----
 
@@ -96,6 +102,37 @@ function holdAssignmentsOf(storage: FudawariStorage, heldEventId: string) {
     },
   };
   return { storage: held, release: () => open() };
+}
+
+/** ストアに残っている割り当ての保存（読み直しの後の保存し直しを含む）がすべて終わるまで待つ */
+async function settleSaves(store: PlanDataStore): Promise<void> {
+  await store.afterSaves(() => Promise.resolve());
+}
+
+/**
+ * 古い形式（個体 ID がない短縮形式）で取り込んだ個体。
+ * 個体 ID は取り込みの並び順の連番（legacy-1 から）になるため、並びが変わると同じ個体 ID が別の艦を指す
+ */
+function legacyShips(...bases: readonly OwnedShip[]): OwnedShip[] {
+  return bases.map((base, index) => ({ ...base, uid: `legacy-${index + 1}` }));
+}
+
+/** 古い形式（個体 ID・ロックの情報がない）の取り込みの保存の入力 */
+function legacyImportInput(ships: readonly OwnedShip[], importedAt: string): SaveImportInput {
+  return importInput(ships, { importedAt, hasUid: false, hasLockInfo: false });
+}
+
+/** 条件に合う知らせで 1 回だけ例外を投げる購読者（壊れた購読者の代わり）。投げたかを thrown() で確かめる */
+function throwOnceWhen(when: (state: PlanDataStoreState) => boolean) {
+  let thrown = false;
+  return {
+    listener: (state: PlanDataStoreState): void => {
+      if (thrown || !when(state)) return;
+      thrown = true;
+      throw new Error("購読者の例外（テスト）");
+    },
+    thrown: (): boolean => thrown,
+  };
 }
 
 // ---- テスト ----
@@ -533,6 +570,32 @@ describe("札割りのデータのストア（createPlanDataStore）", () => {
       expect(ready.assignments).toEqual(MOVED);
       expect(await real.loadAssignments(EVENT_ID)).toEqual(MOVED);
     });
+
+    it("古い一覧の読み込みが保存を待ち始めた後に新しい一覧の読み込みが来ても、古い読み込みは控えに戻す処理で保存先を書き換えない", async () => {
+      // 準備：割り当ての保存を止めておく
+      const { storage: real } = openTestStorage();
+      await seedSummer2026(real);
+      const holding = holdableStorage(real);
+      const store = createPlanDataStore(holding.storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      const held = holding.holdSaveAssignments();
+      const saving = store.getState().setAssignments(MOVED);
+      await held.reached;
+
+      // 実行：古い一覧（第三十一戦隊だけ）の読み込みを頼み、別のタスクまで進めて保存を待ち始めさせてから、
+      //       新しい一覧（今の定義）の読み込みを頼み、それから保存を終える
+      const stale = store.getState().load(EVENT_ID, ["s31"]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const latest = store.getState().load(EVENT_ID, FUDA_IDS);
+      held.release();
+      await Promise.all([saving, stale, latest]);
+
+      // 検証：新しい一覧にある札の割り当て（変えた後）が、状態にも保存先にも残る
+      const ready = expectReady(store);
+      expect(ready.assignments).toEqual(MOVED);
+      expect(ready.returnedCount).toBe(0);
+      expect(await real.loadAssignments(EVENT_ID)).toEqual(MOVED);
+    });
   });
 
   describe("保存に失敗した割り当ての読み直し（黙って消さない）", () => {
@@ -603,6 +666,141 @@ describe("札割りのデータのストア（createPlanDataStore）", () => {
       expect(ready.assignments).toEqual(MOVED);
       expect(ready.saveError).toEqual({ operation: "save", message: expect.any(String) });
       expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
+    });
+  });
+
+  describe("個体 ID がない形式で取り込み直した後の読み直し（U9：残した割り当てを引き継がない）", () => {
+    it("保存に失敗した割り当てがあっても、並びの違う古い形式で取り込み直して読み直すと残さず、状態も保存先も空になる", async () => {
+      // 準備：古い形式で時雨改三だけを取り込み（legacy-1 = 時雨改三）、第三十一戦隊に置いて読み込む
+      const { storage } = openTestStorage();
+      await storage.saveImport(legacyImportInput(legacyShips(shipByUid("shigure")), FIRST_IMPORTED_AT));
+      await storage.saveAssignments(EVENT_ID, { "legacy-1": "s31" });
+      const store = createPlanDataStore(storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      // legacy-1 を連合艦隊へ移した保存を 1 回だけ失敗させる
+      vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+      await store.getState().setAssignments({ "legacy-1": "rengo" });
+      expect(expectReady(store).saveError).not.toBeNull();
+
+      // 実行：並びの違う古い形式（legacy-1 = 雪風改二、legacy-2 = 時雨改三）で取り込み直してから読み直す
+      await storage.saveImport(
+        legacyImportInput(legacyShips(shipByUid("yukikaze"), shipByUid("shigure")), NEXT_IMPORTED_AT),
+      );
+      // 前提：古い形式の取り込みで、保存先の割り当てはすべて消えている
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
+      await store.getState().reload();
+      await settleSaves(store);
+
+      // 検証：legacy-1（いまは雪風改二）を連合艦隊に置かない。状態も保存先も空で、保存の失敗も残らない
+      const ready = expectReady(store);
+      expect(ready.assignments).toEqual({});
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
+      expect(ready.saveError).toBeNull();
+    });
+
+    it("読み直しの最中に変えた割り当ても、古い形式で取り込み直した後の読み直しでは残さず、状態も保存先も空になる", async () => {
+      // 準備：古い形式で時雨改三だけを取り込み（legacy-1 = 時雨改三）、第三十一戦隊に置いて読み込む
+      const { storage: real } = openTestStorage();
+      await real.saveImport(legacyImportInput(legacyShips(shipByUid("shigure")), FIRST_IMPORTED_AT));
+      await real.saveAssignments(EVENT_ID, { "legacy-1": "s31" });
+      const holding = holdableStorage(real);
+      const store = createPlanDataStore(holding.storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      // 並びの違う古い形式（legacy-1 = 雪風改二、legacy-2 = 時雨改三）で取り込み直す（保存先の割り当ては消える）
+      await real.saveImport(
+        legacyImportInput(legacyShips(shipByUid("yukikaze"), shipByUid("shigure")), NEXT_IMPORTED_AT),
+      );
+
+      // 実行：読み直しの艦の読み取りを止め、保存先の割り当てを読み終えた後に、前の取り込みの画面のまま
+      //       legacy-1 を連合艦隊へ移し（この保存は成功する）、それから読み直しを終える
+      const mark = holding.calls.length;
+      const held = holding.holdLoadShips();
+      const reloading = store.getState().reload();
+      await held.reached;
+      await vi.waitFor(() => expect(holding.calls.slice(mark)).toContain("returnOrphanedAssignments:done"));
+      await store.getState().setAssignments({ "legacy-1": "rengo" });
+      held.release();
+      await reloading;
+      await settleSaves(store);
+
+      // 検証：legacy-1（いまは雪風改二）を連合艦隊に置かない。状態も保存先も空
+      expect(expectReady(store).assignments).toEqual({});
+      expect(await real.loadAssignments(EVENT_ID)).toEqual({});
+    });
+
+    it("古い形式の取り込みのまま取り込み直していなければ、保存に失敗した割り当てを読み直しで残して保存し直す", async () => {
+      // 準備：古い形式で時雨改三だけを取り込み、第三十一戦隊に置いて読み込み、連合艦隊へ移した保存を 1 回だけ失敗させる
+      const { storage } = openTestStorage();
+      await storage.saveImport(legacyImportInput(legacyShips(shipByUid("shigure")), FIRST_IMPORTED_AT));
+      await storage.saveAssignments(EVENT_ID, { "legacy-1": "s31" });
+      const store = createPlanDataStore(storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+      await store.getState().setAssignments({ "legacy-1": "rengo" });
+      expect(expectReady(store).saveError).not.toBeNull();
+
+      // 実行：取り込み直さずに読み直す
+      await store.getState().reload();
+      await settleSaves(store);
+
+      // 検証：変えた割り当てが残り、保存し直されて保存の失敗も消える
+      const ready = expectReady(store);
+      expect(ready.assignments).toEqual({ "legacy-1": "rengo" });
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ "legacy-1": "rengo" });
+      expect(ready.saveError).toBeNull();
+    });
+  });
+
+  describe("取り込んだ艦娘データの削除の後と、艦が 0 隻の取り込みの後の読み直し", () => {
+    it("削除の後（最終取り込みがない）に読み直すと、保存に失敗した割り当てをすべて残して保存し直す", async () => {
+      // 準備：1 回目の保存だけ失敗させる
+      const { storage } = openTestStorage();
+      await seedSummer2026(storage);
+      vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+      const store = createPlanDataStore(storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      await store.getState().setAssignments(MOVED);
+      expect(expectReady(store).saveError).not.toBeNull();
+
+      // 実行：設定の「取り込んだ艦娘データを削除」をしてから読み直す
+      await storage.clearImportedShips();
+      await store.getState().reload();
+      await settleSaves(store);
+
+      // 検証：艦は空・最終取り込みは null。変えた割り当てはすべて残り、保存し直される
+      const ready = expectReady(store);
+      expect(ready.ships).toEqual([]);
+      expect(ready.lastImport).toBeNull();
+      expect(ready.assignments).toEqual(MOVED);
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(MOVED);
+      expect(ready.saveError).toBeNull();
+    });
+
+    it("艦が 0 隻でも最終取り込みがある（削除の後ではない）なら、保存に失敗した割り当てのうち取り込みにいない個体の分を除き、状態も保存先も空になる", async () => {
+      // 準備：1 回目の保存だけ失敗させる
+      const { storage } = openTestStorage();
+      await seedSummer2026(storage);
+      vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+      const store = createPlanDataStore(storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      await store.getState().setAssignments(MOVED);
+      expect(expectReady(store).saveError).not.toBeNull();
+
+      // 実行：艦が 0 隻の取り込み（個体 ID あり）を保存してから読み直す
+      //       （取り込みの解析は 0 隻を失敗にするが、保存先は受け付けるので、判定の違いはこの場面で確かめる）
+      await storage.saveImport(importInput([], { importedAt: NEXT_IMPORTED_AT }));
+      // 前提：最終取り込みは残り（0 隻）、保存先の割り当ては取り込みで外れて空
+      expect(await storage.loadLastImport()).toMatchObject({ importedAt: NEXT_IMPORTED_AT, shipCount: 0 });
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
+      await store.getState().reload();
+      await settleSaves(store);
+
+      // 検証：取り込みにいない個体の割り当ては残さない。状態も保存先も空
+      const ready = expectReady(store);
+      expect(ready.ships).toEqual([]);
+      expect(ready.lastImport).toMatchObject({ shipCount: 0 });
+      expect(ready.assignments).toEqual({});
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
     });
   });
 
@@ -860,6 +1058,35 @@ describe("札割りのデータのストア（createPlanDataStore）", () => {
       expect(expectReady(store).returnedCount).toBe(1);
     });
 
+    it.each(["loadShips", "loadLastImport"] as const)(
+      "読み込みで %s が失敗したら、控えに戻す処理をせず（保存先の割り当てを変えず）失敗の状態になり、読み直して読めたときに控えに戻した件数を出す",
+      async (failing) => {
+        // 準備：利根改二を、定義から消えた札に置いておき、1 回目の読み取りだけ失敗させる
+        const { storage } = openTestStorage();
+        await storage.saveImport(importInput(summer2026Ships));
+        const saved: AssignmentMap = { ...summer2026Assignments, tone: "removed-fuda" };
+        await storage.saveAssignments(EVENT_ID, saved);
+        vi.spyOn(storage, failing).mockRejectedValueOnce(new Error("UnknownError"));
+        const store = createPlanDataStore(storage);
+
+        // 実行
+        await store.getState().load(EVENT_ID, FUDA_IDS);
+
+        // 検証：失敗の状態になり、保存先の割り当ては変わらない
+        expect(store.getState()).toMatchObject({ status: "error", error: { operation: "load" } });
+        expect(await storage.loadAssignments(EVENT_ID)).toEqual(saved);
+
+        // 実行：読み直す
+        await store.getState().reload();
+
+        // 検証：利根改二が控えに戻り、その件数（1）が状態に出る。保存先も控えに戻した後の割り当て
+        const ready = expectReady(store);
+        expect(ready.assignments).toEqual(summer2026Assignments);
+        expect(ready.returnedCount).toBe(1);
+        expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
+      },
+    );
+
     it("準備完了でないとき（待機中）に acknowledgeReturned を呼んでも、例外にならず待機中のまま", () => {
       // 準備
       const { storage } = openTestStorage();
@@ -926,6 +1153,99 @@ describe("札割りのデータのストア（createPlanDataStore）", () => {
       expect(update).not.toHaveBeenCalled();
       expect(save).not.toHaveBeenCalled();
       expect(store.getState().status).toBe("idle");
+    });
+  });
+
+  describe("購読者の例外で、読み込みの列・保存の列が止まらない", () => {
+    it("保存の結果を状態に入れるときに購読者が 1 回例外を投げても、その後の割り当ての保存と読み直しは進む", async () => {
+      // 準備：割り当ての保存を止めておき、止めている間に、次の知らせで 1 回だけ例外を投げる購読者を付けてから保存を終える
+      const { storage: real } = openTestStorage();
+      await seedSummer2026(real);
+      const holding = holdableStorage(real);
+      const store = createPlanDataStore(holding.storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      const held = holding.holdSaveAssignments();
+      const first = store.getState().setAssignments(MOVED);
+      await held.reached;
+      const probe = throwOnceWhen(() => true);
+      const unsubscribe = store.subscribe(probe.listener);
+      held.release();
+      // 購読者の例外がこの Promise に出るかどうかは問わない
+      await Promise.allSettled([first]);
+      // 前提：保存の結果の知らせで購読者が例外を投げた
+      expect(probe.thrown()).toBe(true);
+
+      // 実行：もう一度変えてから読み直す
+      const later: AssignmentMap = { ...MOVED, akashi: "sixth" };
+      await Promise.allSettled([store.getState().setAssignments(later)]);
+      await Promise.allSettled([store.getState().reload()]);
+      unsubscribe();
+
+      // 検証：後の割り当てが保存先に入り、読み直しても準備完了で後の割り当てのまま
+      expect(await real.loadAssignments(EVENT_ID)).toEqual(later);
+      const ready = expectReady(store);
+      expect(ready.assignments).toEqual(later);
+      expect(ready.saveError).toBeNull();
+    });
+
+    it("保存の結果を状態に入れるときに購読者が 1 回例外を投げても、その後に afterSaves で頼んだ処理（取り込みの保存など）は行われる", async () => {
+      // 準備：上と同じく、保存の結果の知らせで購読者に 1 回だけ例外を投げさせる
+      const { storage: real } = openTestStorage();
+      await seedSummer2026(real);
+      const holding = holdableStorage(real);
+      const store = createPlanDataStore(holding.storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      const held = holding.holdSaveAssignments();
+      const first = store.getState().setAssignments(MOVED);
+      await held.reached;
+      const probe = throwOnceWhen(() => true);
+      const unsubscribe = store.subscribe(probe.listener);
+      held.release();
+      await Promise.allSettled([first]);
+      expect(probe.thrown()).toBe(true);
+      const task = vi.fn(() => Promise.resolve("取り込みを保存した"));
+
+      // 実行
+      const running = store.afterSaves(task);
+
+      // 検証：頼んだ処理が行われ、その結果が返る
+      await expect(running).resolves.toBe("取り込みを保存した");
+      expect(task).toHaveBeenCalledTimes(1);
+      unsubscribe();
+    });
+
+    it("読み込みの失敗を状態に入れるときに購読者が 1 回例外を投げても、その後の読み直し・読み込みは進み、読み込み中のまま止まらない", async () => {
+      // 準備：1 回目の艦の読み取りをその場で（Promise を返さずに）失敗させ、
+      //       失敗の状態の知らせで 1 回だけ例外を投げる購読者を付けて読み込む
+      const { storage } = openTestStorage();
+      await seedSummer2026(storage);
+      await storage.saveAssignments(NEXT_EVENT_ID, { yamato: "rengo" });
+      vi.spyOn(storage, "loadShips").mockImplementationOnce(() => {
+        throw new Error("UnknownError");
+      });
+      const store = createPlanDataStore(storage);
+      const probe = throwOnceWhen((state) => state.status === "error");
+      const unsubscribe = store.subscribe(probe.listener);
+      await Promise.allSettled([store.getState().load(EVENT_ID, FUDA_IDS)]);
+      // 前提：失敗の状態の知らせで購読者が例外を投げた
+      expect(probe.thrown()).toBe(true);
+
+      // 実行：読み直す
+      await Promise.allSettled([store.getState().reload()]);
+
+      // 検証：準備完了になる（読み込み中のまま止まらない）
+      const ready = expectReady(store);
+      expect(ready.eventId).toBe(EVENT_ID);
+      expect(ready.assignments).toEqual(summer2026Assignments);
+
+      // 実行：別のイベントを読み込む
+      await Promise.allSettled([store.getState().load(NEXT_EVENT_ID, FUDA_IDS)]);
+      unsubscribe();
+
+      // 検証
+      const next = expectReady(store);
+      expect(next.eventId).toBe(NEXT_EVENT_ID);
+      expect(next.assignments).toEqual({ yamato: "rengo" });
     });
   });
 });
