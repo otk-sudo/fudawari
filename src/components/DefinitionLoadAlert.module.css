@@ -1,0 +1,38 @@
+/* 公開定義を読み込めなかったときの警告（ヘッダー帯の下） */
+
+.body {
+  padding: 12px 14px 0;
+}
+
+/*
+ * 失敗を知らせる枠。モック（Import.dc.html の警告）の赤系の色に当たる CSS 変数がまだないため、
+ * 既存の変数で枠と強調の線を付けて目立たせる
+ */
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.reason {
+  margin: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* 次の行動（再読み込み） */
+.advice {
+  margin: 0;
+}

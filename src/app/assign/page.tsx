@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ScreenHeader } from "@/components/ScreenHeader";
+import { LatestEventScreenHeader } from "@/components/LatestEventScreenHeader";
 import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
 
 const TITLE = "割り振り";
@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: TITLE };
 export default function AssignPage() {
   return (
     <>
-      <ScreenHeader title={TITLE} />
+      <LatestEventScreenHeader title={TITLE} />
       <ScreenPlaceholder />
     </>
   );
