@@ -34,6 +34,8 @@ export type StageDetailProps = {
   publishLabel: string;
   knownShipNames: ReadonlySet<string> | undefined;
   actions: StageActions;
+  /** 特効グループの倍率の欄に入力の誤りが残っているかを知らせる（BoostGroupEditor の onInvalidChange） */
+  onGroupInvalidChange: (groupId: string, invalid: boolean) => void;
 };
 
 const IMPORTANCES: readonly Importance[] = ["normal", "important", "hard"];
@@ -43,9 +45,16 @@ const UNKNOWN_FUDA_COLOR = "#8B93A1";
 
 /**
  * 段階の詳細（要件 3.7「段階の詳細」、U16）。選んだ段階の名前・使う札・大事さと、この段階のボスで効く特効を編集する。
- * 段階を選び直したら作り直す（呼び出し側で key に段階の ID を付ける）ので、削除の確認などの開閉は段階ごと
+ * 段階を選び直したら作り直す（呼び出し側で key にモードと段階の ID を付ける）ので、削除の確認などの開閉は段階ごと
  */
-export function StageDetail({ doc, stage, publishLabel, knownShipNames, actions }: StageDetailProps): ReactNode {
+export function StageDetail({
+  doc,
+  stage,
+  publishLabel,
+  knownShipNames,
+  actions,
+  onGroupInvalidChange,
+}: StageDetailProps): ReactNode {
   const [confirming, setConfirming] = useState(false);
   const [pasting, setPasting] = useState(false);
   // 追加した直後の特効グループ（グループ名の欄にフォーカスを移す）
@@ -153,6 +162,7 @@ export function StageDetail({ doc, stage, publishLabel, knownShipNames, actions 
               autoFocus={group.id === focusGroupId}
               knownShipNames={knownShipNames}
               actions={actions}
+              onInvalidChange={onGroupInvalidChange}
             />
           ))}
           <div className={styles.boostActions}>

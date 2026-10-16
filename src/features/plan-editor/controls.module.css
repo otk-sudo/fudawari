@@ -19,6 +19,12 @@
   outline-offset: 1px;
 }
 
+/* 操作できない入力欄（イベントの作成の途中のイベント名・日時、作成した後の「元にするイベント」） */
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ボタンの共通の形 */
 .primaryButton,
 .secondaryButton,

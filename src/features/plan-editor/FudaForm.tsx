@@ -28,6 +28,8 @@ export type FudaFormProps = {
   onCancel: () => void;
 };
 
+const MSG_NAME_REQUIRED = "札の名前を入力してください";
+
 /** 札番号の入力欄の値を数にする（空は null） */
 function parseGameNumber(text: string): number | null {
   const trimmed = text.trim();
@@ -55,6 +57,12 @@ export function FudaForm({ kind, initial, canDelete = false, onSubmit, onDelete,
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    // 名前が空（空白だけを含む）なら理由を出して閉じない（札の編集の関数は空の名前を弾かないため、ここで確かめる）
+    if (name.trim() === "") {
+      setError(MSG_NAME_REQUIRED);
+      nameRef.current?.focus();
+      return;
+    }
     const failure = onSubmit({ name, color, gameNumber: parseGameNumber(gameNumberText) });
     setError(failure?.message ?? null);
   };

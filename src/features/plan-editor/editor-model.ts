@@ -42,8 +42,13 @@ export interface Workspace {
   readonly draftNote: DraftNote | null;
   /** 選んでいる段階（なければ null。文書にない ID なら最初の段階を選んでいるものとして扱う） */
   readonly selectedStageId: string | null;
-  /** 新規作成の「元にするイベント」の ID（使わないなら空文字） */
+  /** 新規作成の「元にするイベント」の ID（今の文書の元にしたイベント。使わないなら空文字） */
   readonly baseEventId: string;
+  /**
+   * 新規作成で、選んで文書を読み込んでいる途中の「元にするイベント」の ID（なければ null）。
+   * 読み込めたら baseEventId にし、失敗したら null に戻す（選択欄は baseEventId の値に戻る）
+   */
+  readonly loadingBaseEventId: string | null;
 }
 
 /** 保存の記録に入れる海域の表示名（文書にない海域は ID のまま） */
@@ -117,6 +122,7 @@ export function workspaceFromEvent(event: EditableEvent): Workspace {
     draftNote: { updatedByName: event.draft.updatedByName, updatedAt: event.draft.updatedAt },
     selectedStageId: firstStageId(doc),
     baseEventId: "",
+    loadingBaseEventId: null,
   };
 }
 
@@ -132,6 +138,7 @@ export function emptyCreateWorkspace(): Workspace {
     draftNote: null,
     selectedStageId: null,
     baseEventId: "",
+    loadingBaseEventId: null,
   };
 }
 

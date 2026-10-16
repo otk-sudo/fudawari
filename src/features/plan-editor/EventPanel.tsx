@@ -50,7 +50,11 @@ export type EventPanelProps = {
   /** 入力欄を確定した（フォーカスを外した・Enter を押した） */
   onCommitText: (field: EventField) => void;
   onClearEnd: () => void;
+  /** イベント名・日時の欄を操作できなくする（新規作成でイベントを作成している途中） */
+  metaLocked: boolean;
   baseEventOptions: readonly BaseEventOption[];
+  /** 「元にするイベント」を選べるか（イベントを作る前で、作成の途中でもないときだけ） */
+  canChooseBase: boolean;
   onChooseBase: (baseEventId: string) => void;
   /** 公開中の版からの変更（未公開の変更） */
   pending: readonly DefinitionChange[];
@@ -81,12 +85,14 @@ type DateFieldProps = {
   /** 「必須」「任意」の印（モックでは、既存を更新の開始日時には印を付けない） */
   badge?: "必須" | "任意";
   value: string;
+  /** 操作できなくする */
+  disabled: boolean;
   onChange: (value: string) => void;
   onCommit: () => void;
 };
 
 /** 日時の入力欄（分まで。日本時間） */
-function DateField({ label, required, badge, value, onChange, onCommit }: DateFieldProps): ReactNode {
+function DateField({ label, required, badge, value, disabled, onChange, onCommit }: DateFieldProps): ReactNode {
   const id = useId();
   return (
     <span className={styles.dateField}>
@@ -104,6 +110,7 @@ function DateField({ label, required, badge, value, onChange, onCommit }: DateFi
         type="datetime-local"
         className={controls.input}
         value={value}
+        disabled={disabled}
         required={required}
         aria-required={required || undefined}
         onChange={(event) => onChange(event.currentTarget.value)}
@@ -180,6 +187,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
                 label="開始日時"
                 required
                 value={startValue}
+                disabled={props.metaLocked}
                 onChange={(value) => props.onChangeText("startAt", value)}
                 onCommit={() => props.onCommitText("startAt")}
               />
@@ -193,6 +201,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
               required={false}
               badge="任意"
               value={endValue}
+              disabled={props.metaLocked}
               onChange={(value) => props.onChangeText("endAt", value)}
               onCommit={() => props.onCommitText("endAt")}
             />
@@ -214,7 +223,8 @@ export function EventPanel(props: EventPanelProps): ReactNode {
               <select
                 id={baseSelectId}
                 className={controls.input}
-                value={workspace.baseEventId}
+                value={workspace.loadingBaseEventId ?? workspace.baseEventId}
+                disabled={!props.canChooseBase}
                 onChange={(event) => props.onChooseBase(event.currentTarget.value)}
               >
                 <option value="">使わない（空から作る）</option>
@@ -232,6 +242,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
               required
               badge="必須"
               value={startValue}
+              disabled={props.metaLocked}
               onChange={(value) => props.onChangeText("startAt", value)}
               onCommit={() => props.onCommitText("startAt")}
             />
@@ -240,6 +251,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
               required={false}
               badge="任意"
               value={endValue}
+              disabled={props.metaLocked}
               onChange={(value) => props.onChangeText("endAt", value)}
               onCommit={() => props.onCommitText("endAt")}
             />
@@ -266,6 +278,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
               className={`${controls.input} ${styles.nameInput}`}
               placeholder="例：2026秋イベ"
               value={nameValue}
+              disabled={props.metaLocked}
               onChange={(event) => props.onChangeText("name", event.currentTarget.value)}
               onBlur={() => props.onCommitText("name")}
               onKeyDown={(event) => {

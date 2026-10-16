@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   addArea,
   addBoostGroup,
@@ -17,9 +17,11 @@ import {
   type EditMode,
   editPermissions,
   type EditResult,
+  type EventInfoError,
   findDocumentIssues,
   formatDateTimeJst,
   fromDateTimeLocalValue,
+  isEventEnded,
   moveFuda,
   moveStage,
   removeArea,
@@ -90,8 +92,11 @@ interface Notice {
   readonly text: string;
 }
 
-/** 保存・公開の途中 */
-type Busy = "save" | "publish";
+/** 保存・公開の途中（kind：操作、target：保存するワークスペースのモード） */
+interface Busy {
+  readonly kind: "save" | "publish";
+  readonly target: EditMode;
+}
 
 /** 下書きの保存の結果（保存した版と文書） */
 interface SaveOutcome {
@@ -104,6 +109,8 @@ interface SaveOutcome {
 interface Prepared {
   readonly content: DefinitionDoc;
   readonly meta: EventMeta;
+  /** 組み立てに使った入力欄の値（イベントを作成した後、この値のままの欄だけを確定済みに戻す） */
+  readonly texts: FieldTexts;
 }
 
 const EMPTY_TEXTS: FieldTexts = { name: null, startAt: null, endAt: null };
@@ -111,6 +118,7 @@ const EMPTY_TEXTS: FieldTexts = { name: null, startAt: null, endAt: null };
 const MSG_NEED_NAME_AND_START = "イベント名と開始日時を入力してください";
 const MSG_SAVED = "下書きを保存しました。管理者・協力者全員の定義画面に反映されます";
 const MSG_NO_EVENT_FOR_COLLAB = "更新できるイベントがありません。管理者が新規作成するまでお待ちください";
+const MSG_END_IN_PAST_CREATE = "終了日時は今より後にしてください";
 
 /** 今の時刻（30 秒ごとに進める。終了日時を過ぎたら、開いたままでも更新できない状態にするため） */
 function useNow(intervalMs = 30_000): Date {
@@ -178,17 +186,41 @@ function metaWithField(meta: EventMeta, candidate: EventMeta, field: EventField)
   }
 }
 
+/** 送った値（sent）のままの入力欄だけを確定済み（null）に戻す（送った後に書き換えた値は消さない） */
+function clearSentTexts(texts: FieldTexts, sent: FieldTexts): FieldTexts {
+  return {
+    name: texts.name === sent.name ? null : texts.name,
+    startAt: texts.startAt === sent.startAt ? null : texts.startAt,
+    endAt: texts.endAt === sent.endAt ? null : texts.endAt,
+  };
+}
+
+/**
+ * イベント名・日時の誤り（validateEventInfo の結果）。新規作成でも、終了日時が今以前なら end_in_past を足す
+ * （domain の検証は更新のときだけ見る。過去の終了日時で作ると公開した途端に終了して更新できなくなるため、画面で止める）
+ */
+function eventInfoErrors(mode: EditMode, meta: EventMeta, now: Date): EventInfoError[] {
+  const errors = validateEventInfo({ mode, ...meta, now });
+  if (mode !== "create" || meta.endAt === null || errors.some((e) => e.field === "endAt")) return errors;
+  if (!isEventEnded(meta.endAt, now)) return errors;
+  return [...errors, { field: "endAt", code: "end_in_past", message: MSG_END_IN_PAST_CREATE }];
+}
+
 /**
  * 定義画面の本文（読み込みが済んだ後）。上部の欄・攻略の流れ・札の一覧・段階の詳細と、
  * 編集・下書きの保存・公開・イベントの作成と更新を受け持つ。
  *
  * 決めたこと
  * - イベント名・日時は確定（フォーカスを外す）のたびに updateEventMeta で保存する（下書きの保存とは別）。
- *   画面はすぐ新しい値にし、失敗したら元に戻して理由を出す
+ *   画面はすぐ新しい値にし、失敗したら保管庫で確定している値に戻して理由を出す。
+ *   更新は列にして 1 つずつ順に送り（後の更新はそれまでに確定した値をすべて持つ）、前の更新が失敗しても続ける
+ * - 「下書きを保存」「変更を公開する」は、それまでに確定したイベント名・日時の更新が終わってから保存・公開する
  * - 「変更を公開する」は、保存していない変更があれば先に下書きを保存し、返った版を公開する
  * - 新規作成の「下書きを保存」は 1 回目にイベントを作成し、2 回目からはその下書きを保存する。
- *   「公開して最新にする」は、まだ作成していなければ作成してから、返った版を最新にして公開する
+ *   「公開して最新にする」は、まだ作成していなければ作成してから、返った版を最新にして公開する。
+ *   作成の途中はイベント名・日時の欄を操作できなくし、「元にするイベント」はイベントを作る前だけ選べる
  * - 文書の問題（findDocumentIssues）は理由を出してボタンを押せなくする。段階が 1 つもないことは公開だけを止める
+ * - 入力の誤り（イベント名・日時・倍率のその場の文）が残っている間も、保存・公開を押せなくする
  */
 export function DefinitionEditor({ data, repository, knownShipNames }: DefinitionEditorProps): ReactNode {
   const { user } = data;
@@ -198,6 +230,12 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   const [triedSubmit, setTriedSubmit] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState<Busy | null>(null);
+  // 倍率の欄に入力の誤りが残っている特効グループの ID（誤りの間は保存・公開を押せなくする）
+  const [invalidGroupIds, setInvalidGroupIds] = useState<ReadonlySet<string>>(() => new Set());
+  // イベント名・日時の更新の列（1 つずつ順に送る。列の各処理は失敗を自分で受け止め、列を止めない）
+  const metaQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // イベントごとの、保管庫で確定しているイベント名・日時（更新に失敗したとき、表示をこの値に戻す）
+  const confirmedMetaRef = useRef(new Map<string, EventMeta>());
 
   const { mode } = state;
   const ws = state.workspaces[mode];
@@ -208,6 +246,17 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
       const current = prev.workspaces[target];
       if (current === null) return prev;
       return { ...prev, workspaces: { ...prev.workspaces, [target]: change(current) } };
+    });
+  }, []);
+
+  /** 特効グループの倍率の欄に誤りが残っているかを受け取る（BoostGroupEditor の効果から呼ばれるので、同じ関数を渡し続ける） */
+  const reportGroupInvalid = useCallback((groupId: string, invalid: boolean): void => {
+    setInvalidGroupIds((prev) => {
+      if (prev.has(groupId) === invalid) return prev;
+      const next = new Set(prev);
+      if (invalid) next.add(groupId);
+      else next.delete(groupId);
+      return next;
     });
   }, []);
 
@@ -230,10 +279,11 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
 
   const fieldError = ((): string | null => {
     if (!perms.canEditContent) return null;
-    const errors = validateEventInfo({ mode, ...candidate, now });
+    const errors = eventInfoErrors(mode, candidate, now);
     if (mode === "update") return errors[0]?.message ?? null;
-    const order = errors.find((e) => e.code === "end_before_start");
-    if (order !== undefined) return order.message;
+    // 新規作成：終了日時が開始日時以前・今以前なら、押す前から出す
+    const timing = errors.find((e) => e.code === "end_before_start" || e.code === "end_in_past");
+    if (timing !== undefined) return timing.message;
     // 新規作成：必須の欄は、保存・公開を押した後（作成済みのイベントなら常に）出す
     if (!triedSubmit && ws.eventId === null) return null;
     const missing = errors.filter((e) => e.code === "required").map((e) => e.field);
@@ -252,6 +302,18 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   );
 
   const pending = ws.published === null ? [] : unpublishedChanges(ws.published, ws.doc);
+
+  // ---- 保存・公開・作成の途中 ----
+
+  // 新規作成でイベントを作成している途中（イベント名・日時の欄を操作できなくする）
+  const creating = busy !== null && busy.target === mode && ws.eventId === null;
+  // 「元にするイベント」を選べるのは、イベントを作る前で、作成の途中でもないときだけ
+  const canChooseBase = ws.eventId === null && !creating;
+  // 入力の誤り（その場で出す文）が残っている間・元にするイベントの読み込みの途中は、保存・公開を押せなくする
+  const inputInvalid = fieldError !== null || invalidGroupIds.size > 0;
+  const baseLoading = ws.loadingBaseEventId !== null;
+  const saveDisabled = busy !== null || saveBlocked || inputInvalid || baseLoading;
+  const publishDisabled = busy !== null || publishBlocked || inputInvalid || baseLoading;
 
   // ---- 編集 ----
 
@@ -377,31 +439,43 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   // ---- 新規作成の元にするイベント ----
 
   const chooseBase = (baseEventId: string): void => {
+    if (!canChooseBase) return;
     const target = mode;
     const eventId = ws.doc.event.id;
-    updateWorkspace(target, (current) => ({ ...current, baseEventId }));
     setNotice(null);
     if (baseEventId === "") {
       updateWorkspace(target, (current) => ({
         ...current,
+        baseEventId: "",
+        loadingBaseEventId: null,
         doc: withEventMeta(createDefinition({ eventId }), current.meta),
         selectedStageId: null,
       }));
       return;
     }
+    // 読み込めるまでは選んだ値を「読み込みの途中」として持つ（選択欄はこの値を出し、状態の文と文書は前のまま）
+    updateWorkspace(target, (current) => ({ ...current, loadingBaseEventId: baseEventId }));
     repository.loadEventContent(baseEventId).then(
       (base) => {
         updateWorkspace(target, (current) => {
           // 読み込みの間に別のイベントを選び直していたら捨てる
-          if (current.baseEventId !== baseEventId) return current;
+          if (current.loadingBaseEventId !== baseEventId) return current;
+          // 読み込みの間にイベントを作成していたら、作成したイベントの文書を置き換えない
+          if (current.eventId !== null) return { ...current, loadingBaseEventId: null };
           return {
             ...current,
+            baseEventId,
+            loadingBaseEventId: null,
             doc: withEventMeta(createDefinition({ eventId, base }), current.meta),
             selectedStageId: null,
           };
         });
       },
       (error: unknown) => {
+        // 選択を前の値（今の文書の元にしたイベント）に戻す。読み込みの間に別のイベントを選び直していたらそのまま
+        updateWorkspace(target, (current) =>
+          current.loadingBaseEventId === baseEventId ? { ...current, loadingBaseEventId: null } : current,
+        );
         setNotice({ tone: "error", text: `元にするイベントを読み込めませんでした：${errorMessage(error)}` });
       },
     );
@@ -409,27 +483,39 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
 
   // ---- イベント名・日時 ----
 
-  /** イベント名・日時を確定する（作成済みのイベントなら updateEventMeta で保存する） */
+  /**
+   * イベント名・日時を確定する（作成済みのイベントなら updateEventMeta で保存する）。
+   * 更新は列の最後に足し、前の更新が終わってから送る（後の更新は、それまでに確定した値をすべて持つ）
+   */
   const saveMeta = (nextMeta: EventMeta, field: EventField): void => {
     const target = mode;
     const prevMeta = ws.meta;
     const { eventId } = ws;
     if (eventId !== null) {
       // 誤りがあれば保存しない（入力欄の値は残し、その場の検証の文で知らせる）
-      if (validateEventInfo({ mode: target, ...nextMeta, now: new Date() }).length > 0) return;
+      if (eventInfoErrors(target, nextMeta, new Date()).length > 0) return;
     }
     updateWorkspace(target, (current) => ({ ...current, meta: nextMeta, doc: withEventMeta(current.doc, nextMeta) }));
     setTexts((current) => withText(current, field, null));
     if (eventId === null) return;
     setNotice(null);
-    repository.updateEventMeta({ eventId, ...nextMeta }).catch((error: unknown) => {
-      // 失敗したら元に戻す（その後に別の値へ変えていなければ）
-      updateWorkspace(target, (current) => {
-        if (current.meta !== nextMeta) return current;
-        const doc = withEventMeta(current.doc, nextMeta) === current.doc ? withEventMeta(current.doc, prevMeta) : current.doc;
-        return { ...current, meta: prevMeta, doc };
-      });
-      setNotice({ tone: "error", text: `イベント名・期間を更新できませんでした：${errorMessage(error)}` });
+    const confirmed = confirmedMetaRef.current;
+    // このイベントの初めての更新なら、今の値（読み込んだ・作成したときの値）が保管庫で確定している値
+    if (!confirmed.has(eventId)) confirmed.set(eventId, prevMeta);
+    metaQueueRef.current = metaQueueRef.current.then(async () => {
+      try {
+        await repository.updateEventMeta({ eventId, ...nextMeta });
+        confirmed.set(eventId, nextMeta);
+      } catch (error: unknown) {
+        // 失敗したら、表示を保管庫で確定している値に戻す（その後に別の値へ変えていれば、その更新が送るので戻さない）
+        const saved = confirmed.get(eventId) ?? prevMeta;
+        updateWorkspace(target, (current) => {
+          if (current.meta !== nextMeta) return current;
+          const doc = withEventMeta(current.doc, nextMeta) === current.doc ? withEventMeta(current.doc, saved) : current.doc;
+          return { ...current, meta: saved, doc };
+        });
+        setNotice({ tone: "error", text: `イベント名・期間を更新できませんでした：${errorMessage(error)}` });
+      }
     });
   };
 
@@ -451,13 +537,24 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
 
   /** 保存する内容を組み立てる。新規作成でイベント名・日時に誤りがあれば null（理由はその場の検証の文で出す） */
   const prepare = (target: EditMode, current: Workspace): Prepared | null => {
-    if (target === "update") return { content: current.doc, meta: current.meta };
+    if (target === "update") return { content: current.doc, meta: current.meta, texts };
     const meta = candidateMeta(current.meta, texts);
-    if (validateEventInfo({ mode: "create", ...meta, now: new Date() }).length > 0) {
+    if (eventInfoErrors("create", meta, new Date()).length > 0) {
       setTriedSubmit(true);
       return null;
     }
-    return { content: withEventMeta(current.doc, meta), meta };
+    return { content: withEventMeta(current.doc, meta), meta, texts };
+  };
+
+  /**
+   * イベント名・日時の更新の列が終わるまで待ち、保管庫で確定した値を文書の写しに入れる
+   * （更新の途中に押された保存・公開を、更新が終わってから行うため。更新に失敗していても続ける）
+   */
+  const settleMeta = async (eventId: string | null, prepared: Prepared): Promise<Prepared> => {
+    await metaQueueRef.current;
+    const confirmed = eventId === null ? undefined : confirmedMetaRef.current.get(eventId);
+    if (confirmed === undefined) return prepared;
+    return { ...prepared, content: withEventMeta(prepared.content, confirmed), meta: confirmed };
   };
 
   /** 下書きを保存する（まだイベントを作っていなければ作成する）。保存できなければ理由を出して null */
@@ -483,7 +580,8 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
         meta,
         draftNote,
       }));
-      setTexts(EMPTY_TEXTS);
+      // 作成に使った値のままの入力欄だけを確定済みに戻す（作成した後に入力した値は消さない）
+      setTexts((latest) => clearSentTexts(latest, prepared.texts));
       return { eventId: created.eventId, version: created.draftVersion, content: saved };
     }
 
@@ -511,15 +609,16 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   };
 
   const handleSaveDraft = async (): Promise<void> => {
-    if (busy !== null || saveBlocked) return;
+    if (saveDisabled) return;
     const target = mode;
     const current = ws;
     setNotice(null);
     const prepared = prepare(target, current);
     if (prepared === null) return;
-    setBusy("save");
+    setBusy({ kind: "save", target });
     try {
-      if ((await saveDraftCore(target, current, prepared)) !== null) setNotice({ tone: "success", text: MSG_SAVED });
+      const ready = await settleMeta(current.eventId, prepared);
+      if ((await saveDraftCore(target, current, ready)) !== null) setNotice({ tone: "success", text: MSG_SAVED });
     } catch (error: unknown) {
       setNotice({ tone: "error", text: `下書きを保存できませんでした：${errorMessage(error)}` });
     } finally {
@@ -528,21 +627,22 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   };
 
   const handlePublish = async (): Promise<void> => {
-    if (busy !== null || publishBlocked) return;
+    if (publishDisabled) return;
     const target = mode;
     const current = ws;
     setNotice(null);
     const prepared = prepare(target, current);
     if (prepared === null) return;
-    setBusy("publish");
+    setBusy({ kind: "publish", target });
     try {
+      const ready = await settleMeta(current.eventId, prepared);
       // 保存していない変更があれば先に下書きを保存する（公開するのは保存済みの下書き）
       let saved: SaveOutcome | null =
         current.eventId !== null && current.baseVersion !== null && current.savedDoc !== null && !hasUnsavedChanges(current)
           ? { eventId: current.eventId, version: current.baseVersion, content: current.savedDoc }
           : null;
       if (saved === null) {
-        saved = await saveDraftCore(target, current, prepared);
+        saved = await saveDraftCore(target, current, ready);
         if (saved === null) return;
       }
       const makeLatest = target === "create";
@@ -556,9 +656,9 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
           if (created === null) return prev;
           return { mode: "update", workspaces: { update: { ...created, published }, create: null }, unpublished: null };
         });
-        setTexts(EMPTY_TEXTS);
+        // 同じイベントの編集を続けるので、入力欄の値はそのまま残す（作成に使った値は作成したときに確定済み）
         setTriedSubmit(false);
-        setNotice({ tone: "success", text: `公開して、${prepared.meta.name}を最新のイベントにしました（${label}）` });
+        setNotice({ tone: "success", text: `公開して、${ready.meta.name}を最新のイベントにしました（${label}）` });
       } else {
         updateWorkspace(target, (latest) => ({ ...latest, published }));
         setNotice({ tone: "success", text: `変更を公開しました（${label}）。一般の画面に反映されるまで数分かかります` });
@@ -576,11 +676,15 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   const selectedStage = ws.doc.stages.find((s) => s.id === selectedStageId) ?? null;
   const publishLabel = mode === "create" ? "公開して最新にする" : "変更を公開する";
   const latestName = state.workspaces.update?.meta.name ?? null;
-  // イベント名の横の状態（モックの「開催中」「新規」）。開始日時が読めなければ出さない
+  // イベント名の横の状態（モックの「開催中」「新規」）。開始日時が読めなければ出さない。
+  // 「開催中」は保存済みの終了日時を過ぎていないときだけ（終了したイベントは終了の表示だけを出す）
   const startMs = Date.parse(ws.meta.startAt);
   let nameSuffix: string | null = null;
   if (mode === "create") nameSuffix = "新規";
-  else if (!Number.isNaN(startMs)) nameSuffix = startMs <= now.getTime() ? "開催中" : "開始前";
+  else if (!Number.isNaN(startMs)) {
+    if (startMs > now.getTime()) nameSuffix = "開始前";
+    else if (!perms.ended) nameSuffix = "開催中";
+  }
 
   return (
     <div className={styles.body}>
@@ -599,12 +703,14 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
         onChangeText={(field, value) => setTexts((current) => withText(current, field, value))}
         onCommitText={commitField}
         onClearEnd={clearEnd}
+        metaLocked={creating}
         baseEventOptions={data.baseEventOptions}
+        canChooseBase={canChooseBase}
         onChooseBase={chooseBase}
         pending={pending}
         issues={shownIssues.map((issue) => issueMessage(ws.doc, issue))}
-        saveDisabled={busy !== null || saveBlocked}
-        publishDisabled={busy !== null || publishBlocked}
+        saveDisabled={saveDisabled}
+        publishDisabled={publishDisabled}
         publishLabel={publishLabel}
         onSaveDraft={() => void handleSaveDraft()}
         onPublish={() => void handlePublish()}
@@ -662,12 +768,13 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
               </p>
             ) : (
               <StageDetail
-                key={selectedStage.id}
+                key={`${mode}:${selectedStage.id}`}
                 doc={ws.doc}
                 stage={selectedStage}
                 publishLabel={publishLabel}
                 knownShipNames={knownShipNames}
                 actions={stageActions}
+                onGroupInvalidChange={reportGroupInvalid}
               />
             )}
           </div>

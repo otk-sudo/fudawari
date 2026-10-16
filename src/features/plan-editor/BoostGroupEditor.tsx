@@ -19,13 +19,25 @@ export type BoostGroupEditorProps = {
   autoFocus: boolean;
   knownShipNames: ReadonlySet<string> | undefined;
   actions: Pick<StageActions, "updateGroup" | "removeGroup" | "addShips" | "removeShip">;
+  /**
+   * 倍率の欄に入力の誤りが残っているかを知らせる（誤りの間は保存・公開を押せなくするため）。
+   * 誤りが消えたとき・この欄を描き直して消したときは invalid を false にして呼ぶ。同じ関数を渡し続けること
+   */
+  onInvalidChange: (groupId: string, invalid: boolean) => void;
 };
 
 /**
  * 特効グループ（group。名前は「特効グループ n：グループ名」）。
  * 倍率（確定したときに 1 以上 10 以下か確かめる）とグループ名をその場で編集し、艦名のタグとグループは × で外す（U16）
  */
-export function BoostGroupEditor({ group, index, autoFocus, knownShipNames, actions }: BoostGroupEditorProps): ReactNode {
+export function BoostGroupEditor({
+  group,
+  index,
+  autoFocus,
+  knownShipNames,
+  actions,
+  onInvalidChange,
+}: BoostGroupEditorProps): ReactNode {
   // 倍率の欄の、まだ確定していない値（null は文書の値を出す）
   const [multiplierText, setMultiplierText] = useState<string | null>(null);
   const [multiplierError, setMultiplierError] = useState<string | null>(null);
@@ -46,6 +58,14 @@ export function BoostGroupEditor({ group, index, autoFocus, knownShipNames, acti
   useEffect(() => {
     if (adding) shipInputRef.current?.focus();
   }, [adding]);
+
+  // 倍率の誤りが残っている間だけ、誤りがあることを知らせる（誤りが消えたとき・描き直して消えたときに取り消す）
+  const multiplierInvalid = multiplierError !== null;
+  useEffect(() => {
+    if (!multiplierInvalid) return undefined;
+    onInvalidChange(group.id, true);
+    return () => onInvalidChange(group.id, false);
+  }, [multiplierInvalid, group.id, onInvalidChange]);
 
   const commitMultiplier = (): void => {
     if (multiplierText === null) return;
@@ -152,7 +172,15 @@ export function BoostGroupEditor({ group, index, autoFocus, knownShipNames, acti
                 }}
               />
             ) : (
-              <button type="button" className={styles.tagAdd} onClick={() => setAdding(true)}>
+              <button
+                type="button"
+                className={styles.tagAdd}
+                onClick={() => {
+                  // 前に Esc でやめたときの印を消す（欄を閉じた後の blur は届かないことがあるため、開くときに消す）
+                  cancelShipRef.current = false;
+                  setAdding(true);
+                }}
+              >
                 ＋ 艦名
               </button>
             )}
