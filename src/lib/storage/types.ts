@@ -4,7 +4,8 @@
 import type { ImportFilter } from "@/domain/import/types";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip } from "@/domain/ship/types";
-import type { ThemeMode } from "@/features/theme";
+// 画面モードは型だけのファイルから読む（入口 @/features/theme は React の部品や zustand も読み込むため）
+import type { ThemeMode } from "@/features/theme/theme-mode-base";
 import type { ReturnOrphanedAssignmentsResult } from "@/domain/plan/orphan";
 
 /** 取り込みを保存するときに渡すもの */
