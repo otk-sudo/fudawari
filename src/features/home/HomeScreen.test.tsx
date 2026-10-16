@@ -9,10 +9,18 @@ import { expectInDocumentOrder } from "@/test/dom-order";
 
 const RUNNING_EVENT = "2026夏イベ";
 
-// 権限と開催中のイベントを決めてホームを描く
+// 権限と開催中のイベントを決めてホームを描く（開催中のイベントがない〔null〕ときは、最新のイベントは終了したものとして描く）
 function renderHome(role: Role, runningEventName: string | null): void {
   setRole(role);
-  render(<HomeScreen runningEventName={runningEventName} />);
+  render(
+    <HomeScreen
+      latestEvent={
+        runningEventName === null
+          ? { status: "ended" }
+          : { status: "running", eventName: runningEventName }
+      }
+    />,
+  );
 }
 
 // タイルの名前は「タイトル＋説明」になることがあるため、タイトルの前方一致で探す
@@ -115,7 +123,7 @@ describe("ホーム（HomeScreen）", () => {
       setRole("user");
       render(
         <>
-          <HomeScreen runningEventName={null} />
+          <HomeScreen latestEvent={{ status: "ended" }} />
           <SettingsDialog />
         </>,
       );
@@ -153,26 +161,16 @@ describe("ホーム（HomeScreen）", () => {
       expect(queryTileLink("協力者")).not.toBeInTheDocument();
     });
 
-    it("協力者のイベント定義の説明は、開催中のイベントがあれば「開催中イベントの札・段階・特効を更新」", () => {
+    // 協力者の説明は、最新のイベントが終了していない（開始前を含む）／終了した／読み込み中／読み込みの失敗で変わる（要件 3.1、U18）。
+    // 開催中でないときの出し分け（開始前・終了・読み込み中・失敗）は、公開定義の読み込みと合わせてホームの画面のテスト（src/app/page.test.tsx）で確かめる
+    it("協力者のイベント定義の説明は、開催中のイベントがあれば（最新のイベントが終了していない）「最新イベントの札・段階・特効を更新」", () => {
       // 準備・実行
       renderHome("collab", RUNNING_EVENT);
 
       // 検証
       expect(getTileLink("イベント定義")).toHaveTextContent(
-        "開催中イベントの札・段階・特効を更新",
+        "最新イベントの札・段階・特効を更新",
       );
-    });
-
-    it("協力者のイベント定義の説明は、開催中のイベントがなければ「開催中のイベントがないため、いまは更新できるものはありません」", () => {
-      // 準備・実行
-      renderHome("collab", null);
-
-      // 検証
-      const tile = getTileLink("イベント定義");
-      expect(tile).toHaveTextContent(
-        "開催中のイベントがないため、いまは更新できるものはありません",
-      );
-      expect(tile).not.toHaveTextContent("開催中イベントの札・段階・特効を更新");
     });
 
     it("管理者には見出し「管理」に「管理者」のバッジを付け、「イベント定義」「協力者」をこの順で出す", () => {
