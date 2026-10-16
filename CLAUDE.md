@@ -12,7 +12,7 @@
 - U1〜U24 は 2026-10-16 にすべて決定した（`docs/requirements.md` 13.1）。新しい論点は勝手に決めず、親に戻す
 
 ## 技術構成（決定）
-Next.js 16（App Router、静的書き出し `output: "export"`）＋ TypeScript 6（strict）／Cloudflare Pages／Supabase（DB・Auth〔Discord〕・Realtime。管理者・協力者だけが使う）／Dexie.js（IndexedDB）／dnd-kit／TanStack Virtual／Radix UI（見た目を持たない部品）／Zustand／CSS Modules ＋ CSS 変数／modern-screenshot ＋ Clipboard API／Vitest・Testing Library・fake-indexeddb・Playwright（Chromium）／GitHub Actions。依存の追加・版の変更は親だけが行う。必要なら理由を添えて親に相談する。
+Next.js 16（App Router、静的書き出し `output: "export"`）＋ TypeScript 6（strict）／Cloudflare Pages／Supabase（DB・Auth〔管理者が発行する ID とパスワード。U3〕・Realtime。管理者・協力者だけが使う）／Dexie.js（IndexedDB）／dnd-kit／TanStack Virtual／Radix UI（見た目を持たない部品）／Zustand／CSS Modules ＋ CSS 変数／modern-screenshot ＋ Clipboard API／Vitest・Testing Library・fake-indexeddb・Playwright（Chromium）／GitHub Actions。依存の追加・版の変更は親だけが行う。必要なら理由を添えて親に相談する。
 - 版の事情：TypeScript は typescript-eslint の対応範囲のため 6.0 系に固定（`~6.0.3`）。jsdom は Node 22.18 で動く 29 系。ESLint は 10 系（eslint-config-next 16.4 が対応。peer の警告は出るが `npm ci` は通る）。Node は `^22.13.0 || ^24.0.0 || >=26.0.0`（ESLint・jsdom・Vitest の対応範囲の重なり）。
 - ESLint 10 で動かないルールがあるため、次は有効にしない：`react/jsx-filename-extension`、`react/forward-ref-uses-ref`、`import/no-default-export`・`import/no-named-export`・`import/unambiguous`（ESLint 10 にない context の API を使う）。
 
@@ -33,12 +33,13 @@ e2e/              Playwright
 ```
 
 ## コマンド（npm、Node 22）
-- 開発サーバー：`npm run dev`
+- 開発サーバー：`npm run dev`（艦船マスタがなければ、先に predev で生成する。あれば使い回す。最新にするなら `npm run generate:ship-master`）
 - 型チェック：`npm run typecheck`（`next typegen && tsc --noEmit`。next-env.d.ts は追跡しないため先に型を生成する）
 - Lint：`npm run lint`
 - 単体テスト：`npm test`（Vitest）
 - 画面テスト：`npm run test:e2e`（Playwright。静的書き出しをビルドして serve で配信し、それに対して実行する）。初めて手元で動かすときは先に `npx playwright install chromium`。ポートはワークツリーごとに自動で変わる（`E2E_PORT` で上書きできる）ので、複数のワークツリーで同時に実行してよい
-- ビルド：`npm run build`（`out/` に静的書き出し。のちに最新イベントの公開定義 JSON と艦船マスタの生成を含める）
+- ビルド：`npm run build`（`out/` に静的書き出し。直前の prebuild で艦船マスタ `public/data/ship-master.json` を Tibowl/api_start2 から生成するため通信が必要。生成物はコミットしない。のちに最新イベントの公開定義 JSON の取得も含める）。Cloudflare Pages のビルドコマンドも `npm run build`（`npx next build` にするとマスタが生成されない）
+- 艦船マスタの生成：`npm run generate:ship-master`。通信できないときに既存のファイルを使い回すなら `SKIP_SHIP_MASTER=1` を付ける（CI・Cloudflare Pages では付けない）。`npm run build` と `npm run test:e2e` も通信が必要
 - DB：Supabase CLI のマイグレーション（`supabase/migrations/`。手元に Docker がないため、DB のテストは CI で動かす）
 
 ## このプロジェクト固有の注意

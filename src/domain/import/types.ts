@@ -27,8 +27,10 @@ export type ImportFormat = "svdata" | "compact" | "compactLegacy";
  * - "empty"：空（空白・改行だけを含む）
  * - "invalidJson"：JSON として読めない（`svdata=` の後ろが読めない場合も含む）
  * - "unexpectedShape"：JSON としては読めるが、どちらの形式の形でもない
+ * - "noShips"：形式としては読めたが、取り込む範囲（ロック済みだけ・Lv 下限）で絞り込んだ後に 1 隻も残らない
+ *   （svdata の api_ship が空の配列のときも含む）。保存すると割り当てが知らせずに全部外れるため、失敗にする
  */
-export type ImportFailureReason = "empty" | "invalidJson" | "unexpectedShape";
+export type ImportFailureReason = "empty" | "invalidJson" | "unexpectedShape" | "noShips";
 
 /** 解析に成功したときの結果（数はすべて「取り込む範囲」で絞り込んだ後の艦について数える） */
 export interface ImportSuccess {

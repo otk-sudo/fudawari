@@ -4,8 +4,11 @@
 // 実装で決めたこと（仕様にない、壊れた入力への備え）
 // - 個体 ID（svdata の api_id、新しい短縮形式の id）が読めない要素は、同じ個体と判定できないため飛ばす。
 // - 同じ個体 ID の要素が複数あるときは、先の要素だけを取り込む（個体 ID が重ならないようにする）。
-// - 短縮形式で、艦を表すオブジェクト（id か ship_id を持つ）が 1 つもない配列は「想定外の形」として失敗にする
-//   （関係のない JSON 配列を貼り付けて、取り込み済みの艦が 0 隻に置き換わるのを防ぐ）。
+// - 短縮形式で、艦を表すオブジェクト（id か ship_id を持つ）が 1 つもない配列（空の配列も含む）は
+//   「想定外の形」（unexpectedShape）として失敗にする（関係のない JSON 配列を貼り付けたと分かるようにする）。
+// - 形式としては読めたが、取り込む範囲で絞り込んだ後に 1 隻も残らないとき（svdata の api_ship が空の配列、
+//   読める要素が 1 つもないときも含む）は「取り込む艦がない」（noShips）として失敗にする
+//   （0 隻の取り込みを保存して、割り当てが知らせずに全部外れるのを防ぐ）。
 // - 数の項目は、数か数字だけの文字列を受け付ける。Lv が欠けている・読めない艦は Lv 1 として扱う。
 import type { ShipMaster } from "@/domain/master/types";
 import type { OwnedShip, ShipUid } from "@/domain/ship/types";
@@ -163,7 +166,7 @@ function readLegacyShips(elements: readonly unknown[], master: ShipMaster): Pars
   return result;
 }
 
-/** 取り込む範囲で絞り込み、件数を数えて成功の結果にする */
+/** 取り込む範囲で絞り込み、件数を数えて成功の結果にする（絞り込んだ後に 1 隻も残らなければ noShips で失敗） */
 function toSuccess(
   format: ImportFormat,
   parsed: readonly ParsedShip[],
@@ -183,6 +186,7 @@ function toSuccess(
     if (!master.byId.has(ship.shipId)) unknownShipCount += 1;
     if (ship.sallyArea !== 0) taggedShipCount += 1;
   }
+  if (ships.length === 0) return failure("noShips");
 
   return {
     ok: true,
@@ -227,7 +231,7 @@ function parseCompact(elements: readonly unknown[], master: ShipMaster, filter: 
  * 貼り付けられた文字列を解析し、取り込む艦の個体の一覧と件数を返す（要件 3.4、U8・U9）。
  * - `svdata=` で始まる文字列と、短縮形式の JSON 配列（新しい形式・古い形式）を受け付ける
  * - 艦の ID が 0・欠けている要素、オブジェクトでない要素は飛ばす
- * - 空・壊れた JSON・想定外の形でも例外を投げず、{ ok: false, reason } を返す
+ * - 空・壊れた JSON・想定外の形・取り込む艦が 0 隻でも例外を投げず、{ ok: false, reason } を返す
  */
 export function parseImportText(text: string, master: ShipMaster, filter: ImportFilter): ImportParseResult {
   // 貼り付けたときに混ざる前後の空白・改行は無視する

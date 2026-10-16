@@ -6,6 +6,7 @@
     "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
+    "predev": "npm run generate:ship-master -- --if-missing",
     "dev": "next dev",
     "generate:ship-master": "tsx scripts/generate-ship-master.ts",
     "prebuild": "npm run generate:ship-master",
@@ -44,6 +45,7 @@
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "serve": "^14.2.6",
+    "supabase": "^2.121.0",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"
