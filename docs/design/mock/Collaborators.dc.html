@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>協力者</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a{color:#6AA8FF}a:hover{color:#9CC5FF}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+  <div style="flex: 0 0 64px; align-self: stretch; min-height: 100vh"><dc-import name="SideNav" active="協力者" role="{{role}}" hint-size="64px,100%"></dc-import></div>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 700">協力者</h1>
+      <span style="font-size: 11px; font-weight: 700; color: #101114; background: #F0A33A; padding: 2px 8px; border-radius: 3px">管理者専用</span>
+      <span style="font-size: 12px; color: #9AA0AA">イベント定義を編集できる人を管理します</span>
+      <span style="flex: 1 1 20px"></span>
+      <span role="group" aria-label="見え方の確認（モック用）" style="display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 8px; border: 1px dashed #4A4F58; border-radius: 4px">
+        <span style="font-size: 10px; color: #9AA0AA; margin-right: 2px">見え方の確認</span>
+        <sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="3">
+          <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.on}}" style="{{r.style}}">{{r.label}}</button>
+        </sc-for>
+      </span>
+    </div>
+
+    <sc-if value="{{denied}}" hint-placeholder-val="{{false}}">
+      <div style="margin: 40px auto; max-width: 420px; padding: 20px; background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px; text-align: center; display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 15px; font-weight: 700">このページは管理者のみ使えます</span>
+        <span style="font-size: 12px; color: #9AA0AA">協力者の追加や削除は管理者にお願いしてください</span>
+        <a href="Main.dc.html" style="font-size: 13px">一覧に戻る</a>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isAdmin}}" hint-placeholder-val="{{true}}">
+    <div style="padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; max-width: 960px; width: 100%; box-sizing: border-box">
+
+      <section style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+        <h2 style="margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #2A2D33">協力者を招待</h2>
+        <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 12px; color: #9AA0AA; line-height: 1.6">招待リンクを発行して、協力してほしい人に送ってください。リンクを開いてログインすると協力者になり、イベント定義を編集できるようになります。リンクは1回だけ使えます。協力者の権限に期限はなく、外すまで続きます。</span>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">リンクの有効期限
+              <select onChange="{{pickExpiry}}" style="min-height: 34px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px"><sc-for list="{{expiryOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.value}}" selected="{{o.on}}">{{o.label}}</option></sc-for></select>
+            </label>
+            <button type="button" onClick="{{issue}}" style="min-height: 34px; padding: 0 14px; background: #E8B04B; color: #101114; border: 0; border-radius: 4px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer">招待リンクを発行</button>
+          </div>
+          <sc-if value="{{issued}}" hint-placeholder-val="{{true}}">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; background: #1A2232; border: 1px solid #34507A; border-radius: 4px">
+              <input type="text" readonly value="https://[サイトのURL]/invite/[招待コード]" aria-label="招待リンク" style="flex: 1 1 260px; min-height: 32px; padding: 0 8px; background: #101114; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 3px; font-family: Consolas, monospace; font-size: 12px">
+              <button type="button" style="min-height: 32px; padding: 0 12px; background: #3D6FD0; color: #FFFFFF; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">コピー</button>
+              <span style="{{expiryNoteStyle}}">{{expiryNote}}</span>
+            </div>
+          </sc-if>
+        </div>
+      </section>
+
+      <section style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #2A2D33">
+          <h2 style="margin: 0; font-size: 14px">編集できる人</h2>
+          <span style="font-size: 12px; color: #9AA0AA">{{members.length}}人</span>
+        </div>
+        <div style="overflow-x: auto">
+          <table style="width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px">
+            <thead><tr style="color: #9AA0AA; text-align: left; font-size: 12px">
+              <th style="padding: 8px 14px; font-weight: 400">名前</th><th style="padding: 8px; font-weight: 400">権限</th><th style="padding: 8px; font-weight: 400">追加した日</th><th style="padding: 8px; font-weight: 400">権限の期限</th><th style="padding: 8px; font-weight: 400">最後に定義を編集</th><th style="padding: 8px 14px; font-weight: 400"></th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{members}}" as="m" hint-placeholder-count="3">
+                <tr style="border-top: 1px solid #262930">
+                  <td style="padding: 10px 14px; font-weight: 700">{{m.name}}</td>
+                  <td style="padding: 10px 8px"><span style="{{m.roleStyle}}">{{m.role}}</span></td>
+                  <td style="padding: 10px 8px; font-family: Consolas, monospace; color: #C9CDD3">{{m.added}}</td>
+                  <td style="padding: 10px 8px; color: #C9CDD3">無期限</td>
+                  <td style="padding: 10px 8px; color: #C9CDD3">{{m.lastEdit}}</td>
+                  <td style="padding: 10px 14px; text-align: right">
+                    <sc-if value="{{m.removable}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{m.ask}}" aria-pressed="{{m.asking}}" style="min-height: 30px; padding: 0 10px; background: transparent; color: #FF8A80; border: 1px solid #7A3A36; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">外す</button></sc-if>
+                  </td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <sc-if value="{{confirming}}" hint-placeholder-val="{{false}}">
+          <div role="alertdialog" aria-label="協力者を外す確認" style="display: flex; flex-direction: column; gap: 10px; margin: 0 14px 14px; padding: 12px 14px; background: #2A1C1C; border: 1px solid #7A3A36; border-radius: 5px">
+            <span style="font-weight: 700; color: #FFFFFF">{{target.name}} を協力者から外しますか？</span>
+            <span style="font-size: 12px; color: #F2D4D1; line-height: 1.6">外すとすぐにイベント定義を編集できなくなります。これまでの編集内容は残ります。もう一度協力してもらうには、新しく招待リンクを発行してください。</span>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #E4E6EA; cursor: pointer">
+              <input type="checkbox" checked="{{agreed}}" onChange="{{toggleAgree}}" style="width: 18px; height: 18px; accent-color: #C9473F">
+              {{target.name}} を外すことを確認しました
+            </label>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <button type="button" onClick="{{doRemove}}" disabled="{{notAgreed}}" style="{{removeStyle}}">外す</button>
+              <button type="button" onClick="{{cancel}}" style="min-height: 32px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">やめる</button>
+            </div>
+          </div>
+        </sc-if>
+      </section>
+
+      <section style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+        <h2 style="margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #2A2D33">招待中</h2>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px">
+          <span style="flex: 1 1 260px; font-size: 12px; color: #C9CDD3">10/14 21:05 に発行 ・ 10/17 21:05 まで有効 ・ まだ使われていません</span>
+          <button type="button" style="min-height: 30px; padding: 0 10px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">取り消す</button>
+        </div>
+      </section>
+    </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      role: 'admin', issued: true, expiry: '3d', confirm: null, agreed: false,
+      members: [
+        { id: 'me', name: '[あなた]', role: '管理者', added: '—', lastEdit: '10/15 21:40' },
+        { id: 'a', name: '[協力者A]', role: '協力者', added: '2026/07/10', lastEdit: '08/04（特効を更新）' },
+        { id: 'b', name: '[協力者B]', role: '協力者', added: '2026/07/22', lastEdit: '08/24（E5の段階を追加）' }
+      ]
+    };
+  }
+  renderVals() {
+    const roleOpts = [['user', '一般'], ['collab', '協力者'], ['admin', '管理者']].map(([k, label]) => ({
+      label, on: this.state.role === k, pick: () => this.setState({ role: k }),
+      style: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.role === k ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state.role === k ? '#FFFFFF' : '#C9CDD3')
+    }));
+    const members = this.state.members.map(m => ({
+      ...m, removable: m.role !== '管理者',
+      ask: () => this.setState({ confirm: m.id, agreed: false }), asking: this.state.confirm === m.id,
+      roleStyle: 'font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 3px; ' + (m.role === '管理者' ? 'color: #101114; background: #F0A33A' : 'color: #CFE0FF; background: #22304A; border: 1px solid #34507A')
+    }));
+    const isAdmin = this.state.role === 'admin';
+    const target = this.state.members.find(x => x.id === this.state.confirm);
+    return {
+      role: this.state.role, roleOpts, isAdmin, denied: !isAdmin,
+      issued: this.state.issued, issue: () => this.setState({ issued: true }),
+      expiryOpts: [['24h', '24時間'], ['3d', '3日'], ['7d', '7日']].map(([value, label]) => ({ value, label, on: this.state.expiry === value })),
+      pickExpiry: (e) => this.setState({ expiry: e.target.value }),
+      expiryNote: ({ '24h': '24時間後（10/16 22:36）まで有効', '3d': '3日後（10/18 22:36）まで有効', '7d': '7日後（10/22 22:36）まで有効' })[this.state.expiry],
+      expiryNoteStyle: 'width: 100%; font-size: 11px; color: #9AA0AA',
+      members,
+      confirming: !!target, target: target || { name: '' },
+      agreed: this.state.agreed, notAgreed: !this.state.agreed,
+      toggleAgree: () => this.setState({ agreed: !this.state.agreed }),
+      cancel: () => this.setState({ confirm: null, agreed: false }),
+      doRemove: () => { if (!this.state.agreed) return; this.setState({ members: this.state.members.filter(x => x.id !== this.state.confirm), confirm: null, agreed: false }); },
+      removeStyle: 'min-height: 32px; padding: 0 14px; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; ' + (this.state.agreed ? 'background: #C9473F; color: #FFFFFF; cursor: pointer' : 'background: #3A2A2A; color: #8A6F6C; cursor: not-allowed')
+    };
+  }
+}
+</script>
+</body>
+</html>

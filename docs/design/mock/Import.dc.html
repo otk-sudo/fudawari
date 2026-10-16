@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>艦娘の取り込み</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a{color:#6AA8FF}a:hover{color:#9CC5FF}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+
+  <div style="flex: 0 0 64px; align-self: stretch; min-height: 100vh"><dc-import name="SideNav" active="取込" role="{{role}}" hint-size="64px,100%"></dc-import></div>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 700">艦娘の取り込み</h1>
+      <span role="group" aria-label="見え方の確認（モック用）" style="display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 8px; border: 1px dashed #4A4F58; border-radius: 4px">
+        <span style="font-size: 10px; color: #9AA0AA; margin-right: 2px">見え方の確認</span>
+        <sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="3">
+          <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.on}}" style="{{r.style}}">{{r.label}}</button>
+        </sc-for>
+      </span>
+    </div>
+
+    <div style="padding: 20px 16px; display: flex; flex-direction: column; gap: 14px; max-width: 1080px; width: 100%; box-sizing: border-box">
+
+      <section aria-label="取り込み" style="display: flex; flex-wrap: wrap; gap: 0; background: #1F2126; border: 1px solid #2A2D33; border-radius: 8px; overflow: hidden">
+        <div style="flex: 999 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px 20px">
+          <div style="display: flex; align-items: baseline; gap: 10px">
+            <span style="font-family: Consolas, monospace; font-size: 12px; font-weight: 700; color: #101114; background: #E8B04B; padding: 1px 7px; border-radius: 3px">1</span>
+            <span style="font-size: 14px; font-weight: 700">艦娘の情報をコピーする</span>
+          </div>
+          <p style="margin: 0 0 0 30px; font-size: 13px; line-height: 1.7; color: #C9CDD3">制空権シミュレータに艦娘を反映するときと同じ方法でコピーしてください。</p>
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 4px">
+            <span style="font-family: Consolas, monospace; font-size: 12px; font-weight: 700; color: #101114; background: #E8B04B; padding: 1px 7px; border-radius: 3px">2</span>
+            <span style="font-size: 14px; font-weight: 700">ここに貼り付ける</span>
+          </div>
+          <textarea aria-label="艦娘の情報を貼り付け" placeholder="Ctrl+V で貼り付け" value="{{pasted}}" onInput="{{typePaste}}" rows="7" style="{{pasteStyle}}"></textarea>
+          <span style="margin-left: 30px; font-size: 12px; color: #9AA0AA">{{pasteNote}}</span>
+        </div>
+
+        <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 16px; padding: 18px 20px; background: #1A1C20; border-left: 1px solid #2A2D33">
+          <span style="font-size: 12px; font-weight: 700; color: #9AA0AA; letter-spacing: 0.05em">取り込む範囲</span>
+          <div role="radiogroup" aria-label="取り込む艦娘" style="display: flex; flex-direction: column; gap: 6px">
+            <sc-for list="{{lockOpts}}" as="o" hint-placeholder-count="2">
+              <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">
+                <span style="font-size: 13px; font-weight: 700">{{o.label}}</span>
+                <span style="font-size: 11px; opacity: 0.8">{{o.note}}</span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 12px; color: #9AA0AA">Lv がいくつ以上の艦を取り込むか</span>
+            <div style="display: flex; align-items: center; gap: 0">
+              <button type="button" onClick="{{lvDown}}" aria-label="下げる" style="width: 34px; height: 36px; background: #26292F; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px 0 0 4px; font-size: 16px; cursor: pointer">−</button>
+              <input type="number" min="1" max="185" value="{{minLv}}" onInput="{{typeMinLv}}" aria-label="Lv下限" style="width: 64px; height: 36px; box-sizing: border-box; text-align: center; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-left: 0; border-right: 0; font-family: Consolas, monospace; font-size: 15px; font-weight: 700; color-scheme: dark">
+              <button type="button" onClick="{{lvUp}}" aria-label="上げる" style="width: 34px; height: 36px; background: #26292F; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 0 4px 4px 0; font-size: 16px; cursor: pointer">＋</button>
+              <span style="margin-left: 8px; font-size: 12px; color: #9AA0AA">以上</span>
+            </div>
+            <div style="display: flex; gap: 4px">
+              <sc-for list="{{lvPresets}}" as="l" hint-placeholder-count="4">
+                <button type="button" onClick="{{l.pick}}" style="{{l.style}}">{{l.label}}</button>
+              </sc-for>
+            </div>
+          </div>
+          <span style="flex: 1 1 auto"></span>
+          <button type="button" onClick="{{apply}}" style="min-height: 42px; background: #E8B04B; color: #101114; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer">取り込む</button>
+        </div>
+      </section>
+
+      <sc-if value="{{showError}}" hint-placeholder-val="{{false}}">
+        <div role="alert" style="padding: 10px 16px; background: #2A1C1C; border: 1px solid #7A3A36; border-radius: 4px; font-size: 13px; color: #FFB4AE">まだ何も貼り付けられていません。コピーした艦娘の情報を左の欄に貼り付けてから「取り込む」を押してください</div>
+      </sc-if>
+
+      <sc-if value="{{done}}" hint-placeholder-val="{{true}}">
+        <section role="status" style="display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: #1F2126; border: 1px solid #2E6B4A; border-left-width: 6px; border-radius: 4px">
+          <h2 style="margin: 0; font-size: 15px; color: #A8DDB5">取り込みました</h2>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.7">
+            <li>艦娘 <b>{{shipCount}}隻</b>（{{lockNote}}・Lv{{minLv}}以上）</li>
+            <li>すでに札が付いている艦 <b>41隻</b> → 計画との差分に使います</li>
+            <li style="color: #F2C98A">名前が分からない艦が <b>2隻</b> います。新しく実装された艦かもしれません（取り込みは続けられます）</li>
+          </ul>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px">
+            <a href="Assign.dc.html" style="display: inline-flex; align-items: center; min-height: 38px; padding: 0 18px; background: #E8B04B; color: #101114; border-radius: 4px; text-decoration: none; font-size: 13px; font-weight: 700">割り振りへ進む</a>
+            <a href="Drift.dc.html" style="display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; text-decoration: none; font-size: 13px">差分を見る</a>
+          </div>
+        </section>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":980}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { role: 'admin', howOpen: false, lock: 'all', minLv: '1', pasted: '', showError: false, done: false }; }
+  renderVals() {
+    const roleOpts = [['user', '一般'], ['collab', '協力者'], ['admin', '管理者']].map(([k, label]) => ({
+      label, on: this.state.role === k, pick: () => this.setState({ role: k }),
+      style: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.role === k ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state.role === k ? '#FFFFFF' : '#C9CDD3')
+    }));
+    const icons = {
+      assign: 'M4 7h9M4 12h6M4 17h9M15 9l5 5-5 5',
+      board: 'M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v13h-4z',
+      import: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+      plan: 'M5 3h10l4 4v14H5zM9 12h6M9 16h6',
+      diff: 'M7 4v16M17 4v16M3 8h8M13 16h8',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3'
+    };
+    const navItem = (label, href, icon, on) => ({ label, href, icon: icons[icon], style: 'display: flex; flex-direction: column; align-items: center; gap: 2px; width: 52px; min-height: 48px; justify-content: center; border-radius: 4px; text-decoration: none; color: ' + (on ? '#FFFFFF' : '#9AA0AA') + '; background: ' + (on ? '#2C3A52' : 'transparent') });
+    const stepStyle = (state) => 'flex: 1; display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 4px; font-size: 13px; '
+      + (state === 'done' ? 'background: #1C2A22; color: #A8DDB5;' : state === 'now' ? 'background: #3D6FD0; color: #FFFFFF; font-weight: 700;' : 'background: #1F2126; color: #6B717C;');
+    const src = (name, how, on) => ({ name, how, style: 'display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-radius: 6px; font-family: inherit; text-align: left; color: #E4E6EA; cursor: pointer; background: ' + (on ? '#22304A' : '#1F2126') + '; border: 2px solid ' + (on ? '#6AA8FF' : '#2A2D33') });
+    const st = this.state;
+    return {
+      role: st.role, roleOpts,
+      lockOpts: [['all', 'すべての艦娘', '未ロックの艦も含める'], ['locked', 'ロック済みだけ', '育成中・保護中の艦に絞る']].map(([k, label, note]) => ({ label, note, on: st.lock === k, pick: () => this.setState({ lock: k }),
+        style: 'display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 12px; text-align: left; font-family: inherit; cursor: pointer; border-radius: 6px; border: 1px solid ' + (st.lock === k ? '#E8B04B' : '#3A3E46') + '; background: ' + (st.lock === k ? '#2A2416' : 'transparent') + '; color: ' + (st.lock === k ? '#F2C98A' : '#C9CDD3') })),
+      lvDown: () => this.setState({ minLv: String(Math.max(1, (+st.minLv || 1) - 1)) }),
+      lvUp: () => this.setState({ minLv: String(Math.min(185, (+st.minLv || 1) + 1)) }),
+      lvPresets: [1, 50, 99, 150].map(n => ({ label: 'Lv' + n, pick: () => this.setState({ minLv: String(n) }),
+        style: 'min-height: 26px; padding: 0 8px; font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 12px; border: 1px solid ' + (+st.minLv === n ? '#E8B04B' : '#3A3E46') + '; background: transparent; color: ' + (+st.minLv === n ? '#F2C98A' : '#9AA0AA') })),
+      pasteStyle: 'margin-left: 30px; width: calc(100% - 30px); box-sizing: border-box; padding: 10px 12px; background: #16171B; color: #E4E6EA; border: 1px dashed ' + (st.showError ? '#C9473F' : st.pasted ? '#3FB37F' : '#4A6A9A') + '; border-radius: 6px; font-family: Consolas, monospace; font-size: 12px; resize: vertical',
+      pasteNote: st.pasted ? '貼り付けました（' + st.pasted.length + '文字）' : 'データはこのブラウザの中だけで読み取ります',
+      minLv: st.minLv, typeMinLv: (e) => this.setState({ minLv: e.target.value }),
+      pasted: st.pasted, typePaste: (e) => this.setState({ pasted: e.target.value, showError: false }),
+      apply: () => st.pasted.trim() ? this.setState({ done: true, showError: false }) : this.setState({ showError: true, done: false }),
+      showError: st.showError, done: st.done,
+      shipCount: st.lock === 'locked' ? 298 : 312,
+      lockNote: st.lock === 'locked' ? 'ロック済みだけ' : 'すべての艦娘',
+    };
+  }
+}
+</script>
+</body>
+</html>

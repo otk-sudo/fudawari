@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ホーム</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a.tile:hover{border-color:#4A6FA8 !important;background:#232833 !important}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+  <div style="flex: 0 0 64px; align-self: stretch; min-height: 100vh"><dc-import name="SideNav" active="ホーム" role="{{role}}" hint-size="64px,100%"></dc-import></div>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 700">札割り振りプランナー</h1>
+      <span style="font-size: 12px; color: #9AA0AA"><sc-if value="{{running}}" hint-placeholder-val="{{true}}">開催中：2026夏イベ ／ </sc-if>最終取り込み 10/15 20:40</span>
+      <span style="flex: 1 1 20px"></span>
+      <span role="group" aria-label="見え方の確認（モック用）" style="display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 8px; border: 1px dashed #4A4F58; border-radius: 4px">
+        <span style="font-size: 10px; color: #9AA0AA; margin-right: 2px">見え方の確認</span>
+        <sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="3">
+          <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.on}}" style="{{r.style}}">{{r.label}}</button>
+        </sc-for>
+        <span style="width: 1px; align-self: stretch; margin: 2px 4px; background: #3A3E46"></span>
+        <button type="button" onClick="{{toggleRunning}}" aria-pressed="{{running}}" style="{{runStyle}}">{{runLabel}}</button>
+      </span>
+    </div>
+
+    <div style="padding: 20px 16px; display: flex; flex-direction: column; gap: 20px; max-width: 1040px; width: 100%; box-sizing: border-box">
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 14px; color: #C9CDD3">札割り</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px">
+          <sc-for list="{{tiles}}" as="t" hint-placeholder-count="5">
+            <sc-if value="{{t.isLink}}" hint-placeholder-val="{{true}}">
+              <a class="tile" href="{{t.href}}" style="{{t.style}}">
+                <span style="display: flex; align-items: center; gap: 10px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E8B04B" stroke-width="1.8" aria-hidden="true"><path d="{{t.icon}}"></path></svg><span style="font-size: 15px; font-weight: 700">{{t.title}}</span></span>
+                <span style="font-size: 12px; color: #9AA0AA; line-height: 1.6">{{t.note}}</span>
+              </a>
+            </sc-if>
+            <sc-if value="{{t.isButton}}" hint-placeholder-val="{{false}}">
+              <button type="button" class="tile" onClick="{{t.open}}" style="{{t.style}}">
+                <span style="display: flex; align-items: center; gap: 10px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E8B04B" stroke-width="1.8" aria-hidden="true"><path d="{{t.icon}}"></path></svg><span style="font-size: 15px; font-weight: 700">{{t.title}}</span></span>
+                <span style="font-size: 12px; color: #9AA0AA; line-height: 1.6">{{t.note}}</span>
+              </button>
+            </sc-if>
+          </sc-for>
+        </div>
+      </section>
+
+      <sc-if value="{{hasAdmin}}" hint-placeholder-val="{{true}}">
+        <section style="display: flex; flex-direction: column; gap: 10px">
+          <h2 style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: #C9CDD3">管理 <span style="font-size: 11px; font-weight: 700; color: #101114; background: #F0A33A; padding: 1px 7px; border-radius: 3px">{{roleLabel}}</span></h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px">
+            <sc-for list="{{adminTiles}}" as="t" hint-placeholder-count="2">
+              <a class="tile" href="{{t.href}}" style="{{t.style}}">
+                <span style="display: flex; align-items: center; gap: 10px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F0A33A" stroke-width="1.8" aria-hidden="true"><path d="{{t.icon}}"></path></svg><span style="font-size: 15px; font-weight: 700">{{t.title}}</span></span>
+                <span style="font-size: 12px; color: #9AA0AA; line-height: 1.6">{{t.note}}</span>
+              </a>
+            </sc-for>
+          </div>
+        </section>
+      </sc-if>
+    </div>
+  </div>
+</div>
+<sc-if value="{{settingsOpen}}" hint-placeholder-val="{{false}}">
+  <div onClick="{{closeSettings}}" style="position: fixed; inset: 0; z-index: 1000; background: rgba(8, 9, 11, 0.72); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; box-sizing: border-box; overflow-y: auto; font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif">
+    <div role="dialog" aria-modal="true" aria-label="設定" onClick="{{stop}}" style="width: 100%; max-width: 760px; background: #16171B; border: 1px solid #3A3E46; border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); color: #E4E6EA">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #2A2D33">
+        <h1 style="margin: 0; font-size: 15px; font-weight: 700">設定</h1>
+        <span style="flex: 1 1 auto; font-size: 12px; color: #9AA0AA">表示などの設定はこのブラウザに保存されます</span>
+        <button type="button" onClick="{{closeSettings}}" aria-label="閉じる" style="width: 36px; height: 36px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-size: 18px; line-height: 1; cursor: pointer">×</button>
+      </div>
+      <div style="padding: 16px"><dc-import name="SettingsDialog" role="{{role}}" hint-size="100%,auto"></dc-import></div>
+      <div style="display: flex; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid #2A2D33">
+        <button type="button" onClick="{{closeSettings}}" style="min-height: 36px; padding: 0 18px; background: #3D6FD0; color: #FFFFFF; border: 0; border-radius: 4px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer">閉じる</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":760}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { role: 'admin', settingsOpen: false, running: true }; }
+  renderVals() {
+    const role = this.state.role;
+    const icons = {
+      board: 'M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v13h-4z',
+      assign: 'M4 7h9M4 12h6M4 17h9M15 9l5 5-5 5',
+      import: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+      diff: 'M7 4v16M17 4v16M3 8h8M13 16h8',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3',
+      plan: 'M5 3h10l4 4v14H5zM9 12h6M9 16h6',
+      users: 'M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20c0-3 3-5 6-5s6 2 6 5M16 5a3 3 0 0 1 0 6M18 15c2 .5 4 2 4 5'
+    };
+    const tileStyle = (admin) => 'display: flex; flex-direction: column; gap: 8px; min-height: 104px; padding: 14px 16px; box-sizing: border-box; text-align: left; text-decoration: none; color: #E4E6EA; font-family: inherit; cursor: pointer; background: #1F2126; border: 1px solid ' + (admin ? '#4A3A22' : '#2A2D33') + '; border-radius: 8px';
+    const tile = (title, href, icon, note) => ({ isLink: true, isButton: false, title, href, icon: icons[icon], note, style: tileStyle(false) });
+    const tiles = [
+      tile('一覧', 'Main.dc.html', 'board', '決めた札割りを札ごとに見る'),
+      tile('割り振り', 'Assign.dc.html', 'assign', '特効を見ながら艦を札に割り振る'),
+      tile('取り込み', 'Import.dc.html', 'import', '制空権シミュレータの形式で艦娘を取り込む'),
+      tile('差分', 'Drift.dc.html', 'diff', 'イベント中に付いた札と計画を比べる'),
+      { isLink: false, isButton: true, title: '設定', icon: icons.gear, note: '画面モードや文字の大きさなど', style: tileStyle(false), open: () => this.setState({ settingsOpen: true }) }
+    ];
+    const adminTiles = [];
+    if (role === 'collab' || role === 'admin') adminTiles.push({ title: 'イベント定義', href: 'PlanEditor.dc.html', icon: icons.plan, note: role === 'admin' ? '札・段階・特効の設定、新規イベントの作成' : (this.state.running ? '開催中イベントの札・段階・特効を更新' : '開催中のイベントがないため、いまは更新できるものはありません'), style: tileStyle(true) });
+    if (role === 'admin') adminTiles.push({ title: '協力者', href: 'Collaborators.dc.html', icon: icons.users, note: '定義を編集できる人の招待・管理', style: tileStyle(true) });
+    return {
+      role, tiles, adminTiles, hasAdmin: adminTiles.length > 0,
+      roleLabel: role === 'admin' ? '管理者' : '協力者',
+      roleOpts: [['user', '一般'], ['collab', '協力者'], ['admin', '管理者']].map(([k, label]) => ({
+        label, on: role === k, pick: () => this.setState({ role: k }),
+        style: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (role === k ? '#3D6FD0' : 'transparent') + '; color: ' + (role === k ? '#FFFFFF' : '#C9CDD3')
+      })),
+      running: this.state.running,
+      toggleRunning: () => this.setState({ running: !this.state.running }),
+      runLabel: this.state.running ? 'イベント開催中' : 'イベントなし',
+      runStyle: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.running ? '#3A2E16' : 'transparent') + '; color: ' + (this.state.running ? '#F2C98A' : '#C9CDD3'),
+      settingsOpen: this.state.settingsOpen,
+      closeSettings: () => this.setState({ settingsOpen: false }),
+      stop: (e) => e.stopPropagation()
+    };
+  }
+}
+</script>
+</body>
+</html>

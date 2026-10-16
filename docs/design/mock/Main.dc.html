@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>札割り一覧</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a{color:#6AA8FF}a:hover{color:#9CC5FF}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+
+  <div style="flex: 0 0 64px; align-self: stretch; min-height: 100vh"><dc-import name="SideNav" active="一覧" role="{{role}}" hint-size="64px,100%"></dc-import></div>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 700">札割り一覧</h1>
+      <span role="group" aria-label="見え方の確認（モック用）" style="display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 8px; border: 1px dashed #4A4F58; border-radius: 4px">
+        <span style="font-size: 10px; color: #9AA0AA; margin-right: 2px">見え方の確認</span>
+        <sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="3">
+          <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.on}}" style="{{r.style}}">{{r.label}}</button>
+        </sc-for>
+      </span>
+      <span style="font-size: 13px; font-weight: 700; color: #E4E6EA; padding: 2px 10px; background: #26292F; border: 1px solid #3A3E46; border-radius: 4px">2026夏イベ</span>
+      <span style="font-size: 12px; color: #9AA0AA">最終更新 10/15 21:40</span>
+      <span style="flex: 1 1 40px"></span>
+      <button type="button" onClick="{{openExport}}" aria-haspopup="dialog" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">画像で保存</button>
+      <a href="Assign.dc.html" style="display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; background: #E8B04B; color: #101114; border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 700">割り振りを編集</a>
+    </div>
+
+    <section aria-label="攻略の流れと札" style="padding: 12px 14px 4px; display: flex; flex-direction: column; gap: 6px">
+      <sc-for list="{{timeline}}" as="m" hint-placeholder-count="3">
+        <div style="display: flex; align-items: stretch; gap: 4px">
+          <span style="flex: 0 0 36px; display: flex; align-items: center; font-family: Consolas, monospace; font-weight: 700; color: #9AA0AA">{{m.map}}</span>
+          <sc-for list="{{m.steps}}" as="s" hint-placeholder-count="4">
+            <div style="{{s.style}}">
+              <span style="font-size: 11px; opacity: 0.85">{{s.label}}</span>
+              <span style="font-size: 12px; font-weight: 700">{{s.fuda}}</span>
+              <sc-if value="{{s.boost}}" hint-placeholder-val="{{false}}"><span style="font-size: 11px">特効 {{s.boost}}隻</span></sc-if>
+              <sc-if value="{{s.hard}}" hint-placeholder-val="{{false}}"><span style="position: absolute; top: 4px; right: 6px; font-size: 10px; font-weight: 700; color: #101114; background: #F0A33A; padding: 0 4px; border-radius: 2px">難所</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 14px 0">
+      <span style="font-size: 12px; color: #9AA0AA">表示</span>
+      <button type="button" aria-pressed="true" style="min-height: 30px; padding: 0 12px; border-radius: 15px; background: #22304A; color: #FFFFFF; border: 1px solid #6AA8FF; font-family: inherit; font-size: 12px">艦種ごとに並べる</button>
+      <button type="button" aria-pressed="false" style="min-height: 30px; padding: 0 12px; border-radius: 15px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; font-family: inherit; font-size: 12px">特効艦だけ</button>
+    </div>
+
+    <div style="padding: 10px 14px 18px; display: flex; flex-direction: column; gap: 8px">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+        <section style="display: flex; flex-wrap: wrap; background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px; overflow: hidden">
+          <div style="{{r.headStyle}}">
+            <span style="font-size: 15px; font-weight: 700">{{r.name}}</span>
+            <span style="font-size: 11px; opacity: 0.9">{{r.phases}}</span>
+            <span style="font-size: 12px; margin-top: 4px">{{r.count}}隻 ・ 特効 {{r.boosted}}隻</span>
+          </div>
+          <div style="flex: 999 1 480px; min-width: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px">
+            <sc-if value="{{r.empty}}" hint-placeholder-val="{{false}}"><span style="padding: 8px 4px; font-size: 12px; color: #6B717C">まだ割り当てがありません</span></sc-if>
+            <sc-for list="{{r.groups}}" as="g" hint-placeholder-count="2">
+              <div style="display: flex; align-items: flex-start; gap: 8px">
+                <span style="flex: 0 0 32px; padding-top: 6px; font-size: 11px; color: #9AA0AA">{{g.type}}</span>
+                <div style="flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 4px">
+                  <sc-for list="{{g.ships}}" as="s" hint-placeholder-count="4">
+                    <div style="{{s.style}}">
+                      <span style="display: flex; align-items: center; justify-content: space-between; gap: 4px; font-weight: 700; font-size: 12px">
+                        <span>{{s.name}}</span>
+                      </span>
+                      <span style="display: flex; justify-content: space-between; font-size: 10px">
+                        <span style="color: #9AA0AA">Lv{{s.lv}}　運{{s.luck}}</span>
+                        <span style="{{s.badgeStyle}}">{{s.badge}}</span>
+                      </span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+      </sc-for>
+
+    </div>
+  </div>
+</div>
+<sc-if value="{{exportOpen}}" hint-placeholder-val="{{false}}">
+  <div onClick="{{closeExport}}" style="position: fixed; inset: 0; z-index: 1000; background: rgba(8, 9, 11, 0.72); display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; box-sizing: border-box; overflow-y: auto; font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; font-size: 13px">
+    <div role="dialog" aria-modal="true" aria-label="画像で保存" onClick="{{stop}}" style="width: 100%; max-width: 1320px; background: #16171B; border: 1px solid #3A3E46; border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,0.6)">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #2A2D33">
+        <h1 style="margin: 0; font-size: 15px; font-weight: 700">画像で保存</h1>
+        <span style="flex: 1 1 auto; font-size: 12px; color: #9AA0AA">横長 1600×900 の PNG。X などに貼りやすい大きさです</span>
+        <button type="button" onClick="{{closeExport}}" aria-label="閉じる" style="width: 36px; height: 36px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-size: 18px; line-height: 1; cursor: pointer">×</button>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 16px; padding: 16px">
+        <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 12px; font-weight: 700; color: #9AA0AA">入れる札</span>
+          <div role="radiogroup" aria-label="入れる札" style="display: flex; flex-direction: column; gap: 6px">
+            <sc-for list="{{scopeOpts}}" as="o" hint-placeholder-count="2">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer"><input type="radio" name="scope" checked="{{o.on}}" onChange="{{o.pick}}" style="width: 18px; height: 18px; margin: 0; accent-color: #E8B04B">{{o.label}}</label>
+            </sc-for>
+          </div>
+          <sc-if value="{{pickMode}}" hint-placeholder-val="{{false}}">
+            <div style="display: flex; flex-direction: column; gap: 4px; padding: 8px; background: #1F2126; border-radius: 6px">
+              <sc-for list="{{fudaChecks}}" as="f" hint-placeholder-count="5">
+                <label style="display: flex; align-items: center; gap: 8px; padding: 3px 4px; cursor: pointer"><input type="checkbox" checked="{{f.on}}" onChange="{{f.toggle}}" style="width: 16px; height: 16px; margin: 0; accent-color: #E8B04B"><span style="{{f.dot}}"></span>{{f.name}}</label>
+              </sc-for>
+            </div>
+          </sc-if>
+          <span style="font-size: 12px; color: #9AA0AA; line-height: 1.6">入るもの：イベント名・攻略の流れ・札ごとの艦（艦名・Lv・運・特効あり／なし）・ツール名。まだ艦がいない札は入りません。1枚に入るのは6札までで、超えると自動で分けて保存します</span>
+          <span style="font-size: 12px; font-weight: 700; color: #F2C98A">{{pageNote}}</span>
+        </div>
+        <div style="flex: 999 1 560px; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; color: #9AA0AA">見本（1枚目）</span>
+          <div style="width: 960px; max-width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid #3A3E46; border-radius: 4px; background: #101114">
+            <div style="width: 1600px; height: 900px; transform: scale(0.6); transform-origin: 0 0">
+              <dc-import name="ExportImage" sel="{{exportSel}}" page="1" hint-size="1600px,900px"></dc-import>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #2A2D33">
+        <button type="button" onClick="{{closeExport}}" style="min-height: 36px; padding: 0 14px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px; cursor: pointer">やめる</button>
+        <sc-if value="{{copied}}" hint-placeholder-val="{{false}}"><span role="status" style="align-self: center; margin-right: auto; font-size: 12px; color: #A8DDB5">{{copiedMsg}}</span></sc-if>
+        <sc-if value="{{multiPage}}" hint-placeholder-val="{{false}}">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">コピーする画像
+            <select onChange="{{pickCopyPage}}" style="min-height: 36px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px"><sc-for list="{{copyPageOpts}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}" selected="{{o.on}}">{{o.label}}</option></sc-for></select>
+          </label>
+        </sc-if>
+        <button type="button" onClick="{{copyImage}}" disabled="{{noneSel}}" style="{{copyStyle}}">{{copyLabel}}</button>
+        <button type="button" onClick="{{closeExport}}" disabled="{{noneSel}}" style="{{saveStyle}}">{{saveLabel}}</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1180}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { role: 'admin', exportOpen: false, scope: 'all', picked: null }; }
+  renderVals() {
+    const roleOpts = [['user', '一般'], ['collab', '協力者'], ['admin', '管理者']].map(([k, label]) => ({
+      label, on: this.state.role === k, pick: () => this.setState({ role: k }),
+      style: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.role === k ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state.role === k ? '#FFFFFF' : '#C9CDD3')
+    }));
+    const icons = {
+      board: 'M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v13h-4z',
+      assign: 'M4 7h9M4 12h6M4 17h9M15 9l5 5-5 5',
+      import: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+      plan: 'M5 3h10l4 4v14H5zM9 12h6M9 16h6',
+      diff: 'M7 4v16M17 4v16M3 8h8M13 16h8',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3'
+    };
+    const navItem = (label, href, icon, on) => ({ label, href, icon: icons[icon], style: 'display: flex; flex-direction: column; align-items: center; gap: 2px; width: 52px; min-height: 48px; justify-content: center; border-radius: 4px; text-decoration: none; color: ' + (on ? '#FFFFFF' : '#9AA0AA') + '; background: ' + (on ? '#2C3A52' : 'transparent') });
+
+    const fudas = [
+      { key: 's31', name: '第三十一戦隊', color: '#8B93A1', ink: '#101114', phaseLabel: 'E1・E2/E3ギミック・E3-2', pts: ['E1', 'E2:H', 'E3-2'] },
+      { key: 'tago', name: '多号作戦部隊', color: '#5FB0E8', ink: '#101114', phaseLabel: 'E2-1', pts: ['E2-1'] },
+      { key: 'rengo', name: '連合艦隊', color: '#4C8DF6', ink: '#FFFFFF', phaseLabel: 'E2-2・E2-3', pts: ['E2-2', 'E2-3'] },
+      { key: 'ulithi', name: 'ウルシー攻撃部隊', color: '#3FB37F', ink: '#101114', phaseLabel: 'E3-1・E3-4', pts: ['E3-1', 'E3-4'] },
+      { key: 'sixth', name: '第六艦隊', color: '#A97EF0', ink: '#101114', phaseLabel: 'E3-3', pts: ['E3-3'] },
+      { key: 'fr3', name: '仏第3艦隊', color: '#2BB3B1', ink: '#101114', phaseLabel: 'E4-1・E4ギミック・E4-2', pts: [] },
+      { key: 'frmed', name: '仏地中海艦隊', color: '#E07A5F', ink: '#101114', phaseLabel: 'E4-3・E4-4・E4-5', pts: [] },
+      { key: 'esc2', name: '2éme Escadre Légère', color: '#C9A227', ink: '#101114', phaseLabel: 'E5-1・E5ギミック', pts: [] },
+      { key: 'ukrelief', name: 'イギリス救援艦隊', color: '#D16BA5', ink: '#101114', phaseLabel: 'E5-2 輸送', pts: [] },
+      { key: 'raid', name: 'Force de Raid', color: '#B5651D', ink: '#FFFFFF', phaseLabel: 'E5-3・E5ギミック', pts: [] },
+      { key: 'forceh', name: 'Force H', color: '#6C5CE7', ink: '#FFFFFF', phaseLabel: 'E5ギミック', pts: [] },
+      { key: 'eurocomb', name: '欧州連合艦隊', color: '#E5484D', ink: '#FFFFFF', phaseLabel: 'E5-4', pts: [] }
+    ];
+    const F = Object.fromEntries(fudas.map(f => [f.key, f]));
+    const A31 = { 'E1': 1.09, 'E2:H': 1.08, 'E3-2': 1.12 };
+    const B31 = { 'E1': 1.21, 'E2:H': 1.16, 'E3-2': 1.16 };
+    const RA = { 'E2-2': 1.14, 'E2-3': 1.18, 'E3-1': 1.08, 'E3-4': 1.08 };
+    const RB = { 'E2-2': 1.19, 'E2-3': 1.24, 'E3-1': 1.14, 'E3-4': 1.14 };
+    const TAGO = { 'E2-1': 1.24 };
+    const ships = [
+      { name: '時雨改三', type: '駆逐', lv: 175, luck: 59, at: 'ulithi', b: RB },
+      { name: '時雨改二', type: '駆逐', lv: 98, luck: 22, sub: true, at: 'rengo', b: RB },
+      { name: '雪風改二', type: '駆逐', lv: 168, luck: 72, at: 'rengo', b: { ...A31, ...RB } },
+      { name: '雪風改', type: '駆逐', lv: 85, luck: 55, sub: true, at: null, b: { ...A31, ...RB } },
+      { name: '長波改二', type: '駆逐', lv: 152, luck: 31, at: 'rengo', b: { ...A31, ...TAGO, ...RB } },
+      { name: '沖波改二', type: '駆逐', lv: 130, luck: 28, at: 'tago', b: { ...A31, ...TAGO, ...RB } },
+      { name: '朝霜改二', type: '駆逐', lv: 140, luck: 34, at: 'tago', b: { ...A31, ...TAGO, ...RB } },
+      { name: '朝霜改二', type: '駆逐', lv: 92, luck: 20, sub: true, at: null, b: { ...A31, ...TAGO, ...RB } },
+      { name: '初霜改二', type: '駆逐', lv: 131, luck: 48, at: 's31', b: { ...A31, ...TAGO, 'E2-3': 1.27 } },
+      { name: '潮改二', type: '駆逐', lv: 125, luck: 40, at: 'rengo', b: { ...A31, ...TAGO, 'E2-3': 1.27 } },
+      { name: '冬月改', type: '駆逐', lv: 120, luck: 27, at: 's31', b: { ...B31, ...RB } },
+      { name: '不知火改二', type: '駆逐', lv: 145, luck: 30, at: 'ulithi', b: RB },
+      { name: '霞改二乙', type: '駆逐', lv: 150, luck: 39, at: 'tago', b: TAGO },
+      { name: '浜波改', type: '駆逐', lv: 110, luck: 23, at: null, b: { ...TAGO, ...RB } },
+      { name: '涼風改二', type: '駆逐', lv: 92, luck: 26, at: 's31', b: {} },
+      { name: '五十鈴改二', type: '軽巡', lv: 140, luck: 24, at: 's31', b: A31 },
+      { name: '北上改二', type: '軽巡', lv: 160, luck: 40, at: 'rengo', b: { ...B31, ...RA } },
+      { name: '矢矧改二乙', type: '軽巡', lv: 155, luck: 45, at: 'rengo', b: RA },
+      { name: '大和改二重', type: '戦艦', lv: 175, luck: 61, at: 'ulithi', b: RA },
+      { name: '長門改二', type: '戦艦', lv: 170, luck: 52, at: 'rengo', b: RA },
+      { name: '瑞鶴改二甲', type: '空母', lv: 165, luck: 80, at: 'rengo', b: { 'E2-3': 1.27 } },
+      { name: '伊41改', type: '潜水', lv: 120, luck: 30, at: 'sixth', b: { 'E3-3': 1.38 } },
+      { name: '伊168改', type: '潜水', lv: 100, luck: 63, at: null, b: { 'E3-3': 1.24 } }
+    ];
+    const typeOrder = ['戦艦', '空母', '軽巡', '駆逐', '潜水'];
+    const bestIn = (s, f) => Math.max(0, ...f.pts.map(p => s.b[p] || 0));
+
+    const rows = fudas.map(f => {
+      const members = ships.filter(s => s.at === f.key);
+      const groups = typeOrder.map(t => ({
+        type: t,
+        ships: members.filter(s => s.type === t).map(s => {
+          const m = bestIn(s, f);
+          return {
+            name: s.name, lv: s.lv, luck: s.luck, badge: m ? '×' + m.toFixed(2) : '–',
+            badgeStyle: m ? 'color: #101114; background: #E8B04B; padding: 0 4px; border-radius: 2px; font-weight: 700' : 'color: #6B717C',
+            style: 'display: flex; flex-direction: column; gap: 2px; padding: 5px 8px; border-radius: 3px; background: #2C2F36; box-shadow: inset 3px 0 0 ' + f.color + '; opacity: ' + (m ? '1' : '0.7')
+          };
+        })
+      })).filter(g => g.ships.length);
+      return {
+        name: f.name, phases: f.phaseLabel, count: members.length, boosted: members.filter(s => bestIn(s, f) > 0).length, groups, empty: members.length === 0,
+        headStyle: 'flex: 0 0 180px; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: ' + f.color + '; color: ' + f.ink
+      };
+    });
+
+    const spare = ships.filter(s => !s.at).map(s => {
+      const hits = fudas.map(f => ({ f, m: bestIn(s, f) })).filter(x => x.m).sort((a, b) => b.m - a.m);
+      return { name: s.name + '　Lv' + s.lv + ' 運' + s.luck, where: hits.slice(0, 2).map(x => x.f.name + ' ×' + x.m.toFixed(2)).join(' ／ ') };
+    }).filter(s => s.where);
+
+    const boostCount = (fk, pid) => ships.filter(s => s.at === fk && s.b[pid]).length;
+    const step = (label, fk, pid, hard) => ({
+      label, fuda: F[fk].name, boost: pid ? boostCount(fk, pid) : false, hard: !!hard,
+      style: 'position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-radius: 4px; background: ' + F[fk].color + '; color: ' + F[fk].ink
+    });
+    const timeline = [
+      { map: 'E1', steps: [step('ギミック〜ゲージ3', 's31', 'E1')] },
+      { map: 'E2', steps: [step('ギミック', 's31', 'E2:H'), step('ゲージ1 輸送', 'tago', 'E2-1'), step('ゲージ2', 'rengo', 'E2-2'), step('ゲージ3', 'rengo', 'E2-3', true)] },
+      { map: 'E3', steps: [step('ギミック', 's31', null), step('ゲージ1', 'ulithi', 'E3-1'), step('ゲージ2 輸送', 's31', 'E3-2'), step('ゲージ3', 'sixth', 'E3-3'), step('ゲージ4', 'ulithi', 'E3-4', true)] },
+      { map: 'E4', steps: [step('ゲージ1', 'fr3', null), step('ギミック', 'fr3', null), step('ゲージ2 輸送', 'fr3', null), step('ゲージ3', 'frmed', null), step('ゲージ4', 'frmed', null), step('ゲージ5', 'frmed', null, true)] },
+      { map: 'E5', steps: [step('ギミック1・2', 'esc2', null), step('ゲージ1', 'esc2', null), step('ゲージ2 輸送', 'ukrelief', null), step('ギミック3', 'raid', null), step('ギミック4', 'forceh', null), step('ゲージ3', 'raid', null), step('ゲージ4', 'eurocomb', null)] }
+    ];
+
+    return {
+      role: this.state.role, roleOpts,
+      nav: [navItem('一覧', 'Main.dc.html', 'board', true), navItem('割振', 'Assign.dc.html', 'assign'), navItem('取込', 'Import.dc.html', 'import'), navItem('差分', 'Drift.dc.html', 'diff'), navItem('設定', '#', 'gear')],
+      timeline, rows,
+      ...(() => {
+        const st = this.state;
+        const filled = fudas.filter(f => ships.some(s => s.at === f.key));
+        const picked = st.picked || filled.map(f => f.key);
+        const chosen = st.scope === 'all' ? filled.map(f => f.key) : filled.map(f => f.key).filter(k => picked.indexOf(k) >= 0);
+        const pages = Math.ceil(chosen.length / 6);
+        return {
+          multiPage: pages > 1,
+          copyPageOpts: Array.from({ length: Math.max(1, pages) }, (_, i) => ({ value: String(i + 1), label: (i + 1) + '枚目', on: (st.copyPage || 1) === i + 1 })),
+          pickCopyPage: (e) => this.setState({ copyPage: +e.target.value, copied: false }),
+          copyImage: () => { if (chosen.length) this.setState({ copied: true }); },
+          copied: !!st.copied,
+          copiedMsg: (pages > 1 ? (st.copyPage || 1) + '枚目の' : '') + '画像をコピーしました。Xの投稿欄などにそのまま貼り付けられます',
+          copyLabel: st.copied ? 'コピーしました ✓' : '画像をコピー',
+          copyStyle: 'min-height: 36px; padding: 0 16px; border-radius: 4px; font-family: inherit; font-size: 13px; font-weight: 700; ' + (chosen.length ? 'background: transparent; color: #F2C98A; border: 1px solid #E8B04B; cursor: pointer' : 'background: transparent; color: #6B717C; border: 1px solid #3A3E46; cursor: not-allowed'),
+          exportOpen: st.exportOpen,
+          openExport: () => this.setState({ exportOpen: true, copied: false }),
+          closeExport: () => this.setState({ exportOpen: false }),
+          stop: (e) => e.stopPropagation(),
+          scopeOpts: [['all', '札が付いた札をすべて'], ['pick', '札を選ぶ']].map(([k, label]) => ({ label, on: st.scope === k, pick: () => this.setState({ scope: k, copied: false }) })),
+          pickMode: st.scope === 'pick',
+          fudaChecks: filled.map(f => ({ name: f.name, on: picked.indexOf(f.key) >= 0, dot: 'width: 10px; height: 10px; border-radius: 2px; background: ' + f.color,
+            toggle: () => { const cur = this.state.picked || filled.map(x => x.key); this.setState({ picked: cur.indexOf(f.key) >= 0 ? cur.filter(x => x !== f.key) : [...cur, f.key] }); } })),
+          exportSel: st.scope === 'all' ? '' : (chosen.join(',') || '-'),
+          noneSel: chosen.length === 0,
+          pageNote: chosen.length === 0 ? '札を1つ以上選んでください' : chosen.length + '札 → ' + pages + '枚' + (pages > 1 ? '（分けて保存）' : ''),
+          saveLabel: pages > 1 ? pages + '枚まとめて保存（PNG）' : 'PNGで保存',
+          saveStyle: 'min-height: 36px; padding: 0 18px; border: 0; border-radius: 4px; font-family: inherit; font-size: 13px; font-weight: 700; ' + (chosen.length ? 'background: #E8B04B; color: #101114; cursor: pointer' : 'background: #3A3426; color: #8A7F66; cursor: not-allowed')
+        };
+      })()
+    };
+  }
+}
+</script>
+</body>
+</html>
