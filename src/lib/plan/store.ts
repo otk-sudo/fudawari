@@ -14,6 +14,8 @@
 // - 取り込みの番号（importSeq）は取り込みを保存するたびに進める（noteImport。getPlanStorage の取り込みの保存が呼ぶ）。
 //   割り当ては、もとにした取り込みの番号を持つ。その後に取り込んでいたら保存先に書かず（取り込みで外した個体の割り当てを
 //   書き戻さない）、未保存として残し、読み直すときに取り込みの後の艦で絞ってから保存し直す。
+//   読み直しの間に変えた割り当ても、もとにした取り込みが読んだ艦の取り込みより前なら、読み直すときに保存し直す
+//   （列に残っているその保存は、まだ保存先に書いていなくても、取り込みの後なので見送られる）。
 // - 同じイベントで保存できていない割り当て（保存に失敗した・取り込みで保存を見送った）が残っていれば、読み直しても消さずに残し、
 //   保存し直す。ただし、その割り当てを作った後に個体 ID がない形式（古い形式）で取り込み直していたら、残さずに保存先の値を使う（U9）。
 //   古い形式の取り込みは、取り込みの番号（noteImport で知らせたもの）と最終取り込みの日時の、どちらかで分かれば捨てる
@@ -401,8 +403,15 @@ export function createPlanDataStore(storage: FudawariStorage): PlanDataStore {
         returnedCount,
         saveError: kept.saveError,
       });
-      // 保存できないまま・除いた割り当てがあるなら保存し直す（読み直しの間に変えただけなら、列に入っている保存に任せる）
-      if (kept.failed || orphanPass.returnedCount > 0 || shipPass.removedCount > 0) {
+      // 保存できないまま・除いた割り当てがあるなら保存し直す。残す割り当てのもとにした取り込みが、読んだ艦の取り込みより
+      // 前のときも保存し直す（読み直しの間に変えた割り当ての保存が列に残っていても、取り込みの後なので見送られる）。
+      // 読み直しの間に変えただけ（同じ取り込みのもとで作った）なら、列に入っている保存に任せる
+      if (
+        kept.failed ||
+        kept.importSeq < importSeqAtRead ||
+        orphanPass.returnedCount > 0 ||
+        shipPass.removedCount > 0
+      ) {
         void queueSave(eventId, shipPass.assignments, importedAtOf(lastImport), importSeqAtRead);
       }
     }

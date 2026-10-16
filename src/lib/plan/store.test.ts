@@ -966,6 +966,46 @@ describe("札割りのデータのストア（createPlanDataStore）", () => {
     });
   });
 
+  describe("取り込みの後の読み直しと、割り当ての保存の重なり（取り込みの番号）", () => {
+    it("取り込みの後の読み直しで艦を読んでいる間に、afterSaves の処理が列に入り、その後ろで割り当てを変えても、読み直しの後に保存先も状態と同じになる", async () => {
+      // 準備：取り込み（31 隻）と割り当てのある状態で読み込み、同じ 31 隻の取り込みを、
+      //       getPlanStorage の包みと同じく列の中で保存してストアに知らせる
+      const { storage: real } = openTestStorage();
+      await seedSummer2026(real);
+      const holding = holdableStorage(real);
+      const store = createPlanDataStore(holding.storage);
+      await store.getState().load(EVENT_ID, FUDA_IDS);
+      await store.afterSaves(async () => {
+        await holding.storage.saveImport(importInput(summer2026Ships, { importedAt: NEXT_IMPORTED_AT }));
+        store.noteImport(true);
+      });
+
+      // 実行：取り込みの後の読み直しを始め、艦の読み取りを止めている間に、afterSaves の処理（止めておく）を列に入れ、
+      //       その後ろで割り当てを変える。読み直しを先に終えてから、afterSaves の処理を終える
+      const heldShips = holding.holdLoadShips();
+      const reloading = store.getState().reload();
+      await heldShips.reached;
+      let finishTask: () => void = () => {};
+      const taskGate = new Promise<void>((resolve) => {
+        finishTask = resolve;
+      });
+      const task = store.afterSaves(() => taskGate);
+      const saving = store.getState().setAssignments(MOVED);
+      heldShips.release();
+      await reloading;
+      finishTask();
+      await Promise.all([task, saving]);
+      await settleSaves(store);
+
+      // 検証：状態は変えた割り当てで、保存先にも同じ割り当てが入る（未保存のまま残らない）
+      const ready = expectReady(store);
+      expect(ready.assignments).toEqual(MOVED);
+      expect(await real.loadAssignments(EVENT_ID)).toEqual(MOVED);
+      expect(ready.saveError).toBeNull();
+      expect(store.unsavedAssignments()).toBeNull();
+    });
+  });
+
   describe("控えに戻した件数（returnedCount）", () => {
     it("同じイベントで札 ID の一覧が変わって、また控えに戻したら、前の件数に足す", async () => {
       // 準備：利根改二を、定義から消えた札に置いておく
