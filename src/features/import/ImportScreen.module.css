@@ -1,0 +1,493 @@
+/* 取り込み画面（モック Import.dc.html） */
+
+/*
+ * この画面だけで使う色。theme.css にまだ役割の変数がない色を、モックの値（ダーク）で置く。
+ * ライトの値はモックにないため、同じ役割で読みやすい値を仮に置いている（仮）。
+ * 切り替えの条件は theme.css と同じ（data-theme="light"、または data-theme がなく端末の設定がライト）。
+ * ほかの画面でも使うようになったら theme.css に移す
+ */
+.body {
+  --import-panel-bg: #1a1c20; /* 右側「取り込む範囲」の下地 */
+  --import-control-bg: #26292f; /* 「−」「＋」の下地 */
+  --import-on-accent: #101114; /* 強調の金の上の文字（番号・「取り込む」・「割り振りへ進む」） */
+  --import-selected-bg: #2a2416; /* 選んでいる「取り込む艦娘」の下地 */
+  --import-selected-text: #f2c98a; /* 選んでいる「取り込む艦娘」・Lv の文字 */
+  --import-warning-text: #f2c98a; /* 完了の表示の注意（名前が分からない艦など）の文字 */
+  --import-paste-border: #4a6a9a; /* 貼り付け欄の枠（貼り付ける前） */
+  --import-paste-border-filled: #3fb37f; /* 貼り付け欄の枠（貼り付けた後） */
+  --import-paste-border-error: #c9473f; /* 貼り付け欄の枠（取り込みに失敗したとき） */
+  --import-error-bg: #2a1c1c; /* 失敗の理由の下地 */
+  --import-error-border: #7a3a36; /* 失敗の理由の枠 */
+  --import-error-text: #ffb4ae; /* 失敗の理由の文字 */
+  --import-success-border: #2e6b4a; /* 完了の表示の枠 */
+  --import-success-text: #a8ddb5; /* 完了の表示の見出し */
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 1080px;
+  padding: 20px 16px;
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:global(:root[data-theme="light"]) .body {
+  --import-panel-bg: #f7f8fa;
+  --import-control-bg: #eceef2;
+  --import-on-accent: #ffffff;
+  --import-selected-bg: #fbf1dc;
+  --import-selected-text: #7a5200;
+  --import-warning-text: #8a5300;
+  --import-paste-border: #7f9fd6;
+  --import-paste-border-filled: #2f8f63;
+  --import-paste-border-error: #c0392b;
+  --import-error-bg: #fdeceb;
+  --import-error-border: #e5a39d;
+  --import-error-text: #a12a20;
+  --import-success-border: #74bf93;
+  --import-success-text: #1f6b3d;
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .body {
+    --import-panel-bg: #f7f8fa;
+    --import-control-bg: #eceef2;
+    --import-on-accent: #ffffff;
+    --import-selected-bg: #fbf1dc;
+    --import-selected-text: #7a5200;
+    --import-warning-text: #8a5300;
+    --import-paste-border: #7f9fd6;
+    --import-paste-border-filled: #2f8f63;
+    --import-paste-border-error: #c0392b;
+    --import-error-bg: #fdeceb;
+    --import-error-border: #e5a39d;
+    --import-error-text: #a12a20;
+    --import-success-border: #74bf93;
+    --import-success-text: #1f6b3d;
+  }
+}
+
+/* ---- 艦船マスタ・ブラウザ内の保存を読み込めなかったときの警告（DefinitionLoadAlert と同じ見た目） ---- */
+
+.loadAlertBody {
+  padding: 12px 14px 0;
+}
+
+.loadAlert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.loadAlertTitle {
+  margin: 0;
+  font-weight: 700;
+}
+
+.loadAlertReason {
+  margin: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.loadAlertAdvice {
+  margin: 0;
+}
+
+/* ---- 取り込みの枠（左：貼り付け、右：取り込む範囲） ---- */
+
+.panel {
+  display: flex;
+  flex-wrap: wrap;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.pasteColumn {
+  display: flex;
+  flex: 999 1 460px;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px 20px;
+}
+
+/* 手順の見出し（「1 艦娘の情報をコピーする」「2 ここに貼り付ける」） */
+.step {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.stepNext {
+  margin-top: 4px;
+}
+
+.stepNumber {
+  padding: 1px 7px;
+  background: var(--color-accent);
+  color: var(--import-on-accent);
+  border-radius: 3px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stepText {
+  margin: 0 0 0 30px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+.pasteBox {
+  width: calc(100% - 30px);
+  margin-left: 30px;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px dashed var(--import-paste-border);
+  border-radius: 6px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.pasteBoxFilled {
+  border-color: var(--import-paste-border-filled);
+}
+
+.pasteBoxError {
+  border-color: var(--import-paste-border-error);
+}
+
+.pasteBox:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 1px;
+}
+
+.pasteNote {
+  margin-left: 30px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.rangeColumn {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px;
+  background: var(--import-panel-bg);
+  border-left: 1px solid var(--color-border);
+}
+
+.rangeTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+/* 「すべての艦娘」「ロック済みだけ」（ラジオボタンを隠し、枠ごと押せるようにする） */
+.lockOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lockOption {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.lockOptionChecked {
+  background: var(--import-selected-bg);
+  color: var(--import-selected-text);
+  border-color: var(--color-accent);
+}
+
+.lockOption:has(:focus-visible) {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* 操作できない間（取り込みの処理中と確認の間）。「取り込む」の押せない間と同じ見た目にする */
+.lockOption:has(:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lockLabel {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lockNote {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* Lv 下限 */
+.levelField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.levelRow {
+  display: flex;
+  align-items: center;
+}
+
+.stepButton {
+  width: 34px;
+  height: 36px;
+  padding: 0;
+  background: var(--import-control-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  font-family: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.stepButtonDown {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.stepButtonUp {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.levelInput {
+  width: 64px;
+  height: 36px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-right: 0;
+  border-left: 0;
+  font-family: Consolas, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.stepButton:focus-visible,
+.levelInput:focus-visible {
+  position: relative;
+  outline: 2px solid var(--color-action);
+  outline-offset: -2px;
+}
+
+.levelSuffix {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.preset {
+  min-height: 26px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.presetActive {
+  color: var(--import-selected-text);
+  border-color: var(--color-accent);
+}
+
+.preset:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* 操作できない間（取り込みの処理中と確認の間）。「取り込む」の押せない間と同じ見た目にする */
+.stepButton:disabled,
+.levelInput:disabled,
+.preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 右側の下端まで空けて、「取り込む」を下に寄せる */
+.spacer {
+  flex: 1 1 auto;
+}
+
+.importButton {
+  min-height: 42px;
+  background: var(--color-accent);
+  color: var(--import-on-accent);
+  border: 0;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.importButton:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* 押せない間（艦船マスタの読み込み中・失敗、取り込みの途中） */
+.importButton[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.importNote {
+  margin: -8px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ---- 失敗の理由 ---- */
+
+.error {
+  padding: 10px 16px;
+  background: var(--import-error-bg);
+  color: var(--import-error-text);
+  border: 1px solid var(--import-error-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* ---- 完了の表示 ---- */
+
+/*
+ * 完了の表示を入れる領域（role="status"）。中身がないときも読み上げの対象に残すため、display: none にはしない
+ * （中身がなければ高さは 0。本文の末尾なので、並びの間隔が 1 つ増えても見た目は変わらない）
+ */
+.statusRegion {
+  display: flex;
+  flex-direction: column;
+}
+
+.done {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--import-success-border);
+  border-left-width: 6px;
+  border-radius: var(--radius-md);
+}
+
+.doneTitle {
+  margin: 0;
+  font-size: 15px;
+  color: var(--import-success-text);
+}
+
+.doneList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.warning {
+  color: var(--import-warning-text);
+}
+
+.doneActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.primaryLink,
+.secondaryLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.primaryLink {
+  padding: 0 18px;
+  background: var(--color-accent);
+  color: var(--import-on-accent);
+  font-weight: 700;
+}
+
+.secondaryLink {
+  padding: 0 14px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+}
+
+.primaryLink:focus-visible,
+.secondaryLink:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/*
+ * 画面には出さず、読み上げとキーボードの操作には残す部品（「取り込む艦娘」のラジオボタン）。
+ * display: none は操作からも外れるため使わず、1px 四方に切り抜いて隠す
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

@@ -33,7 +33,7 @@ e2e/              Playwright
 ```
 
 ## コマンド（npm、Node 22）
-- 開発サーバー：`npm run dev`
+- 開発サーバー：`npm run dev`（艦船マスタがなければ、先に predev で生成する。あれば使い回す。最新にするなら `npm run generate:ship-master`）
 - 型チェック：`npm run typecheck`（`next typegen && tsc --noEmit`。next-env.d.ts は追跡しないため先に型を生成する）
 - Lint：`npm run lint`
 - 単体テスト：`npm test`（Vitest）
