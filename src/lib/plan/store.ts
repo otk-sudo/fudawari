@@ -10,7 +10,7 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { FudawariStorage } from "@/lib/storage";
-import type { PlanDataActions, PlanDataError, PlanDataState } from "./types";
+import type { AssignmentUpdate, PlanDataActions, PlanDataError, PlanDataState } from "./types";
 
 /** ストアの操作（画面から使う操作に、読み込みの開始を加えたもの） */
 export interface PlanDataStoreActions extends PlanDataActions {
@@ -56,7 +56,7 @@ export function createPlanDataStore(storage: FudawariStorage): PlanDataStore {
   return createStore<PlanDataStoreState>((set, get) => {
     /** 状態を丸ごと置き換える（前の状態の項目を残さない。操作はそのまま） */
     function replace(next: PlanDataState): void {
-      set({ ...next, load, reload, setAssignments }, true);
+      set({ ...next, load, reload, setAssignments, acknowledgeReturned }, true);
     }
 
     /** 保存先を読んで準備完了にする（失敗なら失敗の状態にする）。後から別の読み込みを始めていたら、結果を捨てる */
@@ -124,7 +124,9 @@ export function createPlanDataStore(storage: FudawariStorage): PlanDataStore {
       await read(target);
     }
 
-    function setAssignments(next: AssignmentMap): Promise<void> {
+    function setAssignments(next: AssignmentUpdate): Promise<void> {
+      // TODO（PR-04c の修正）：関数を渡す形（(prev) => next）はまだ受け付けない。テストを先に書いた段階の空の入れ物
+      if (typeof next === "function") return Promise.resolve();
       const state = get();
       if (state.status !== "ready") return Promise.resolve();
       const { eventId } = state;
@@ -135,6 +137,9 @@ export function createPlanDataStore(storage: FudawariStorage): PlanDataStore {
       return saved;
     }
 
-    return { status: "idle", load, reload, setAssignments };
+    /** TODO（PR-04c の修正）：控えに戻した件数を 0 に戻す。テストを先に書いた段階の空の入れ物 */
+    function acknowledgeReturned(): void {}
+
+    return { status: "idle", load, reload, setAssignments, acknowledgeReturned };
   });
 }

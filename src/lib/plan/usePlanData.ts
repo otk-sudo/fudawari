@@ -36,11 +36,24 @@ interface SharedPlanData {
 /** 何もしない操作（待機中と、読み込みを頼む前の読み込み中に返す） */
 async function doNothing(): Promise<void> {}
 
+/** 何もしない操作（戻り値のない操作の分） */
+function doNothingSync(): void {}
+
 /** 待機中（読み込む対象のイベントがない） */
-const IDLE: PlanData = { status: "idle", setAssignments: doNothing, reload: doNothing };
+const IDLE: PlanData = {
+  status: "idle",
+  setAssignments: doNothing,
+  reload: doNothing,
+  acknowledgeReturned: doNothingSync,
+};
 
 /** 読み込み中（読み込みをストアに頼む前の、最初の描画で返す） */
-const LOADING: PlanData = { status: "loading", setAssignments: doNothing, reload: doNothing };
+const LOADING: PlanData = {
+  status: "loading",
+  setAssignments: doNothing,
+  reload: doNothing,
+  acknowledgeReturned: doNothingSync,
+};
 
 // ---- 共有の保存先とストア（モジュールに 1 つ） ----
 
