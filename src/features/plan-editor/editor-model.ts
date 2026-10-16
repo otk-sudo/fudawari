@@ -46,7 +46,8 @@ export interface Workspace {
   readonly baseEventId: string;
   /**
    * 新規作成で、選んで文書を読み込んでいる途中の「元にするイベント」の ID（なければ null）。
-   * 読み込めたら baseEventId にし、失敗したら null に戻す（選択欄は baseEventId の値に戻る）
+   * 読み込めたら baseEventId にし、失敗したら null に戻す（選択欄は baseEventId の値に戻る）。
+   * 選び直した後に届いた古い要求の結果は使わない（DefinitionEditor が要求ごとの番号で見分ける）
    */
   readonly loadingBaseEventId: string | null;
 }

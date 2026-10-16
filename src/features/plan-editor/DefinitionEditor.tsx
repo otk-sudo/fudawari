@@ -214,11 +214,12 @@ function eventInfoErrors(mode: EditMode, meta: EventMeta, now: Date): EventInfoE
  * - イベント名・日時は確定（フォーカスを外す）のたびに updateEventMeta で保存する（下書きの保存とは別）。
  *   画面はすぐ新しい値にし、失敗したら保管庫で確定している値に戻して理由を出す。
  *   更新は列にして 1 つずつ順に送り（後の更新はそれまでに確定した値をすべて持つ）、前の更新が失敗しても続ける
- * - 「下書きを保存」「変更を公開する」は、それまでに確定したイベント名・日時の更新が終わってから保存・公開する
+ * - 「下書きを保存」「変更を公開する」は、それまでに確定したイベント名・日時の更新が終わってから保存・公開する。
+ *   保存・公開の途中は、イベント名・日時の欄を操作できなくする
  * - 「変更を公開する」は、保存していない変更があれば先に下書きを保存し、返った版を公開する
  * - 新規作成の「下書きを保存」は 1 回目にイベントを作成し、2 回目からはその下書きを保存する。
  *   「公開して最新にする」は、まだ作成していなければ作成してから、返った版を最新にして公開する。
- *   作成の途中はイベント名・日時の欄を操作できなくし、「元にするイベント」はイベントを作る前だけ選べる
+ *   「元にするイベント」はイベントを作る前だけ選べ、読み込みの結果はいちばん新しい要求のものだけを使う
  * - 文書の問題（findDocumentIssues）は理由を出してボタンを押せなくする。段階が 1 つもないことは公開だけを止める
  * - 入力の誤り（イベント名・日時・倍率のその場の文）が残っている間も、保存・公開を押せなくする
  */
@@ -236,6 +237,8 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   const metaQueueRef = useRef<Promise<void>>(Promise.resolve());
   // イベントごとの、保管庫で確定しているイベント名・日時（更新に失敗したとき、表示をこの値に戻す）
   const confirmedMetaRef = useRef(new Map<string, EventMeta>());
+  // 元にするイベントの読み込みの、いちばん新しい要求の番号（古い要求の結果を捨てるため）
+  const baseRequestRef = useRef(0);
 
   const { mode } = state;
   const ws = state.workspaces[mode];
@@ -305,8 +308,11 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
 
   // ---- 保存・公開・作成の途中 ----
 
-  // 新規作成でイベントを作成している途中（イベント名・日時の欄を操作できなくする）
-  const creating = busy !== null && busy.target === mode && ws.eventId === null;
+  // 今のワークスペースの保存・公開の途中（イベントの作成を含む）は、イベント名・日時の欄を操作できなくする
+  // （その間に確定したイベント名・日時の更新が、保存・公開と競合しないように）
+  const metaLocked = busy !== null && busy.target === mode;
+  // 新規作成でイベントを作成している途中
+  const creating = metaLocked && ws.eventId === null;
   // 「元にするイベント」を選べるのは、イベントを作る前で、作成の途中でもないときだけ
   const canChooseBase = ws.eventId === null && !creating;
   // 入力の誤り（その場で出す文）が残っている間・元にするイベントの読み込みの途中は、保存・公開を押せなくする
@@ -442,6 +448,10 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
     if (!canChooseBase) return;
     const target = mode;
     const eventId = ws.doc.event.id;
+    // 要求ごとの番号。選ぶたびに進め、読み込みの結果はいちばん新しい要求のものだけを使う
+    // （同じイベントを選び直したときも、古い要求の結果で文書や選択を変えない）
+    baseRequestRef.current += 1;
+    const request = baseRequestRef.current;
     setNotice(null);
     if (baseEventId === "") {
       updateWorkspace(target, (current) => ({
@@ -457,9 +467,9 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
     updateWorkspace(target, (current) => ({ ...current, loadingBaseEventId: baseEventId }));
     repository.loadEventContent(baseEventId).then(
       (base) => {
+        // 読み込みの間に選び直していたら（同じイベントを選び直した場合も）捨てる
+        if (request !== baseRequestRef.current) return;
         updateWorkspace(target, (current) => {
-          // 読み込みの間に別のイベントを選び直していたら捨てる
-          if (current.loadingBaseEventId !== baseEventId) return current;
           // 読み込みの間にイベントを作成していたら、作成したイベントの文書を置き換えない
           if (current.eventId !== null) return { ...current, loadingBaseEventId: null };
           return {
@@ -472,10 +482,10 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
         });
       },
       (error: unknown) => {
-        // 選択を前の値（今の文書の元にしたイベント）に戻す。読み込みの間に別のイベントを選び直していたらそのまま
-        updateWorkspace(target, (current) =>
-          current.loadingBaseEventId === baseEventId ? { ...current, loadingBaseEventId: null } : current,
-        );
+        // 読み込みの間に選び直していたら、古い要求の失敗は知らせず、選択もそのままにする
+        if (request !== baseRequestRef.current) return;
+        // 選択を前の値（今の文書の元にしたイベント）に戻す
+        updateWorkspace(target, (current) => ({ ...current, loadingBaseEventId: null }));
         setNotice({ tone: "error", text: `元にするイベントを読み込めませんでした：${errorMessage(error)}` });
       },
     );
@@ -488,6 +498,8 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
    * 更新は列の最後に足し、前の更新が終わってから送る（後の更新は、それまでに確定した値をすべて持つ）
    */
   const saveMeta = (nextMeta: EventMeta, field: EventField): void => {
+    // 保存・公開の途中は確定しない（欄は操作できないが、念のため。入力欄の値は残す）
+    if (metaLocked) return;
     const target = mode;
     const prevMeta = ws.meta;
     const { eventId } = ws;
@@ -703,7 +715,7 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
         onChangeText={(field, value) => setTexts((current) => withText(current, field, value))}
         onCommitText={commitField}
         onClearEnd={clearEnd}
-        metaLocked={creating}
+        metaLocked={metaLocked}
         baseEventOptions={data.baseEventOptions}
         canChooseBase={canChooseBase}
         onChooseBase={chooseBase}

@@ -1,6 +1,8 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { DefinitionDoc } from "@/domain/definition-edit";
+import { summer2026Definition } from "@/test/fixtures";
 import { PlanEditor } from "./PlanEditor";
 import {
   ADMIN,
@@ -12,6 +14,7 @@ import {
   createFakeRepository,
   CREATED_EVENT_ID,
   detailRegion,
+  DRAFT_VERSION,
   enterDateTime,
   expectStages,
   expectTextNotShown,
@@ -26,6 +29,7 @@ import {
   makeEvent,
   publishAsLatestButton,
   publishButton,
+  PUBLISH_RESULT,
   renderEditor,
   restoreClock,
   saveDraftButton,
@@ -36,7 +40,7 @@ import {
   switchToCreate,
   textContaining,
 } from "./test-helpers";
-import type { CreatedEvent } from "./types";
+import type { CreatedEvent, PublishResult, SaveDraftResult } from "./types";
 
 // イベント定義の画面（PR-11a）のレビュー・Codex の指摘への直し方を、先に画面テストにしたもの（TDD の Red）。
 // 直し方は親（取りまとめ）が決めた。番号は親の指示の番号
@@ -51,6 +55,8 @@ import type { CreatedEvent } from "./types";
 //  9. 新規作成でも終了日時が今以前なら「終了日時は今より後にしてください」（レビュー提案 2）
 // 10. 協力者で最新のイベントがないときの文（レビュー提案 5）
 // 11. イベント名・日時の更新に失敗したら、表示を保存済みの値に戻し、理由を出す（レビュー提案 5）
+// 12. 既存のイベントの下書きの保存・公開の途中は、イベント名・日時の欄を操作できない（Codex）
+// 13. 元にするイベントの読み込みは、要求ごとの番号で新しさを見分ける（Codex）
 //
 // 今は 2026-10-17 12:00（日本時間）。最新のイベントは 2026夏イベ（開始 2026/08/07 12:00、終了日時は未定）
 
@@ -761,6 +767,178 @@ describe("イベント定義の画面（PlanEditor）：レビュー・Codex の
       expectTextShown("更新するイベント：2026夏イベ 後段（最新）");
       expect(endInput()).toHaveValue("");
       expectTextShown("期間：2026/08/07 12:00 〜 終了日時は未定");
+    });
+  });
+
+  describe("12. 既存のイベントの下書きの保存・公開の途中は、イベント名・日時の欄を操作できない（Codex）", () => {
+    /** 「終了日時を消す」のボタン */
+    const clearEndButton = (): HTMLElement => screen.getByRole("button", { name: "終了日時を消す" });
+
+    /** イベント名・開始日時・終了日時の欄と「終了日時を消す」を操作できない（disabled）ことを確かめる */
+    function expectMetaDisabled(): void {
+      expect(nameInput()).toBeDisabled();
+      expect(startInput()).toBeDisabled();
+      expect(endInput()).toBeDisabled();
+      expect(clearEndButton()).toBeDisabled();
+    }
+
+    /** イベント名・開始日時・終了日時の欄と「終了日時を消す」を操作できることを確かめる */
+    function expectMetaEnabled(): void {
+      expect(nameInput()).toBeEnabled();
+      expect(startInput()).toBeEnabled();
+      expect(endInput()).toBeEnabled();
+      expect(clearEndButton()).toBeEnabled();
+    }
+
+    /** 終了日時が決まっている（「終了日時を消す」を出す）最新のイベント */
+    const dataWithEnd = (): ReturnType<typeof makeData> =>
+      makeData({ user: ADMIN, latestEvent: makeEvent({ endAt: "2026-10-20T11:00:00+09:00" }) });
+
+    it("「下書きを保存」で下書きを保存している間はイベント名・開始日時・終了日時の欄と「終了日時を消す」を操作できず、保存が終わったら操作できる", async () => {
+      // 準備：下書きの保存が終わらない保管庫。保存していない変更を作る
+      const repository = createFakeRepository(dataWithEnd());
+      const saving = Promise.withResolvers<SaveDraftResult>();
+      repository.saveDraft.mockImplementation(() => saving.promise);
+      const { user } = await renderEditor(undefined, { repository });
+      await changeE23Importance(user);
+
+      // 実行
+      await user.click(saveDraftButton());
+      await waitFor(() => {
+        expect(repository.saveDraft).toHaveBeenCalledTimes(1);
+      });
+
+      // 検証：保存の途中
+      expectMetaDisabled();
+
+      // 実行：保存が終わる
+      await act(async () => {
+        saving.resolve({ status: "saved", version: DRAFT_VERSION + 1 });
+      });
+
+      // 検証
+      expect(await screen.findByText(textContaining("下書きを保存しました"))).toBeInTheDocument();
+      expectMetaEnabled();
+    });
+
+    it("「変更を公開する」で公開している間はイベント名・開始日時・終了日時の欄と「終了日時を消す」を操作できず、公開が終わったら操作できる", async () => {
+      // 準備：公開が終わらない保管庫（保存していない変更はないので、下書きの保存はせずに公開する）
+      const repository = createFakeRepository(dataWithEnd());
+      const publishing = Promise.withResolvers<PublishResult>();
+      repository.publish.mockImplementation(() => publishing.promise);
+      const { user } = await renderEditor(undefined, { repository });
+
+      // 実行
+      await user.click(publishButton());
+      await waitFor(() => {
+        expect(repository.publish).toHaveBeenCalledTimes(1);
+      });
+
+      // 検証：公開の途中
+      expectMetaDisabled();
+
+      // 実行：公開が終わる
+      await act(async () => {
+        publishing.resolve(PUBLISH_RESULT);
+      });
+
+      // 検証
+      expect(await screen.findByText(textContaining("変更を公開しました"))).toBeInTheDocument();
+      expectMetaEnabled();
+    });
+  });
+
+  describe("13. 元にするイベントの読み込みは、要求ごとの番号で新しさを見分ける（Codex）", () => {
+    /**
+     * 新規作成に切り替え、元にするイベントを 2025秋イベ → 2026夏イベ → 2025秋イベ の順に選ぶ。
+     * 3 回の読み込みはどれも、返した resolvers で終わらせるまで終わらない
+     */
+    async function chooseAutumnSummerAutumn(): Promise<{
+      first: PromiseWithResolvers<DefinitionDoc>;
+      second: PromiseWithResolvers<DefinitionDoc>;
+      third: PromiseWithResolvers<DefinitionDoc>;
+    }> {
+      const repository = createFakeRepository(makeData({ user: ADMIN }));
+      const first = Promise.withResolvers<DefinitionDoc>();
+      const second = Promise.withResolvers<DefinitionDoc>();
+      const third = Promise.withResolvers<DefinitionDoc>();
+      repository.loadEventContent
+        .mockImplementationOnce(() => first.promise)
+        .mockImplementationOnce(() => second.promise)
+        .mockImplementationOnce(() => third.promise);
+      const { user } = await renderEditor(undefined, { repository });
+      await switchToCreate(user);
+      await chooseBase(user, "2025秋イベ");
+      await chooseBase(user, "2026夏イベ");
+      await chooseBase(user, "2025秋イベ");
+      expect(repository.loadEventContent).toHaveBeenCalledTimes(3);
+      return { first, second, third };
+    }
+
+    it("1 回目の 2025秋イベの読み込みが失敗しても、選択は 2025秋イベのまま（知らせも出さない）。3 回目の読み込みが終わったら 2025秋イベの文書にする", async () => {
+      // 準備
+      const { first, second, third } = await chooseAutumnSummerAutumn();
+
+      // 実行：1 回目（古い要求）が失敗する
+      await act(async () => {
+        first.reject(new Error("通信に失敗しました（テスト）"));
+      });
+      await flushPending();
+
+      // 検証：選択は 3 回目の 2025秋イベのまま。古い要求の失敗は知らせない
+      expect(baseSelect()).toHaveDisplayValue("2025秋イベ");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      // 実行：3 回目（新しい要求）が終わる
+      await act(async () => {
+        third.resolve(autumn2025Definition);
+      });
+
+      // 検証：2025秋イベの札と段階を写す
+      await waitFor(() => {
+        expectStages("E1", [["ゲージ1", "機動部隊"]]);
+      });
+      expect(baseSelect()).toHaveDisplayValue("2025秋イベ");
+      expectTextShown("2025秋イベを元に作成");
+
+      // 実行：2 回目（古い要求）が後から終わる
+      await act(async () => {
+        second.resolve(summer2026Definition);
+      });
+      await flushPending();
+
+      // 検証：古い要求の文書で置き換えない
+      expectStages("E1", [["ゲージ1", "機動部隊"]]);
+      expect(fudaItems()).toHaveLength(2);
+      expect(baseSelect()).toHaveDisplayValue("2025秋イベ");
+    });
+
+    it("1 回目の 2025秋イベの読み込みが後から成功しても、3 回目の読み込みが終わるまでは文書を置き換えない", async () => {
+      // 準備
+      const { first, third } = await chooseAutumnSummerAutumn();
+
+      // 実行：1 回目（古い要求）が成功する
+      await act(async () => {
+        first.resolve(autumn2025Definition);
+      });
+      await flushPending();
+
+      // 検証：文書は空のまま（E1 だけ・札なし）。選択は 2025秋イベのまま
+      expect(fudaItems()).toHaveLength(0);
+      expectStages("E1", []);
+      expectTextNotShown("2025秋イベを元に作成");
+      expect(baseSelect()).toHaveDisplayValue("2025秋イベ");
+
+      // 実行：3 回目（新しい要求）が終わる
+      await act(async () => {
+        third.resolve(autumn2025Definition);
+      });
+
+      // 検証
+      await waitFor(() => {
+        expectStages("E1", [["ゲージ1", "機動部隊"]]);
+      });
+      expectTextShown("2025秋イベを元に作成");
     });
   });
 });

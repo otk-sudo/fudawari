@@ -50,7 +50,7 @@ export type EventPanelProps = {
   /** 入力欄を確定した（フォーカスを外した・Enter を押した） */
   onCommitText: (field: EventField) => void;
   onClearEnd: () => void;
-  /** イベント名・日時の欄を操作できなくする（新規作成でイベントを作成している途中） */
+  /** イベント名・日時の欄と「終了日時を消す」を操作できなくする（保存・公開の途中。新規作成のイベントの作成を含む） */
   metaLocked: boolean;
   baseEventOptions: readonly BaseEventOption[];
   /** 「元にするイベント」を選べるか（イベントを作る前で、作成の途中でもないときだけ） */
@@ -206,7 +206,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
               onCommit={() => props.onCommitText("endAt")}
             />
             {meta.endAt !== null && (
-              <button type="button" className={controls.ghostButton} onClick={props.onClearEnd}>
+              <button type="button" className={controls.ghostButton} disabled={props.metaLocked} onClick={props.onClearEnd}>
                 終了日時を消す
               </button>
             )}
