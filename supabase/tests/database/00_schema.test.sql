@@ -1,23 +1,24 @@
 -- DB の土台：表・列の型・RLS の有効化・関数の戻り値と security definer・関数の実行権限・初期データ・表の制約
 -- 設計：docs/design/database.md の 2 章（表）・3 章（RLS）・4 章（RPC）
+-- ログインは管理者が発行する ID とパスワード（Supabase Auth のメール＋パスワード）。招待（invites 表・招待の RPC）はない
 -- 注意：結果の並べ替え（order by）をすると TAP の番号の順が乱れるため、まとめて確かめる select では並べ替えない
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(118);
+select plan(103);
 
 -- ---------------------------------------------------------------------------
--- 1. 表がある（7 件）
+-- 1. 表がある（6 件）
 -- ---------------------------------------------------------------------------
 select has_table('public'::name, t::name, format('%s 表がある', t))
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'invites'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
 ]) as t;
 
 -- ---------------------------------------------------------------------------
--- 2. 列と型（設計 2 章の表のとおり。42 件）
+-- 2. 列と型（設計 2 章の表のとおり。34 件）
 -- ---------------------------------------------------------------------------
 select col_type_is('public'::name, v.t::name, v.c::name, v.typ, format('%s.%s の型が %s', v.t, v.c, v.typ))
 from (values
@@ -54,19 +55,11 @@ from (values
   ('save_logs', 'kind', 'text'),
   ('save_logs', 'map_label', 'text'),
   ('save_logs', 'summary', 'text'),
-  ('save_logs', 'created_at', 'timestamp with time zone'),
-  ('invites', 'id', 'uuid'),
-  ('invites', 'code_hash', 'text'),
-  ('invites', 'created_by', 'uuid'),
-  ('invites', 'expires_at', 'timestamp with time zone'),
-  ('invites', 'used_by', 'uuid'),
-  ('invites', 'used_at', 'timestamp with time zone'),
-  ('invites', 'revoked_at', 'timestamp with time zone'),
-  ('invites', 'created_at', 'timestamp with time zone')
+  ('save_logs', 'created_at', 'timestamp with time zone')
 ) as v (t, c, typ);
 
 -- ---------------------------------------------------------------------------
--- 3. すべての表で RLS が有効（7 件）
+-- 3. すべての表で RLS が有効（6 件）
 -- ---------------------------------------------------------------------------
 select ok(
   coalesce(
@@ -79,11 +72,11 @@ select ok(
   format('%s 表で RLS が有効', t)
 )
 from unnest(array[
-  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs', 'invites'
+  'profiles', 'events', 'app_state', 'drafts', 'published_definitions', 'save_logs'
 ]) as t;
 
 -- ---------------------------------------------------------------------------
--- 4. 関数の引数・戻り値（10 件）と security definer（10 件）
+-- 4. 関数の引数・戻り値（8 件）と security definer（8 件）
 -- ---------------------------------------------------------------------------
 select function_returns('public'::name, v.f::name, v.args::name[], v.ret, format('%s(%s) があり、%s を返す', v.f, array_to_string(v.args, ', '), v.ret))
 from (values
@@ -92,9 +85,7 @@ from (values
   ('publish_definition', array['uuid', 'integer', 'boolean'], 'jsonb'),
   ('create_event', array['text', 'timestamp with time zone', 'timestamp with time zone', 'jsonb'], 'uuid'),
   ('update_event_meta', array['uuid', 'text', 'timestamp with time zone', 'timestamp with time zone'], 'void'),
-  ('create_invite', array['text'], 'jsonb'),
-  ('revoke_invite', array['uuid'], 'void'),
-  ('accept_invite', array['text', 'text'], 'void'),
+  ('register_collaborator', array['uuid', 'text'], 'void'),
   ('remove_collaborator', array['uuid'], 'void'),
   ('touch_profile', array['text'], 'void')
 ) as v (f, args, ret);
@@ -106,16 +97,14 @@ from (values
   ('publish_definition', array['uuid', 'integer', 'boolean']),
   ('create_event', array['text', 'timestamp with time zone', 'timestamp with time zone', 'jsonb']),
   ('update_event_meta', array['uuid', 'text', 'timestamp with time zone', 'timestamp with time zone']),
-  ('create_invite', array['text']),
-  ('revoke_invite', array['uuid']),
-  ('accept_invite', array['text', 'text']),
+  ('register_collaborator', array['uuid', 'text']),
   ('remove_collaborator', array['uuid']),
   ('touch_profile', array['text'])
 ) as v (f, args);
 
 -- ---------------------------------------------------------------------------
 -- 5. 関数の実行権限（設計 4 章：RPC は authenticated だけ。app_role はだれでも。内部の補助はだれも）
---    authenticated（16 件）と anon（16 件）
+--    authenticated（14 件）と anon（14 件）
 -- ---------------------------------------------------------------------------
 create temporary table fn_privs (f text, args text[], kind text) on commit drop;
 insert into fn_privs (f, args, kind) values
@@ -124,9 +113,7 @@ insert into fn_privs (f, args, kind) values
   ('publish_definition', array['uuid', 'integer', 'boolean'], 'rpc'),
   ('create_event', array['text', 'timestamp with time zone', 'timestamp with time zone', 'jsonb'], 'rpc'),
   ('update_event_meta', array['uuid', 'text', 'timestamp with time zone', 'timestamp with time zone'], 'rpc'),
-  ('create_invite', array['text'], 'rpc'),
-  ('revoke_invite', array['uuid'], 'rpc'),
-  ('accept_invite', array['text', 'text'], 'rpc'),
+  ('register_collaborator', array['uuid', 'text'], 'rpc'),
   ('remove_collaborator', array['uuid'], 'rpc'),
   ('touch_profile', array['text'], 'rpc'),
   ('_raise', array['text', 'text'], 'internal'),
@@ -157,7 +144,16 @@ select function_privs_are(
 from fn_privs p;
 
 -- ---------------------------------------------------------------------------
--- 6. app_state は初期データの 1 行だけ（2 件）
+-- 6. 招待の仕組みはない（ログインは管理者が発行する ID とパスワードに変えたため）（4 件）
+--    残っていると、コードを知る人が自分で協力者になれる経路が残るため、消えていることを確かめる
+-- ---------------------------------------------------------------------------
+select hasnt_table('public'::name, 'invites'::name, 'invites 表はない');
+select hasnt_function('public'::name, 'create_invite'::name, 'create_invite はない');
+select hasnt_function('public'::name, 'revoke_invite'::name, 'revoke_invite はない');
+select hasnt_function('public'::name, 'accept_invite'::name, 'accept_invite はない（自分で協力者になる経路がない）');
+
+-- ---------------------------------------------------------------------------
+-- 7. app_state は初期データの 1 行だけ（2 件）
 -- ---------------------------------------------------------------------------
 select is((select count(*) from public.app_state), 1::bigint, 'app_state に初期データの 1 行がある');
 select is(
@@ -167,7 +163,7 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- 7. 表の制約（8 件）
+-- 8. 表の制約（7 件）
 -- ---------------------------------------------------------------------------
 -- app_state に 2 行目は入れられない
 select throws_ok(
@@ -183,7 +179,7 @@ select throws_ok(
 
 -- profiles：role は admin・collab だけ。user_id は auth.users にいる人だけ
 insert into auth.users (id, email, aud, role)
-values ('11111111-1111-4111-8111-111111111111', 'schema-admin@example.test', 'authenticated', 'authenticated');
+values ('11111111-1111-4111-8111-111111111111', 'schema-admin@fudawari.invalid', 'authenticated', 'authenticated');
 
 select throws_ok(
   $$ insert into public.profiles (user_id, display_name, role)
@@ -223,19 +219,6 @@ select throws_ok(
              '制約テスト', 'delete', null, '制約テスト') $$,
   '23514', null,
   'save_logs.kind は save・publish 以外を入れられない'
-);
-
--- invites：code_hash は重複できない
-insert into public.invites (code_hash, created_by, expires_at)
-values (encode(extensions.digest('schema-test-code'::text, 'sha256'::text), 'hex'),
-        '11111111-1111-4111-8111-111111111111', now() + interval '1 day');
-
-select throws_ok(
-  $$ insert into public.invites (code_hash, created_by, expires_at)
-     values (encode(extensions.digest('schema-test-code'::text, 'sha256'::text), 'hex'),
-             '11111111-1111-4111-8111-111111111111', now() + interval '1 day') $$,
-  '23505', null,
-  'invites.code_hash は重複できない'
 );
 
 select * from finish();

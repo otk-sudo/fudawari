@@ -3,7 +3,7 @@
 roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 イベント定義、3.8 協力者、5 データの流れ、13.1 決定事項）。作成：2026-10-16 親。
 
 **定義の文書**（`drafts.content`・`published_definitions.content` の jsonb）は、PR-02 の型 `PublicDefinition`（`src/domain/definition/types.ts`）と同じ形にする：`{ schemaVersion: 1, event: { id, name, startAt, endAt, versionDate }, areas: [{ id, name }], fudas: [{ id, name, color, gameNumber }], stages: [{ id, areaId, name, fudaId, importance, boosts: [{ id, name, multiplier, shipNames }] }] }`。並び順は配列の順。
-- イベントの名前・開始日時・終了日時の正は `events` 表。下書きの `content.event` は表示用の写しで、`publish_definition` が公開するときに `events` 表の値と版の日付（`versionDate`）で書き直してから公開版に保存する。
+- イベントの名前・開始日時・終了日時の正は `events` 表。下書きの `content.event` は表示用の写しで、`create_event` が `event.id` を作ったイベントの ID に書き直し、`publish_definition` が公開するときに `events` 表の値と版の日付（`versionDate`）で書き直してから公開版に保存する。
 - 画面は保存・公開の前に `validatePublicDefinition` で検証する。DB 側では `schemaVersion = 1` とオブジェクトであることだけを確かめる。
 
 ## 1. 方針
@@ -21,7 +21,7 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | 列 | 型 | 説明 |
 |---|---|---|
 | user_id | uuid PK（auth.users.id） | |
-| display_name | text not null | Discord の表示名（ログイン時に更新） |
+| display_name | text not null | 表示名（管理者が協力者を登録するときに決める） |
 | role | text not null check (role in ('admin','collab')) | |
 | created_at | timestamptz not null default now() | 追加した日 |
 | last_edited_at | timestamptz | 最後に定義を編集した日時（下書きの保存・公開で更新） |
@@ -29,7 +29,14 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 
 - 行がない人＝一般利用者（ログインしていても権限なし）。
 - 協力者を外す＝行を削除する（これまでの編集の記録は `save_logs` に残る。名前は記録側に複写しておく）。
-- 最初の管理者は、本番で一度 Discord でログインしたあと、SQL で行を入れる（運用手順書）。
+- 最初の管理者は、Supabase の管理画面（Authentication → Users → Add user）で ID のアカウント（`ID@fudawari.invalid` とパスワード、Auto Confirm）を作り、SQL で行を入れる（運用手順書）。
+
+### 2.1.1 ログイン（U3。2026-10-17 にユーザーの指示で Discord から変更）
+- 管理者が ID とパスワードを発行して相手に伝える。個人情報（メールアドレス・外部のアカウント）は使わない。
+- Supabase Auth のメール＋パスワードを使い、ID は内部で `ID@fudawari.invalid`（予約済みのドメイン。メールは送らない）にする。ID に使える文字は英小文字・数字・ハイフン（3〜32 文字）。
+- アカウントは管理者の協力者画面が作る：保存しない別の Supabase クライアントで `auth.signUp` を呼び（管理者のログインは変わらない）、返った user ID を `register_collaborator` に渡す。
+- Supabase の設定（アカウント操作）：Email のプロバイダーを有効、「Confirm email」を OFF、「Allow new users to sign up」は ON（画面からアカウントを作るため）。だれでもアカウントを作れるが、`profiles` に行がない人は RLS で何も読めず、RPC も FD001 になる。
+- パスワードの再発行は v1 では作らない（外して新しい ID を発行する）。
 
 ### 2.2 `events`（イベント）
 | 列 | 型 | 説明 |
@@ -86,20 +93,6 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 - 記録の文は、保存時の差分から画面側で作って RPC に渡す（要件 3.7 の【提案】）。
 - 「保存の記録を見る」は新しい順に 8 件ずつ取る（`created_at desc, id desc` のカーソル）。
 
-### 2.7 `invites`（招待）
-| 列 | 型 | 説明 |
-|---|---|---|
-| id | uuid PK | |
-| code_hash | text not null unique | 招待コードの SHA-256（コード自体は保存しない） |
-| created_by | uuid not null | |
-| expires_at | timestamptz not null | 発行から 24 時間／3 日／7 日 |
-| used_by | uuid | |
-| used_at | timestamptz | |
-| revoked_at | timestamptz | |
-| created_at | timestamptz not null default now() | |
-
-- 「招待中」＝ `used_at is null and revoked_at is null and expires_at > now()`。
-
 ## 3. RLS（読み取り）
 
 すべての表で RLS を有効にする。書き込みのポリシーは作らない（RPC だけが書く）。
@@ -112,10 +105,9 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | drafts | × | × | 全行 | 全行 |
 | published_definitions | ○（公開済みのデータ。ビルド時の取得に使う） | ○ | ○ | ○ |
 | save_logs | × | × | 全行 | 全行 |
-| invites | × | × | × | 全行 |
 
 - 判定には `public.app_role()`（`profiles` から自分の role を返す `security definer` 関数）を使う。`current_role` は SQL の予約語と重なるため使わない。
-- 表の権限：`anon`・`authenticated` には、上の表で読める表の SELECT だけを与える（`auto_expose_new_tables = false` のため、与えないと読めない）。
+- 表の権限：`anon`・`authenticated` には、上の表で読める表の SELECT だけを与える（Supabase のクラウドの既定では public の新しい表・関数に anon・authenticated の権限が自動で付くため、マイグレーションで明示に REVOKE してから GRANT する。CI の config.toml も `auto_expose_new_tables = true` にして、本番と同じ条件でテストする）。
 - ビルド時の取得は anon キーで `app_state` と `published_definitions` を読む。サーバー専用のキー（service_role）はビルドにも画面にも置かない。
 
 ## 4. RPC（書き込み）
@@ -132,12 +124,10 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | FD002 | イベントが終了している（`ends_at <= now()`） |
 | FD003 | 更新できるイベントではない（協力者：最新のイベント以外。管理者：最新でも未公開でもないイベント。最新でないイベントを `p_make_latest = false` で公開しようとした） |
 | FD004 | 版が違う（`publish_definition` の `p_base_version` が今の下書きの版と違う） |
-| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、期限の選択肢、記録が配列でない など） |
-| FD006 | 招待が使用済み |
-| FD007 | 招待の期限切れ |
-| FD008 | 招待が取り消し済み |
-| FD009 | 見つからない（イベント・招待・協力者） |
-| FD010 | 既に権限がある人が招待を受けようとした |
+| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、終了日時が今以前、表示名が空、発行した ID でないアカウント、記録が配列でない など） |
+| FD006〜FD008 | （欠番。招待をやめたため） |
+| FD009 | 見つからない（イベント・アカウント・協力者） |
+| FD010 | すでに権限がある人を協力者に登録しようとした |
 | FD011 | 管理者は外せない（自分自身も） |
 
 ### 4.2 関数
@@ -147,17 +137,16 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | `app_role() returns text` | だれでも（anon も） | 自分の `profiles.role`（'admin'／'collab'）。行がない・未ログインなら null。RLS の判定に使う |
 | `save_draft(p_event_id uuid, p_base_version integer, p_content jsonb, p_logs jsonb) returns jsonb` | 協力者・管理者 | `p_base_version` が今の版と同じなら `content` を保存して版を 1 増やし、`p_logs`（`[{ "mapLabel": "E2" または null, "summary": "…" }]`。空の配列も可）を 1 件ずつ `save_logs`（kind 'save'）に入れ、`{ "status": "saved", "version": 新しい版 }` を返す。違えば保存せず `{ "status": "conflict", "version": 今の版, "content": 今の内容, "updatedByName": 保存した人の表示名（外された人なら "不明"）, "updatedAt": 日時 }` を返す（画面で 3 方向マージする）。終了 → FD002、更新できない → FD003、文書の形 → FD005 |
 | `publish_definition(p_event_id uuid, p_base_version integer, p_make_latest boolean) returns jsonb` | 協力者・管理者（`p_make_latest = true` は管理者だけ。協力者なら FD001） | 下書きの版が `p_base_version` と同じなら、下書きの `content` の `event` を `events` 表の値で書き直して（`id`＝イベント ID の文字列、`name`、`startAt`・`endAt`＝日本時間の "YYYY-MM-DDTHH:MI:SS+09:00"（未定は null）、`versionDate`＝公開した日の日本時間の "YYYY-MM-DD"）`published_definitions` に保存し（`version_label`＝"YYYY/MM/DD 版"）、記録（kind 'publish'、`map_label` は null、文「公開（YYYY/MM/DD 版）」）を入れる。`p_make_latest` なら `app_state.latest_event_id` を切り替える。戻り値 `{ "status": "published", "id": 公開版の ID, "versionLabel": "…", "versionDate": "YYYY-MM-DD" }`。版が違う → FD004、終了 → FD002、最新でないのに `p_make_latest = false` → FD003 |
-| `create_event(p_name text, p_starts_at timestamptz, p_ends_at timestamptz, p_content jsonb) returns uuid` | 管理者 | イベントと下書き（版 1、`content` は `p_content`）を作り、イベント ID を返す。初期の文書（元にするイベントからのコピー・E1 だけの空の文書）は画面が `createDefinition`（PR-09）で作る。名前が空・`p_ends_at <= p_starts_at`・文書の形 → FD005 |
+| `create_event(p_name text, p_starts_at timestamptz, p_ends_at timestamptz, p_content jsonb) returns uuid` | 管理者 | イベントと下書き（版 1、`content` は `p_content`）を作り、イベント ID を返す。初期の文書（元にするイベントからのコピー・E1 だけの空の文書）は画面が `createDefinition`（PR-09）で作り、`content.event.id` は作ったイベントの ID に書き直して保存する。名前が空・`p_ends_at <= p_starts_at`・終了日時が今以前・文書の形 → FD005 |
 | `update_event_meta(p_event_id uuid, p_name text, p_starts_at timestamptz, p_ends_at timestamptz) returns void` | 協力者（終了日時だけ）・管理者 | 名前・開始日時・終了日時を更新する。終了 → FD002、更新できない → FD003、協力者が名前か開始日時を今と違う値にした → FD001、名前が空・終了日時が開始日時以前・終了日時が今以前（誤ってロックしない） → FD005。終了日時の null（未定）は可 |
-| `create_invite(p_expires_in text) returns jsonb` | 管理者 | 招待コード（URL に使える 32 文字。乱数 24 バイトを base64url にしたもの）を作り、SHA-256 の 16 進を `code_hash` に保存して、`{ "id": 招待の ID, "code": コード, "expiresAt": 期限 }` を返す（コードはこのときだけ）。`p_expires_in` は '24 hours'／'3 days'／'7 days' だけ。ほか → FD005 |
-| `revoke_invite(p_invite_id uuid) returns void` | 管理者 | 取り消す（取り消し済みならそのまま）。ない → FD009、使用済み → FD006 |
-| `accept_invite(p_code text, p_display_name text) returns void` | ログイン済みで権限なしの人 | 招待の行をロックして確かめ、有効なら `profiles` に協力者（表示名 `p_display_name`）として入れ、使用済み（`used_by`・`used_at`）にする。未ログイン → FD001、既に権限がある → FD010、コードが合わない → FD009、取り消し済み → FD008、使用済み → FD006、期限切れ → FD007（この順に確かめる） |
+| `register_collaborator(p_user_id uuid, p_display_name text) returns void` | 管理者 | 管理者の画面が作ったアカウント（auth.users にいる人）を協力者にする。表示名が空・メールが `@fudawari.invalid` で終わらない（管理者が発行した ID でない） → FD005、auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010 |
 | `remove_collaborator(p_user_id uuid) returns void` | 管理者 | 協力者の行を消す。ない → FD009、相手が管理者（自分を含む） → FD011 |
 | `touch_profile(p_display_name text) returns void` | ログイン済み（行がある人） | 表示名を更新する。行がない → FD001 |
 
 - **更新できるイベント**：協力者は `app_state.latest_event_id` のイベントだけ。管理者は、最新のイベントと、まだ公開していない（`published_definitions` に行がない）イベント（U18）。どちらも終了していないこと。
 - 保存・公開をしたら、`profiles.last_edited_at` を今に、`last_edited_note` を「下書きを保存」か「公開」にする。
 - 新規作成は管理者だけ。
+- **ロックの順**：どの RPC でも「自分の profiles（FOR KEY SHARE）→ app_state → イベント → 下書き」。`_require_role` が自分の行をロックするので、協力者を外す操作は実行中の保存・公開が終わるまで待つ。`_check_editable_event` は app_state とイベントを共有ロックし、`publish_definition` は app_state を、`update_event_meta` はイベントを最初に排他ロックする。新しい RPC もこの順に従う。
 
 ## 5. リアルタイム（編集中の表示）
 
@@ -173,12 +162,13 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 ## 7. テスト（U20）
 
 - CI（GitHub Actions）でローカルの Supabase を起動し、マイグレーションを空の DB に適用してから（`supabase db reset`）、権限ごとの可否を pgTAP で確かめる（`supabase test db`。テストは `supabase/tests/database/*.test.sql`）。ログインした人は `auth.users` にテスト用の行を入れ、`set local role authenticated` と `request.jwt.claims` の `sub` で演じる。
-- 確かめること：roadmap T3-3 の受入条件（未ログインは公開版の読み取りだけ、協力者の制限、版の衝突、招待の 1 回限り・期限・取り消し、外された協力者はすぐ更新できない）。
+- 確かめること：roadmap T3-3 の受入条件（未ログインは公開版の読み取りだけ、協力者の制限、版の衝突、協力者の登録は管理者だけ、外された協力者はすぐ更新できない）。
+- ID とパスワードでのアカウントの作成とログインは、CI の db ジョブでローカルの Auth に `ID@fudawari.invalid` の形で signUp・ログインして確かめる。
 - 手元の PC に Docker がないため、手元では DB のテストを動かさず CI で確かめる。
 
 ## 8. 決めたこと（2026-10-17 親）
 
 - DB のテストは pgTAP で書く。
-- 招待コードは乱数 24 バイトの base64url（32 文字）。
+- ログインは ID とパスワード（2.1.1）。招待は作らない。
 - 新規作成の初期の文書は画面で作り、`create_event` に渡す（元にするイベントの読み取りは RLS で協力者・管理者に許している）。
 - 版の日付は公開した日（日本時間）。画面からは渡さない。
