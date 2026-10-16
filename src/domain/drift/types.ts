@@ -5,7 +5,8 @@
 // - 比べるのは取り込んだ個体だけ。割り当てにあっても取り込みデータにいない個体は数えない。
 // - 札番号が未入力の札（gameNumber が null）に置いた個体は、差分の対象外として分類せず excluded に入れる（U10）。
 // - 定義にない札 ID への割り当ては控えとして扱う（U17：定義から消えた札の割り当ては控えに戻す）。
-// - 控えの艦に、定義のどの札番号にも当たらない札が付いていたら、計画に追加できないため対象外にする（仮定。親の確認待ち）。
+// - 定義のどの札番号にも当たらない札が付いた艦は、計画した札（札番号あり）と違えば「計画と違う札が付いた」（実際の札 ID は null。
+//   反映すると控えに戻す）。控えの艦なら、計画に追加できないため対象外にする（2026-10-17 親が決定）。
 // - 代わりの艦の提案は持たない（U23）。説明文の特効（例「E2-3 ×1.24」）は画面側で domain/boost から求める。
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip, ShipUid } from "@/domain/ship/types";
@@ -41,7 +42,7 @@ export interface DriftEntry {
 /**
  * 差分の対象外にした理由
  * - plannedFudaWithoutNumber：計画の札に札番号が入力されていない（U10）
- * - unknownGameNumber：控えの艦に付いている札の番号が、定義のどの札にもない（仮定。親の確認待ち）
+ * - unknownGameNumber：控えの艦に付いている札の番号が、定義のどの札にもない（2026-10-17 親が決定）
  */
 export type DriftExcludedReason = "plannedFudaWithoutNumber" | "unknownGameNumber";
 
