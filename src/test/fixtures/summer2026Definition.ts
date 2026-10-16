@@ -17,6 +17,7 @@
 // 使い方
 // - 型付きの値が欲しいとき：summer2026Definition（凍結済み。書き換えると例外になる）
 // - 書き換えて使いたいとき（不正な例・編集のテストなど）：cloneSummer2026Definition() で複製を受け取る
+//   （公開定義の型は読み取り専用なので、複製は入れ子まで書き換えられる型 Mutable<PublicDefinition> で返す）
 // - JSON の文字列が欲しいとき：JSON.stringify(summer2026Definition)
 //
 // ID の一覧
@@ -26,6 +27,7 @@
 // - 特効グループ：「段階 ID-記号」（例 E2-3-C）
 import type { PublicDefinition } from "@/domain/definition/types";
 import { deepFreeze } from "./freeze";
+import type { Mutable } from "./mutable";
 
 // ---- 特効グループの艦名（改装段階を問わない艦名） ----
 
@@ -188,7 +190,11 @@ const definition: PublicDefinition = {
 /** 2026夏イベの公開定義（凍結済み。書き換えたいときは cloneSummer2026Definition を使う） */
 export const summer2026Definition: PublicDefinition = deepFreeze(definition);
 
-/** 2026夏イベの公開定義の複製（書き換えてよい） */
-export function cloneSummer2026Definition(): PublicDefinition {
-  return JSON.parse(JSON.stringify(summer2026Definition)) as PublicDefinition;
+/**
+ * 2026夏イベの公開定義の複製（書き換えてよい）。
+ * 公開定義の型は読み取り専用なので、入れ子まで書き換えられる型（Mutable）で返す。
+ * PublicDefinition を受け取る関数にはそのまま渡せる
+ */
+export function cloneSummer2026Definition(): Mutable<PublicDefinition> {
+  return JSON.parse(JSON.stringify(summer2026Definition)) as Mutable<PublicDefinition>;
 }
