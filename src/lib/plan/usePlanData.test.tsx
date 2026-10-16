@@ -456,6 +456,28 @@ describe("札割りのデータのフック（usePlanData）", () => {
       expect(preview).toEqual({ removedAssignmentCount: 0 });
     });
 
+    it("割り当ての保存に失敗したまま取り込みの確認（previewImport）をすると、保存先の古い割り当てではなく、今の割り当てで外れる件数を数える", async () => {
+      // 準備：初霜改二を第三十一戦隊に置いて保存しておき、明石改に置き換えた変更の保存を 1 回だけ失敗させる
+      //       （保存先は「初霜改二→s31」、返す値は「明石改→s31」）
+      await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+      await storage.saveAssignments(EVENT_ID, { hatsushimo: "s31" });
+      const { result } = renderHook(() => usePlanData(EVENT_ID, FUDA_IDS));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+      await act(async () => {
+        await result.current.setAssignments({ akashi: "s31" });
+      });
+      // 前提：保存に失敗し、保存先は古い割り当てのまま
+      expect(expectReady(result.current).saveError).not.toBeNull();
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "s31" });
+
+      // 実行：明石改がいない（初霜改二だけの）取り込みで外れる件数を確かめる
+      const preview = await getPlanStorage().previewImport(importInput([shipByUid("hatsushimo")]));
+
+      // 検証：今の割り当ての明石改の分（1 件）が外れる
+      expect(preview).toEqual({ removedAssignmentCount: 1 });
+    });
+
     it("割り当ての保存を待つ間に取り込んだ艦娘データを削除しても、削除は保存が終わってから行う", async () => {
       // 準備：割り当てを変え、その保存を止めておく
       await seedSummer2026(storage);
@@ -540,6 +562,31 @@ describe("札割りのデータのフック（usePlanData）", () => {
 
       // 検証：beforeEach で渡した保存先から読める
       expect(await storage.loadShips()).toEqual([shipByUid("hatsushimo")]);
+    });
+
+    it("getPlanStorage() の close を呼んでも、共有している保存先を閉じず、その後も usePlanData で読み書きできる", async () => {
+      // 準備
+      await seedSummer2026(storage);
+      const { result } = renderHook(() => usePlanData(EVENT_ID, FUDA_IDS));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+
+      // 実行：取り込み画面などが、受け取った保存先を閉じる
+      getPlanStorage().close();
+      await act(async () => {
+        await result.current.setAssignments(MOVED);
+      });
+
+      // 検証：割り当てを保存できる
+      expect(expectReady(result.current).saveError).toBeNull();
+
+      // 実行：読み直す
+      await act(async () => {
+        await result.current.reload();
+      });
+
+      // 検証：読み直せて、変えた割り当てが返る値にも保存先にも残る
+      expect(expectReady(result.current).assignments).toEqual(MOVED);
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(MOVED);
     });
 
     it("保存先を渡さずに resetPlanDataCache すると、既定の保存先になり、getPlanStorage は何度呼んでも同じものを返す", () => {

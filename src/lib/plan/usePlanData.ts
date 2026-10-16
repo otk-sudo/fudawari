@@ -10,8 +10,11 @@
 //   部品ごとに違う値を渡すと、後から頼んだ方の読み込みだけが残る。
 // - getPlanStorage() は、共有のストアと同じ保存先を包んだものを返す。取り込みの保存・取り込みの確認・
 //   取り込んだ艦娘データの削除は、ストアに残っている割り当ての保存がすべて終わってから行う。
+//   取り込みの確認は、保存に失敗した割り当てが残っていれば、それで外れる件数を数える。包みの close は何もしない。
 import { useEffect, useSyncExternalStore } from "react";
-import { type FudawariStorage, openStorage } from "@/lib/storage";
+import type { AssignmentMap } from "@/domain/plan/types";
+import type { ShipUid } from "@/domain/ship/types";
+import { type FudawariStorage, openStorage, type SaveImportInput, type SaveImportResult } from "@/lib/storage";
 import { createPlanDataStore, type PlanDataStore } from "./store";
 import type { PlanData } from "./types";
 
@@ -78,15 +81,53 @@ function getStorage(): FudawariStorage {
 }
 
 /**
+ * その取り込みを保存したら、割り当てのうち外れる件数
+ * （保存先の previewImport・saveImport と同じ規則：個体 ID がある形式は取り込みにいない個体の割り当て、
+ * ない形式はすべての割り当て。U9）
+ */
+function countRemovedByImport(assignments: AssignmentMap, input: SaveImportInput): number {
+  const keepUids: ReadonlySet<ShipUid> = input.hasUid ? new Set(input.ships.map((ship) => ship.uid)) : new Set();
+  let count = 0;
+  for (const [uid, fudaId] of Object.entries(assignments)) {
+    // 控え（undefined）は割り当てではないので数えない
+    if (typeof fudaId === "string" && !keepUids.has(uid)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * 取り込みの確認。ストアに保存に失敗した割り当てが残っていれば、そのイベントは保存先の古い割り当てではなく、
+ * 残っている割り当て（画面に出ている割り当て。読み直すと残す）で外れる件数を数える。なければ保存先で数える
+ */
+async function previewImportWithUnsaved(
+  inner: FudawariStorage,
+  store: PlanDataStore,
+  input: SaveImportInput,
+): Promise<SaveImportResult> {
+  const unsaved = store.unsavedAssignments();
+  if (unsaved === null) return inner.previewImport(input);
+  const [preview, saved] = await Promise.all([inner.previewImport(input), inner.loadAssignments(unsaved.eventId)]);
+  // すべてのイベントの合計から、そのイベントの保存先の分を、残っている割り当ての分に置き換える
+  return {
+    removedAssignmentCount:
+      preview.removedAssignmentCount -
+      countRemovedByImport(saved, input) +
+      countRemovedByImport(unsaved.assignments, input),
+  };
+}
+
+/**
  * 保存先を包む。取り込みの保存（saveImport）・取り込みの確認（previewImport）・取り込んだ艦娘データの削除
  * （clearImportedShips）は、ストアに残っている割り当ての保存がすべて終わってから行う
  * （保存の途中の割り当てが、取り込みで外した個体の割り当てを保存先に戻さないように）。
+ * 取り込みの確認は、保存に失敗した割り当てが残っていれば、それで外れる件数を数える。
+ * close は何もしない（ストアが使い続ける保存先を、受け取った側が閉じないように）。
  * ほかの操作はそのまま中継する。中継は呼ぶたびに中の保存先のメソッドを読む（テストの vi.spyOn・記録も効く）
  */
 function wrapStorage(inner: FudawariStorage, store: PlanDataStore): FudawariStorage {
   return {
     saveImport: (input) => store.afterSaves(() => inner.saveImport(input)),
-    previewImport: (input) => store.afterSaves(() => inner.previewImport(input)),
+    previewImport: (input) => store.afterSaves(() => previewImportWithUnsaved(inner, store, input)),
     clearImportedShips: () => store.afterSaves(() => inner.clearImportedShips()),
     loadShips: () => inner.loadShips(),
     loadLastImport: () => inner.loadLastImport(),
@@ -95,7 +136,8 @@ function wrapStorage(inner: FudawariStorage, store: PlanDataStore): FudawariStor
     returnOrphanedAssignments: (eventId, fudaIds) => inner.returnOrphanedAssignments(eventId, fudaIds),
     loadSettings: () => inner.loadSettings(),
     saveSettings: (patch) => inner.saveSettings(patch),
-    close: () => inner.close(),
+    // 閉じるのは resetPlanDataCache（ここで開いた既定の保存先）か、保存先を渡した側
+    close: () => {},
   };
 }
 
@@ -155,7 +197,8 @@ export function usePlanData(eventId: string | null, fudaIds: readonly string[]):
  * usePlanData が読み書きする保存先（resetPlanDataCache で渡した保存先、なければ既定の保存先）を包んだものを返す
  * （何度呼んでも同じもの。resetPlanDataCache の後は作り直す）。
  * 取り込みの保存（saveImport）・取り込みの確認（previewImport）・取り込んだ艦娘データの削除（clearImportedShips）は、
- * usePlanData の割り当ての保存がすべて終わってから行う。ほかの操作はそのまま中継する。
+ * usePlanData の割り当ての保存がすべて終わってから行う。取り込みの確認は、割り当ての保存に失敗したままなら、
+ * 画面に出ている割り当てで外れる件数を数える。close は何もしない（共有の保存先を閉じない）。ほかの操作はそのまま中継する。
  * 取り込み画面の取り込みの保存、設定の「取り込んだ艦娘データを削除」などに使い、その後で usePlanData の reload を呼ぶ
  */
 export function getPlanStorage(): FudawariStorage {
