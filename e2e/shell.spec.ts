@@ -102,16 +102,18 @@ test.describe("各画面のルートの入れ物", () => {
     });
   }
 
-  for (const path of ["/login", "/invite"]) {
-    test(`${path} を直接開くと、画面（見出し）が出る`, async ({ page }) => {
-      // 準備・実行
-      const response = await page.goto(path);
+  // 招待の画面（/invite）は作らない（U3・U19。2026-10-17 に招待をやめた）
+  test("/login を直接開くと、画面（見出し）が出て、左メニューは出ない", async ({ page }) => {
+    // 準備・実行
+    const response = await page.goto("/login");
 
-      // 検証：見出しの文言はまだ決めていないため、ページがあることと見出しが 1 つあることだけを見る
-      expect(response?.status()).toBe(200);
-      await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-    });
-  }
+    // 検証
+    expect(response?.status()).toBe(200);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "管理者・協力者のログイン", exact: true }),
+    ).toBeVisible();
+    await expect(sideNav(page)).toHaveCount(0);
+  });
 });
 
 test.describe("設定のウィンドウ", () => {
