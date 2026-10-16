@@ -188,8 +188,9 @@ describe("ホーム（HomeScreen）", () => {
       ]);
       expect(getTileLink("イベント定義")).toHaveAttribute("href", "/definition");
       expect(getTileLink("協力者")).toHaveAttribute("href", "/collaborators");
+      // 招待をやめ、ID とパスワードの発行に変えた（U3、要件 3.1。2026-10-17）
       expect(getTileLink("協力者")).toHaveTextContent(
-        "定義を編集できる人の招待・管理",
+        "定義を編集できる人の追加・管理",
       );
     });
 

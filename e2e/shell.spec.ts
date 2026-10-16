@@ -33,6 +33,8 @@ const SCREENS = [
   { path: "/drift", heading: "計画と実際の札" },
   { path: "/definition", heading: "イベント定義" },
   { path: "/collaborators", heading: "協力者" },
+  // 招待（2026-10-17 にやめた。U3・U19）の古いリンクの案内のページ。ほかの画面と同じく左メニューを出す
+  { path: "/invite", heading: "協力者への招待" },
 ] as const;
 
 test.describe("左メニューでの移動", () => {
@@ -102,16 +104,18 @@ test.describe("各画面のルートの入れ物", () => {
     });
   }
 
-  for (const path of ["/login", "/invite"]) {
-    test(`${path} を直接開くと、画面（見出し）が出る`, async ({ page }) => {
-      // 準備・実行
-      const response = await page.goto(path);
+  // 左メニューを出さない単独の画面はログインだけ。/invite は招待をやめた（U3・U19）ことの案内のページとして残し、上の SCREENS で確かめる
+  test("/login を直接開くと、画面（見出し）が出て、左メニューは出ない", async ({ page }) => {
+    // 準備・実行
+    const response = await page.goto("/login");
 
-      // 検証：見出しの文言はまだ決めていないため、ページがあることと見出しが 1 つあることだけを見る
-      expect(response?.status()).toBe(200);
-      await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-    });
-  }
+    // 検証
+    expect(response?.status()).toBe(200);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "管理者・協力者のログイン", exact: true }),
+    ).toBeVisible();
+    await expect(sideNav(page)).toHaveCount(0);
+  });
 });
 
 test.describe("設定のウィンドウ", () => {

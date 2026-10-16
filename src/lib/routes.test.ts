@@ -25,7 +25,7 @@ describe("画面の経路（@/lib/routes）", () => {
   });
 
   describe("isStandalonePath：左メニューを出さない単独の画面か", () => {
-    it.each(["/login", "/invite", "/invite/abc123", "/login/"])(
+    it.each(["/login", "/login/"])(
       "%s は単独の画面",
       (path) => {
         // 準備・実行・検証
@@ -33,12 +33,18 @@ describe("画面の経路（@/lib/routes）", () => {
       },
     );
 
-    it.each(["/", "/list", "/collaborators", "/invited", "/loginx"])(
+    // 招待はやめた（U3・U19。2026-10-17）ので、/invite は単独の画面として扱わない
+    it.each(["/", "/list", "/collaborators", "/invite", "/invite/abc123", "/loginx"])(
       "%s は左メニューを出す画面",
       (path) => {
         // 準備・実行・検証
         expect(isStandalonePath(path)).toBe(false);
       },
     );
+  });
+
+  it("招待の画面（/invite）の経路はない（U3・U19。招待をやめ、ID とパスワードの発行に変えた）", () => {
+    // 準備・実行・検証
+    expect(Object.values(ROUTES)).not.toContain("/invite");
   });
 });
