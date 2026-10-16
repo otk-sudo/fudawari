@@ -16,8 +16,33 @@ export interface StorageSchemaVersion {
   upgrade?: (tx: Transaction) => PromiseLike<unknown> | void;
 }
 
+/**
+ * テーブルの名前
+ * - ships：取り込んだ艦の個体（主キーは個体 ID の uid）
+ * - importRecords：最終取り込みの情報（主キー id。行は 1 つだけ）
+ * - assignments：イベントごとの割り当て（主キーはイベント ID の eventId。値は個体 ID → 札 ID）
+ * - settings：設定（主キー id。行は 1 つだけ。保存した項目だけを持ち、ない項目は読むときに初期値で補う）
+ */
+export const STORAGE_TABLES = {
+  ships: "ships",
+  importRecords: "importRecords",
+  assignments: "assignments",
+  settings: "settings",
+} as const;
+
 /** 保存の形の版の一覧（古い順） */
-export const STORAGE_SCHEMA_VERSIONS: readonly StorageSchemaVersion[] = [];
+export const STORAGE_SCHEMA_VERSIONS: readonly StorageSchemaVersion[] = [
+  {
+    // 版 1（PR-04a）：個体・最終取り込み・割り当て・設定
+    version: 1,
+    stores: {
+      [STORAGE_TABLES.ships]: "uid",
+      [STORAGE_TABLES.importRecords]: "id",
+      [STORAGE_TABLES.assignments]: "eventId",
+      [STORAGE_TABLES.settings]: "id",
+    },
+  },
+];
 
 /** 今の保存の形の版（一覧の最後の版） */
-export const STORAGE_SCHEMA_VERSION: number = 0;
+export const STORAGE_SCHEMA_VERSION: number = STORAGE_SCHEMA_VERSIONS[STORAGE_SCHEMA_VERSIONS.length - 1].version;
