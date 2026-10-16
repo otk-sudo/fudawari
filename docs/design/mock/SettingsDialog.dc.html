@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>設定の中身</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; font-size: 13px; display: flex; flex-direction: column; gap: 14px">
+
+      <section style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+        <h2 style="margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #2A2D33">表示</h2>
+        <sc-for list="{{displayRows}}" as="row" hint-placeholder-count="4">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px; border-bottom: 1px solid #262930">
+            <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-weight: 700">{{row.title}}</span>
+              <span style="font-size: 12px; color: #9AA0AA">{{row.note}}</span>
+            </div>
+            <div role="radiogroup" aria-label="{{row.title}}" style="display: flex">
+              <sc-for list="{{row.opts}}" as="o" hint-placeholder-count="3">
+                <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">{{o.label}}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px; cursor: pointer">
+          <span style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-weight: 700">艦娘のバナー画像を表示</span>
+            <span style="font-size: 12px; color: #9AA0AA">オフにすると艦名だけの表示になり、通信量が減ります</span>
+          </span>
+          <input type="checkbox" checked="{{banner}}" onChange="{{toggleBanner}}" style="width: 20px; height: 20px; accent-color: #3D8BFD">
+        </label>
+      </section>
+
+      <section style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+        <h2 style="margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #2A2D33">データ</h2>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px; border-bottom: 1px solid #262930">
+          <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-weight: 700">札割りの書き出し・読み込み</span>
+            <span style="font-size: 12px; color: #9AA0AA">別のブラウザやPCへ札割りを移すときに使います</span>
+          </div>
+          <div style="display: flex; gap: 6px">
+            <button type="button" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">書き出す</button>
+            <button type="button" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">読み込む</button>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px">
+          <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-weight: 700">取り込んだ艦娘データを削除</span>
+            <span style="font-size: 12px; color: #9AA0AA">最終取り込み 10/15 20:40 ／ 312隻。札割りは残ります</span>
+          </div>
+          <button type="button" style="min-height: 34px; padding: 0 12px; background: transparent; color: #FF8A80; border: 1px solid #7A3A36; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">削除する</button>
+        </div>
+      </section>
+
+      <sc-if value="{{loggedIn}}" hint-placeholder-val="{{true}}">
+      <section style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+        <h2 style="margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #2A2D33">アカウント</h2>
+                  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px">
+            <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-weight: 700">ログイン中：[あなた]</span>
+              <span style="font-size: 12px; color: #9AA0AA">権限：{{roleLabel}}</span>
+            </div>
+            <button type="button" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">ログアウト</button>
+          </div>
+      </section>
+      </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"role":{"editor":"enum","options":["user","collab","admin"],"default":"admin"},"$preview":{"width":720,"height":760}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { theme: 'dark', size: 'mid', trayView: 'dense', sort: 'class', banner: true }; }
+  renderVals() {
+    const seg = (key, opts) => opts.map(([v, label], i) => ({
+      label, on: this.state[key] === v, pick: () => this.setState({ [key]: v }),
+      style: 'min-height: 34px; padding: 0 14px; font-family: inherit; font-size: 12px; cursor: pointer; border: 1px solid #3A3E46; '
+        + (i > 0 ? 'border-left: 0; ' : '') + 'border-radius: ' + (i === 0 ? '4px 0 0 4px' : i === opts.length - 1 ? '0 4px 4px 0' : '0') + '; '
+        + 'background: ' + (this.state[key] === v ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state[key] === v ? '#FFFFFF' : '#C9CDD3') + '; font-weight: ' + (this.state[key] === v ? '700' : '400')
+    }));
+    const role = this.props.role ?? 'admin';
+    return {
+      roleLabel: role === 'admin' ? '管理者' : '協力者',
+      loggedIn: role !== 'user',
+      banner: this.state.banner, toggleBanner: () => this.setState({ banner: !this.state.banner }),
+      displayRows: [
+        { title: '画面モード', note: '明るい場所ではライトが見やすくなります', opts: seg('theme', [['dark', 'ダーク'], ['light', 'ライト'], ['system', '端末に合わせる']]) },
+        { title: '文字の大きさ', note: '一覧・割り振り画面の文字の大きさ', opts: seg('size', [['small', '小'], ['mid', '標準'], ['large', '大']]) },
+        { title: '控えの表示', note: '割り振り画面の控えを開いたときの表示', opts: seg('trayView', [['dense', '一行'], ['card', 'カード']]) },
+        { title: '控えの並び順', note: '割り振り画面を開いたときの並び順', opts: seg('sort', [['class', '艦型'], ['lv', 'Lv'], ['boost', '特効の強さ'], ['name', '名前']]) }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

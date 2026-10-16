@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>イベント定義</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a{color:#6AA8FF}a:hover{color:#9CC5FF}
+@keyframes dcPulse{0%,100%{box-shadow:0 0 0 2px #FF5A50,0 0 0 0 rgba(255,90,80,0.55)}50%{box-shadow:0 0 0 2px #FF5A50,0 0 14px 5px rgba(255,90,80,0.55)}}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+
+  <div style="flex: 0 0 64px; align-self: stretch; min-height: 100vh"><dc-import name="SideNav" active="定義" role="{{role}}" hint-size="64px,100%"></dc-import></div>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 700">イベント定義</h1>
+      <span style="font-size: 11px; font-weight: 700; color: #101114; background: #F0A33A; padding: 2px 8px; border-radius: 3px">管理者・協力者専用</span>
+      <span style="font-size: 12px; color: #9AA0AA">札・攻略の段階・特効を設定します。公開すると全員の割り振り画面に反映されます</span>
+      <span style="flex: 1 1 20px"></span>
+      <span style="font-size: 12px; color: #C9CDD3">ログイン中：[あなた]（{{roleLabel}}）</span>
+      <span role="group" aria-label="見え方の確認（モック用）" style="display: flex; align-items: center; gap: 4px; padding: 2px 2px 2px 8px; border: 1px dashed #4A4F58; border-radius: 4px">
+        <span style="font-size: 10px; color: #9AA0AA">見え方の確認</span>
+        <sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="2">
+          <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.on}}" style="{{r.style}}">{{r.label}}</button>
+        </sc-for>
+        <span style="width: 1px; align-self: stretch; margin: 2px 4px; background: #3A3E46"></span>
+        <button type="button" onClick="{{toggleMockEnded}}" aria-pressed="{{mockEnded}}" style="{{mockEndedStyle}}">{{mockEndedLabel}}</button>
+      </span>
+    </div>
+
+    <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 12px">
+
+      <section style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+        <div style="flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #2A2D33">
+          <sc-if value="{{canChoose}}" hint-placeholder-val="{{true}}">
+          <div role="radiogroup" aria-label="新規か更新か" style="display: flex">
+            <sc-for list="{{modeOpts}}" as="o" hint-placeholder-count="2">
+              <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">{{o.label}}</button>
+            </sc-for>
+          </div>
+          </sc-if>
+          <sc-if value="{{collabOnly}}" hint-placeholder-val="{{false}}">
+            <span style="font-size: 13px; color: #E4E6EA">更新するイベント：<b>{{latestName}}（最新）</b></span>
+            <span style="font-size: 11px; color: #9AA0AA">協力者は最新イベントの更新だけができます。新規作成は管理者が行います</span>
+          </sc-if>
+          <sc-if value="{{adminUpdate}}" hint-placeholder-val="{{true}}">
+            <span style="font-size: 13px; color: #E4E6EA">更新するイベント：<b>{{latestName}}（最新）</b></span>
+            <span style="font-size: 11px; color: #9AA0AA">札割りできるのは最新のイベントだけなので、更新も最新のイベントだけです</span>
+          </sc-if>
+          <sc-if value="{{updEditable}}" hint-placeholder-val="{{true}}">
+            <span style="flex-basis: 100%; height: 0"></span>
+            <sc-if value="{{startEditable}}" hint-placeholder-val="{{true}}">
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">開始日時
+                <input type="datetime-local" required value="{{uStart}}" onInput="{{typeUStart}}" style="min-height: 34px; padding: 0 8px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px; color-scheme: dark">
+              </label>
+            </sc-if>
+            <sc-if value="{{startReadonly}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; color: #9AA0AA">開始日時 <b style="color: #E4E6EA; font-family: Consolas, monospace">{{uStartText}}</b></span></sc-if>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">終了日時 <span style="font-size: 10px; color: #C9CDD3; border: 1px solid #4A4F58; padding: 0 5px; border-radius: 2px">任意</span>
+              <input type="datetime-local" value="{{uEnd}}" onInput="{{typeUEnd}}" style="min-height: 34px; padding: 0 8px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px; color-scheme: dark">
+            </label>
+            <sc-if value="{{hasUEnd}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{clearUEnd}}" style="min-height: 30px; padding: 0 10px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">終了日時を消す</button></sc-if>
+            <span style="font-size: 11px; color: #9AA0AA">終了日時を過ぎると「開催中」でなくなります。延長されたときはここで直せます</span>
+            <sc-if value="{{uDateError}}" hint-placeholder-val="{{false}}"><span role="alert" style="flex-basis: 100%; font-size: 12px; color: #FF8A80">{{uDateError}}</span></sc-if>
+          </sc-if>
+          <sc-if value="{{isNew}}" hint-placeholder-val="{{false}}">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">元にするイベント
+              <select onChange="{{pickBase}}" style="min-height: 34px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px"><sc-for list="{{baseOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.value}}" selected="{{o.on}}">{{o.label}}</option></sc-for></select>
+            </label>
+            <span style="font-size: 11px; color: #9AA0AA">元にすると札と段階をコピーして始めます（特効は空）</span>
+            <span style="flex-basis: 100%; height: 0"></span>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">開始日時 <span style="font-size: 10px; font-weight: 700; color: #FFFFFF; background: #C9473F; padding: 0 5px; border-radius: 2px">必須</span>
+              <input type="datetime-local" required aria-required="true" value="{{startAt}}" onInput="{{typeStart}}" style="{{startStyle}}">
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">終了日時 <span style="font-size: 10px; color: #C9CDD3; border: 1px solid #4A4F58; padding: 0 5px; border-radius: 2px">任意</span>
+              <input type="datetime-local" value="{{endAt}}" onInput="{{typeEnd}}" style="min-height: 34px; padding: 0 8px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px; color-scheme: dark">
+            </label>
+            <span style="font-size: 11px; color: #9AA0AA">終了日時は未定なら空欄で構いません（あとから入れられます）</span>
+            <sc-if value="{{dateError}}" hint-placeholder-val="{{false}}"><span role="alert" style="flex-basis: 100%; font-size: 12px; color: #FF8A80">{{dateError}}</span></sc-if>
+          </sc-if>
+        </div>
+        <div style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 4px">
+          <sc-if value="{{titleEditable}}" hint-placeholder-val="{{true}}">
+            <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+              <span style="font-size: 12px; color: #9AA0AA">イベント名<sc-if value="{{isNew}}" hint-placeholder-val="{{false}}"> <span style="font-size: 10px; font-weight: 700; color: #FFFFFF; background: #C9473F; padding: 0 5px; border-radius: 2px">必須</span></sc-if></span>
+              <input type="text" value="{{titleValue}}" onInput="{{typeTitle}}" placeholder="例：2026秋イベ" aria-label="イベント名" style="{{titleStyle}}">
+              <span style="font-size: 12px; color: #C9CDD3">{{titleSuffix}}</span>
+            </label>
+          </sc-if>
+          <sc-if value="{{titleReadonly}}" hint-placeholder-val="{{false}}"><span style="font-size: 14px; font-weight: 700">{{evTitle}}</span></sc-if>
+          <sc-if value="{{periodTextNew}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; color: #C9CDD3">{{periodTextNew}}</span></sc-if><sc-if value="{{uPeriodText}}" hint-placeholder-val="{{true}}"><span style="font-size: 12px; color: #C9CDD3">{{uPeriodText}}</span></sc-if>
+          <span style="font-size: 12px; color: #9AA0AA">{{evStatus}}<sc-if value="{{hasPending}}" hint-placeholder-val="{{true}}"> ／ <span style="color: #F2C98A">未公開の変更 3件</span>（E2 第三ボスの特効を更新 ほか）</sc-if></span>
+          <span style="font-size: 12px; color: #9AA0AA">共有の下書き：{{draftNote}}（保存すると管理者・協力者全員の定義画面に反映されます。一般の画面には公開するまで出ません）<sc-if value="{{hasLog}}" hint-placeholder-val="{{true}}">　<button type="button" onClick="{{toggleLog}}" aria-expanded="{{logOpen}}" style="padding: 0; background: none; border: 0; color: #6AA8FF; font-family: inherit; font-size: 12px; cursor: pointer; text-decoration: underline">{{logLabel}}</button></sc-if></span>
+          <sc-if value="{{showPresence}}" hint-placeholder-val="{{true}}">
+            <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #CFE0FF"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3FB37F"></span>[協力者A]も編集中（E3 を表示中）</span>
+          </sc-if>
+          <span style="font-size: 12px; color: #9AA0AA">編集できる人：[管理者]・[協力者A]・[協力者B]<sc-if value="{{isAdmin}}" hint-placeholder-val="{{true}}">　<a href="Collaborators.dc.html">協力者を管理</a></sc-if></span>
+        </div>
+        <sc-if value="{{canEdit}}" hint-placeholder-val="{{true}}">
+        <button type="button" onClick="{{saveDraft}}" style="min-height: 36px; padding: 0 14px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px; cursor: pointer">下書きを保存</button>
+        <button type="button" onClick="{{tryPublish}}" disabled="{{cannotPublish}}" style="{{publishStyle}}">{{publishLabel}}</button>
+        </sc-if>
+      </section>
+      <sc-if value="{{ended}}" hint-placeholder-val="{{false}}">
+        <div role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 14px; background: #24262B; border: 1px solid #4A4F58; border-left: 6px solid #8A909A; border-radius: 6px">
+          <span style="font-size: 14px; font-weight: 700">このイベントは終了しました（{{endedAt}}）</span>
+          <span style="flex: 1 1 320px; font-size: 12px; color: #C9CDD3">終了したイベントは更新できません。内容は見るだけです。{{endedNext}}</span>
+          <sc-if value="{{isAdmin}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{goNew}}" style="min-height: 34px; padding: 0 14px; background: #E8B04B; color: #101114; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer">新しいイベントを作成</button></sc-if>
+        </div>
+      </sc-if>
+      <sc-if value="{{conflict}}" hint-placeholder-val="{{false}}">
+        <section role="alertdialog" aria-label="保存の確認" style="display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: #2A2416; border: 1px solid #7A6230; border-radius: 6px">
+          <span style="font-weight: 700; color: #F2C98A">開いた後に[協力者A]が下書きを保存していました（10/15 22:52）</span>
+          <span style="font-size: 12px; color: #D9CFB8">下の攻略の流れで、<b style="color: #FF8A80">赤く光っている段階</b>が2人とも変えた所（どちらか選んでください）、<b style="color: #F0A33A">橙の枠</b>が[協力者A]だけが変えた所です</span>
+          <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #D9CFB8">自動で合わせた所：E3 ゲージ4 の特効（[協力者A]が追加）<button type="button" onClick="{{seeMerged}}" style="min-height: 28px; padding: 0 10px; background: transparent; color: #F0A33A; border: 1px solid #7A6230; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">場所を見る</button></span>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #1F2126; border: 1px solid #3A3E46; border-radius: 5px">
+            <span style="font-size: 12px; color: #E4E6EA">同じ所を2人が変えています：<b>E2 ゲージ3 の大事さ</b>　どちらを残しますか？　<button type="button" onClick="{{seeConflict}}" style="min-height: 28px; padding: 0 10px; background: transparent; color: #FF8A80; border: 1px solid #7A3A36; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">場所を見る</button></span>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <sc-for list="{{conflictOpts}}" as="o" hint-placeholder-count="2">
+                <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">{{o.label}}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
+            <button type="button" onClick="{{confirmSave}}" disabled="{{notChosen}}" style="{{confirmStyle}}">この内容で保存</button>
+            <button type="button" onClick="{{cancelSave}}" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">保存をやめる</button>
+          </div>
+        </section>
+      </sc-if>
+      <sc-if value="{{savedMsg}}" hint-placeholder-val="{{false}}">
+        <div role="status" style="padding: 8px 14px; background: #17291F; border: 1px solid #2E6B4A; border-radius: 6px; font-size: 12px; color: #BFE8D0">下書きを保存しました。[協力者A]の変更も含めた内容が、管理者・協力者全員の定義画面に反映されます</div>
+      </sc-if>
+
+      <div aria-disabled="{{ended}}" inert="{{ended}}" style="{{lockStyle}}">
+      <section aria-label="攻略の流れ" style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px">
+          <h2 style="margin: 0; font-size: 14px; white-space: nowrap">攻略の流れ</h2>
+          <span style="display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; color: #9AA0AA">
+            <span style="padding: 1px 8px; background: #26292F; border: 1px solid #33363D; border-radius: 10px; white-space: nowrap">押す：右下で編集・削除</span>
+            <span style="padding: 1px 8px; background: #26292F; border: 1px solid #33363D; border-radius: 10px; white-space: nowrap">札を段階へドラッグ：その前に割り込み</span>
+            <span style="padding: 1px 8px; background: #26292F; border: 1px solid #33363D; border-radius: 10px; white-space: nowrap">＋：最後に追加</span>
+            <span style="padding: 1px 8px; background: #26292F; border: 1px solid #33363D; border-radius: 10px; white-space: nowrap">段階をドラッグ：並べ替え</span>
+          </span>
+        </div>
+        <sc-for list="{{flow}}" as="m" hint-placeholder-count="3">
+          <div style="display: flex; align-items: stretch; gap: 4px">
+            <span style="flex: 0 0 36px; display: flex; align-items: center; font-family: Consolas, monospace; font-weight: 700; color: #9AA0AA">{{m.map}}</span>
+            <sc-for list="{{m.steps}}" as="s" hint-placeholder-count="4">
+              <button type="button" draggable="true" onDragStart="{{s.dragStart}}" onDragEnd="{{s.dragEnd}}" onClick="{{s.pick}}" onDragOver="{{s.allow}}" onDrop="{{s.drop}}" aria-pressed="{{s.on}}" style="{{s.style}}">
+                <span style="font-size: 11px; opacity: 0.85">{{s.label}}</span>
+                <span style="font-size: 12px; font-weight: 700">{{s.fuda}}</span>
+                <sc-if value="{{s.hasMark}}" hint-placeholder-val="{{false}}"><span style="{{s.markStyle}}">{{s.mark}}</span></sc-if>
+              </button>
+            </sc-for>
+            <sc-if value="{{m.empty}}" hint-placeholder-val="{{false}}">
+              <span onDragOver="{{m.allow}}" onDrop="{{m.drop}}" style="flex: 1 1 0; min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px dashed #3A3E46; border-radius: 4px; font-size: 12px; color: #9AA0AA">
+                <span style="flex: 1 1 auto">まだ段階がありません。右の＋で札を選ぶか、札をここに落としてください</span>
+<sc-if value="{{m.canRemove}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{m.removeMap}}" style="min-height: 30px; padding: 0 10px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer; white-space: nowrap">この海域を外す</button></sc-if>
+              </span>
+            </sc-if>
+            <span style="position: relative; flex: 0 0 36px; display: flex">
+              <button type="button" aria-label="段階を追加" aria-expanded="{{m.picking}}" onClick="{{m.add}}" onDragOver="{{m.allow}}" onDrop="{{m.drop}}" style="{{m.addStyle}}">＋</button>
+              <sc-if value="{{m.picking}}" hint-placeholder-val="{{false}}">
+                <div role="menu" aria-label="追加する札" style="position: absolute; top: calc(100% + 4px); right: 0; z-index: 5; width: 200px; display: flex; flex-direction: column; gap: 4px; padding: 8px; background: #26292F; border: 1px solid #3A3E46; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.5)">
+                  <span style="font-size: 11px; color: #9AA0AA; padding: 0 2px 2px">{{m.map}}の最後に追加する札</span>
+                  <sc-for list="{{m.choices}}" as="c" hint-placeholder-count="5">
+                    <button type="button" role="menuitem" onClick="{{c.pick}}" style="{{c.style}}">{{c.name}}</button>
+                  </sc-for>
+                  <button type="button" onClick="{{m.close}}" style="min-height: 30px; margin-top: 2px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">やめる</button>
+                </div>
+              </sc-if>
+            </span>
+          </div>
+        </sc-for>
+        <button type="button" onClick="{{addMap}}" style="align-self: flex-start; min-height: 34px; margin-left: 40px; padding: 0 12px; background: transparent; color: #6AA8FF; border: 1px dashed #34507A; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">＋ {{nextMap}} を追加</button>
+      </section>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start">
+        <section style="flex: 1 1 260px; max-width: 320px; background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #2A2D33">
+            <h2 style="margin: 0; font-size: 14px; white-space: nowrap">札</h2>
+            <span style="font-size: 11px; color: #9AA0AA">ドラッグで並べ替え・間に割り込み</span>
+          </div>
+          <ul onDragOver="{{allowEnd}}" onDrop="{{dropEnd}}" style="list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px">
+            <sc-for list="{{fudas}}" as="f" hint-placeholder-count="5">
+              <li draggable="true" onDragStart="{{f.dragStart}}" onDragEnd="{{f.dragEnd}}" onDragOver="{{f.allow}}" onDrop="{{f.drop}}" style="{{f.liStyle}}">
+                <sc-if value="{{f.lineBefore}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="position: absolute; left: 0; right: 0; top: -5px; height: 3px; background: #6AA8FF; border-radius: 2px; pointer-events: none"></span></sc-if>
+                <svg width="12" height="16" viewBox="0 0 12 16" fill="#6B717C" aria-hidden="true"><circle cx="3" cy="3" r="1.4"></circle><circle cx="9" cy="3" r="1.4"></circle><circle cx="3" cy="8" r="1.4"></circle><circle cx="9" cy="8" r="1.4"></circle><circle cx="3" cy="13" r="1.4"></circle><circle cx="9" cy="13" r="1.4"></circle></svg>
+                <span style="{{f.dot}}" aria-hidden="true"></span>
+                <span style="flex: 1; font-weight: 700">{{f.name}}</span>
+                <span style="font-size: 11px; color: #9AA0AA">{{f.uses}}段階</span>
+              </li>
+            </sc-for>
+            <sc-if value="{{lineEnd}}" hint-placeholder-val="{{false}}"><li aria-hidden="true" style="height: 3px; background: #6AA8FF; border-radius: 2px"></li></sc-if>
+            <li><button type="button" style="width: 100%; min-height: 36px; background: transparent; color: #6AA8FF; border: 1px dashed #3A3E46; border-radius: 5px; font-family: inherit; font-size: 12px; cursor: pointer">＋ 札を追加</button></li>
+          </ul>
+        </section>
+
+        <sc-if value="{{hasSel}}" hint-placeholder-val="{{true}}">
+        <section style="flex: 999 1 480px; min-width: 0; background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px">
+          <div style="{{detail.headStyle}}">
+            <span style="flex: 1 1 160px; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 12px; opacity: 0.9">{{detail.map}} {{detail.label}}</span>
+              <span style="font-size: 16px; font-weight: 700">{{detail.fuda}}</span>
+            </span>
+            <button type="button" onClick="{{detail.askDelete}}" disabled="{{detail.cannotDelete}}" style="min-height: 32px; padding: 0 10px; background: #1F2126; color: #FF8A80; border: 1px solid #7A3A36; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">この段階を削除</button>
+          </div>
+          <sc-if value="{{detail.confirming}}" hint-placeholder-val="{{false}}">
+            <div role="alertdialog" aria-label="段階の削除の確認" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; background: #2A1C1C; border-bottom: 1px solid #7A3A36">
+              <span style="flex: 1 1 220px; font-size: 12px; color: #F2D4D1">「{{detail.map}} {{detail.label}}」を削除しますか？ 設定した札・大事さ・特効もまとめて消えます。「変更を公開する」を押すまでは一般の画面には反映されません</span>
+              <button type="button" onClick="{{detail.doDelete}}" style="min-height: 32px; padding: 0 12px; background: #C9473F; color: #FFFFFF; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer">削除する</button>
+              <button type="button" onClick="{{detail.cancelDelete}}" style="min-height: 32px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">やめる</button>
+            </div>
+          </sc-if>
+          <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 14px">
+            <div style="display: flex; flex-wrap: wrap; gap: 18px">
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <label style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #9AA0AA">段階の名前
+                  <input type="text" value="{{detail.label}}" onInput="{{detail.rename}}" placeholder="例：ゲージ2 輸送" aria-label="段階の名前" style="min-height: 34px; max-width: 280px; padding: 0 8px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px">
+                </label>
+                <span style="font-size: 12px; color: #9AA0AA">この段階で使う札</span>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px">
+                  <sc-for list="{{detail.fudaChoices}}" as="c" hint-placeholder-count="5">
+                    <button type="button" onClick="{{c.pick}}" style="{{c.style}}">{{c.name}}</button>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="{{detail.weightBox}}">
+                <span style="font-size: 12px; color: #9AA0AA">大事さ<sc-if value="{{detail.weightConflict}}" hint-placeholder-val="{{false}}"><span style="margin-left: 8px; color: #FF8A80; font-weight: 700">[協力者A]は「重要」に変更しています</span></sc-if></span>
+                <div role="group" aria-label="大事さ" style="display: flex">
+                  <sc-for list="{{detail.weights}}" as="w" hint-placeholder-count="3">
+                    <button type="button" onClick="{{w.pick}}" aria-pressed="{{w.on}}" style="{{w.style}}">{{w.label}}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <div style="display: flex; align-items: baseline; gap: 10px">
+                <span style="font-size: 13px; font-weight: 700">この段階のボスで効く特効</span>
+                <span style="font-size: 11px; color: #9AA0AA">艦名は改装段階を問わず一致します</span>
+              </div>
+              <sc-for list="{{detail.groups}}" as="g" hint-placeholder-count="3">
+                <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 10px 12px; background: #1A1C20; border: 1px solid #2E3138; border-radius: 5px">
+                  <span style="flex: 0 0 auto; font-family: Consolas, monospace; font-size: 15px; font-weight: 700; color: #101114; background: #E8B04B; padding: 2px 8px; border-radius: 3px">×{{g.mult}}</span>
+                  <div style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 6px">
+                    <span style="font-weight: 700">{{g.name}}</span>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px">
+                      <sc-for list="{{g.ships}}" as="n" hint-placeholder-count="6">
+                        <span style="font-size: 12px; padding: 2px 8px; background: #2A2D33; border-radius: 12px; color: #D7DADF">{{n}}</span>
+                      </sc-for>
+                      <button type="button" style="font-size: 12px; min-height: 24px; padding: 0 8px; background: transparent; color: #6AA8FF; border: 1px dashed #3A3E46; border-radius: 12px; font-family: inherit; cursor: pointer">＋ 艦名</button>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px">
+                <button type="button" style="min-height: 34px; padding: 0 12px; background: transparent; color: #6AA8FF; border: 1px dashed #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">＋ 特効グループを追加</button>
+                <button type="button" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">攻略サイトの艦名リストを貼り付け</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        </sc-if>
+        <sc-if value="{{noSel}}" hint-placeholder-val="{{false}}">
+          <section style="flex: 999 1 480px; min-width: 0; padding: 40px 20px; background: #1F2126; border: 1px dashed #3A3E46; border-radius: 6px; text-align: center; font-size: 13px; color: #9AA0AA">まだ段階がありません。上の攻略の流れで＋を押して札を選ぶと、ここで中身を編集できます</section>
+        </sc-if>
+      </div>
+      </div>
+    </div>
+  </div>
+</div>
+<sc-if value="{{logOpen}}" hint-placeholder-val="{{false}}">
+  <div onClick="{{closeLog}}" style="position: fixed; inset: 0; z-index: 1000; background: rgba(8, 9, 11, 0.72); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; box-sizing: border-box; font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif">
+    <div role="dialog" aria-modal="true" aria-label="共有の下書きの記録" onClick="{{stop}}" style="width: 100%; max-width: 860px; max-height: calc(100vh - 80px); display: flex; flex-direction: column; background: #16171B; border: 1px solid #3A3E46; border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); color: #E4E6EA; font-size: 13px">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #2A2D33">
+        <h1 style="margin: 0; font-size: 15px; font-weight: 700">共有の下書きの記録</h1>
+        <span style="flex: 1 1 auto; font-size: 12px; color: #9AA0AA">{{evTitle}}</span>
+        <button type="button" onClick="{{closeLog}}" aria-label="閉じる" style="width: 36px; height: 36px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-size: 18px; line-height: 1; cursor: pointer">×</button>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; border-bottom: 1px solid #2A2D33; background: #1A1C20">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">誰が<select onChange="{{pickLogWho}}" style="min-height: 32px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px"><sc-for list="{{logWhoOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.value}}" selected="{{o.on}}">{{o.label}}</option></sc-for></select></label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">種類<select onChange="{{pickLogKind}}" style="min-height: 32px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px"><sc-for list="{{logKindOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}" selected="{{o.on}}">{{o.label}}</option></sc-for></select></label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">海域<select onChange="{{pickLogMap}}" style="min-height: 32px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px"><sc-for list="{{logMapOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.value}}" selected="{{o.on}}">{{o.label}}</option></sc-for></select></label>
+        <span style="flex: 1 1 auto; text-align: right; font-size: 12px; color: #9AA0AA">{{logCount}}</span>
+      </div>
+      <ol aria-label="記録" tabindex="0" style="list-style: none; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; min-height: 0; max-height: min(420px, calc(100vh - 240px)); scrollbar-color: #4A4F58 #16171B">
+        <sc-for list="{{logRows}}" as="l" hint-placeholder-count="8">
+          <li style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 9px 16px; border-bottom: 1px solid #22252B; font-size: 12px">
+            <span style="flex: 0 0 84px; font-family: Consolas, monospace; color: #9AA0AA">{{l.at}}</span>
+            <span style="flex: 0 0 80px; font-weight: 700">{{l.who}}</span>
+            <span style="{{l.kindStyle}}">{{l.kind}}</span>
+            <span style="flex: 1 1 260px; color: #D7DADF">{{l.what}}</span>
+          </li>
+        </sc-for>
+        <sc-if value="{{logEmpty}}" hint-placeholder-val="{{false}}"><li style="padding: 24px 16px; text-align: center; color: #9AA0AA">条件に合う記録はありません</li></sc-if>
+        <sc-if value="{{logMore}}" hint-placeholder-val="{{true}}"><li style="padding: 10px 16px; text-align: center"><button type="button" onClick="{{showMoreLog}}" style="min-height: 32px; padding: 0 14px; background: transparent; color: #6AA8FF; border: 1px solid #34507A; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">さらに古い記録を表示</button></li></sc-if>
+      </ol>
+    </div>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1080}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sel: 'E2-3', role: 'admin', order: ['s31', 'tago', 'rengo', 'ulithi', 'sixth'], drag: null, overIdx: null, overStep: null, seq: 0, startAt: '', endAt: '', triedPublish: false, saveState: null, keep: null, maps: ['E1', 'E2', 'E3'], mode: 'update', ev: 's26', newName: '', base: 'none',
+      steps: [
+        ['E1', 'E1', 'ギミック〜ゲージ3', 's31', 1],
+        ['E2-G', 'E2', 'ギミック', 's31', 1], ['E2-1', 'E2', 'ゲージ1 輸送', 'tago', 1], ['E2-2', 'E2', 'ゲージ2', 'rengo', 2], ['E2-3', 'E2', 'ゲージ3', 'rengo', 3],
+        ['E3-G', 'E3', 'ギミック', 's31', 1], ['E3-1', 'E3', 'ゲージ1', 'ulithi', 1], ['E3-2', 'E3', 'ゲージ2 輸送', 's31', 1], ['E3-3', 'E3', 'ゲージ3', 'sixth', 2], ['E3-4', 'E3', 'ゲージ4', 'ulithi', 3]
+      ].map(([id, map, label, fk, weight]) => ({ id, map, label, fk, weight }))
+    };
+  }
+  renderVals() {
+    const F = {
+      s31: { name: '第三十一戦隊', color: '#8B93A1', ink: '#101114' },
+      tago: { name: '多号作戦部隊', color: '#5FB0E8', ink: '#101114' },
+      rengo: { name: '連合艦隊', color: '#4C8DF6', ink: '#FFFFFF' },
+      ulithi: { name: 'ウルシー攻撃部隊', color: '#3FB37F', ink: '#101114' },
+      sixth: { name: '第六艦隊', color: '#A97EF0', ink: '#101114' }
+    };
+    const { sel, order, steps, drag, overIdx, overStep } = this.state;
+    const isStepKey = (k) => typeof k === 'string' && k.indexOf('step:') === 0;
+    const fudaDrag = drag && !isStepKey(drag) ? drag : null;
+
+    // ドラッグ＆ドロップ：札の並べ替え（間に割り込み）と、段階への割り込み
+    const clear = { drag: null, overIdx: null, overStep: null };
+    const dragKey = (e) => this.state.drag || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+    const dragStart = (k) => (e) => { try { e.dataTransfer.setData('text/plain', k); e.dataTransfer.effectAllowed = 'move'; } catch (err) {} this.setState({ drag: k }); };
+    const dragEnd = () => this.setState(clear);
+    const allowIdx = (i) => (e) => { e.preventDefault(); e.stopPropagation(); if (isStepKey(this.state.drag)) return; if (this.state.overIdx !== i || this.state.overStep) this.setState({ overIdx: i, overStep: null }); };
+    const dropIdx = (i) => (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const k = dragKey(e); if (!k || isStepKey(k)) return this.setState(clear);
+      const cur = this.state.order;
+      const from = cur.indexOf(k);
+      const rest = cur.filter(x => x !== k);
+      const to = from >= 0 && i > from ? i - 1 : i;
+      rest.splice(to, 0, k);
+      this.setState({ order: rest, ...clear });
+    };
+    // 段階の前（beforeId）またはマップの最後（beforeId=null）に割り込ませる
+    const insertAt = (map, beforeId, k) => {
+      const list = this.state.steps.slice();
+      let item, newSel;
+      if (isStepKey(k)) {
+        const id = k.slice(5); if (id === beforeId) return this.setState(clear);
+        const from = list.findIndex(x => x.id === id); if (from < 0) return this.setState(clear);
+        item = { ...list[from], map }; list.splice(from, 1); newSel = id;
+      } else {
+        const seq = this.state.seq + 1;
+        item = { id: 'new' + seq, map, label: '新しい段階', fk: k, weight: 1 }; newSel = item.id;
+        this.state.seq = seq;
+      }
+      let at = beforeId ? list.findIndex(x => x.id === beforeId) : -1;
+      if (at < 0) { at = -1; list.forEach((x, i) => { if (x.map === map) at = i; }); at = at < 0 ? list.length : at + 1; }
+      list.splice(at, 0, item);
+      this.setState({ steps: list, seq: this.state.seq, sel: newSel, ...clear });
+    };
+    const allowStep = (key) => (e) => { e.preventDefault(); e.stopPropagation(); if (this.state.overStep !== key) this.setState({ overStep: key, overIdx: null }); };
+    const dropStep = (map, id) => (e) => { e.preventDefault(); e.stopPropagation(); const k = dragKey(e); if (!k) return this.setState(clear); insertAt(map, id, k); };
+
+    const maps = this.state.maps;
+    // 他の人が保存していた所の目印（保存時の確認中と保存直後）
+    const ss = this.state.saveState, inUpdate = this.state.mode !== 'new';
+    const marks = !inUpdate ? {} : ss === 'conflict' ? { 'E2-3': 'conflict', 'E3-4': 'merged' } : ss === 'saved' ? { 'E3-4': 'merged' } : {};
+    const flow = maps.map(map => ({
+      map, empty: !steps.some(s => s.map === map), canRemove: map === maps[maps.length - 1] && maps.length > 1,
+      removeMap: () => this.setState({ maps: this.state.maps.filter(x => x !== map), addFor: null }),
+      add: () => this.setState({ addFor: this.state.addFor === map ? null : map }),
+      picking: this.state.addFor === map,
+      close: () => this.setState({ addFor: null }),
+      choices: order.map(k => ({ name: F[k].name, pick: () => { this.state.addFor = null; insertAt(map, null, k); },
+        style: 'min-height: 32px; padding: 0 10px; text-align: left; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: ' + F[k].color + '; color: ' + F[k].ink })),
+      allow: allowStep('end:' + map), drop: dropStep(map, null),
+      addStyle: 'flex: 1 1 auto; width: 36px; min-height: 48px; border-radius: 4px; font-family: inherit; font-size: 16px; cursor: pointer; '
+        + (drag && overStep === 'end:' + map ? 'background: #1A2232; color: #6AA8FF; border: 2px dashed #6AA8FF;' : 'background: transparent; color: #6B717C; border: 1px dashed #3A3E46;'),
+      steps: steps.filter(s => s.map === map).map(s => ({
+        label: s.label, fuda: F[s.fk].name, on: sel === s.id, pick: () => this.setState({ sel: s.id, confirmDel: null }),
+        dragStart: dragStart('step:' + s.id), dragEnd,
+        allow: allowStep(s.id), drop: dropStep(map, s.id),
+        style: 'position: relative; flex: 1 1 0; min-width: 0; min-height: 48px; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px; border-radius: 4px; font-family: inherit; text-align: left; cursor: grab; border: 0; background: ' + F[s.fk].color + '; color: ' + F[s.fk].ink + '; '
+          + (drag === 'step:' + s.id ? 'opacity: 0.4; ' : '')
+          + (drag && overStep === s.id && drag !== 'step:' + s.id ? 'box-shadow: -2px 0 0 0 #1F2126, -6px 0 0 0 #6AA8FF; margin-left: 6px; ' : '')
+          + (marks[s.id] === 'conflict' ? 'animation: dcPulse 1.4s ease-in-out infinite; ' : marks[s.id] === 'merged' ? 'box-shadow: 0 0 0 2px #F0A33A; ' : '')
+          + (sel === s.id ? 'outline: 3px solid #FFFFFF; outline-offset: 2px;' : ''),
+        hasMark: !!marks[s.id], mark: marks[s.id] === 'conflict' ? '要選択' : '[協力者A]が変更',
+        markStyle: 'position: absolute; top: -9px; right: 4px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; white-space: nowrap; ' + (marks[s.id] === 'conflict' ? 'background: #FF5A50; color: #FFFFFF' : 'background: #F0A33A; color: #101114')
+      }))
+    }));
+    const fudas = order.map((k, i) => ({
+      name: F[k].name, uses: steps.filter(s => s.fk === k).length,
+      dot: 'width: 14px; height: 14px; border-radius: 3px; background: ' + F[k].color,
+      dragStart: dragStart(k), dragEnd, allow: allowIdx(i), drop: dropIdx(i),
+      lineBefore: !!fudaDrag && overIdx === i && fudaDrag !== k && order[i - 1] !== fudaDrag,
+      liStyle: 'position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #1A1C20; border: 1px solid #2E3138; border-radius: 5px; cursor: grab; ' + (fudaDrag === k ? 'opacity: 0.4;' : '')
+    }));
+
+    const groupsBy = {
+      'E2-3': [
+        { mult: '1.27', name: '連合艦隊C', ships: ['千歳', '千代田', '瑞鳳', '瑞鶴', '初霜', '潮', '響'] },
+        { mult: '1.24', name: '連合艦隊B', ships: ['雪風', '浜風', '磯風', '不知火', '時雨', '長波', '沖波', '朝霜', '浜波', '秋霜', '秋月', '涼月', '冬月', '初月', '花月', '島風', '初春', '松', '竹', '梅', '杉', '榧', '樫', '桐', '桃'] },
+        { mult: '1.18', name: '連合艦隊A', ships: ['大和', '長門', '榛名', '伊勢', '日向', '大鯨(龍鳳)', '隼鷹', '鳳翔', '青葉', '妙高', '利根', '高雄', '矢矧', '大淀', '酒匂', '北上', '大井', '鹿島'] }
+      ]
+    };
+    const cur = steps.find(s => s.id === sel) || steps[0] || { id: '', map: '', label: '', fk: order[0], weight: 1 };
+    const f = F[cur.fk];
+    const weightOpts = [[1, '普通'], [2, '重要'], [3, '難所']];
+    return {
+      role: this.state.role,
+      allowEnd: allowIdx(order.length), dropEnd: dropIdx(order.length),
+      lineEnd: !!fudaDrag && overIdx === order.length && order[order.length - 1] !== fudaDrag,
+      isAdmin: this.state.role === 'admin',
+      roleLabel: this.state.role === 'admin' ? '管理者' : '協力者',
+      roleOpts: [['admin', '管理者'], ['collab', '協力者']].map(([k, label]) => ({
+        label, on: this.state.role === k, pick: () => this.setState(k !== 'admin' && this.state.mode === 'new'
+          ? { role: k, mode: 'update', draftNew: { steps: this.state.steps, maps: this.state.maps, sel: this.state.sel }, ...this.state.saved, saved: null, addFor: null, confirmDel: null }
+          : { role: k }),
+        style: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.role === k ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state.role === k ? '#FFFFFF' : '#C9CDD3')
+      })),
+      flow, fudas, hasSel: steps.length > 0, noSel: steps.length === 0,
+      nextMap: 'E' + (maps.length + 1),
+      addMap: () => { const n = 'E' + (this.state.maps.length + 1); this.setState({ maps: [...this.state.maps, n], addFor: n }); },
+      ...(() => {
+        const { mode, newName, base } = this.state;
+        const isAdminRole = this.state.role === 'admin';
+        const ev = 's26';
+        const EV = { s26: ['2026夏イベ（最新）', '公開中：2026/08/04 版'], a25: ['2025秋イベ', '公開中：2025/12/02 版（イベント終了）'], p25: ['2025春イベ', '公開中：2025/06/20 版（イベント終了）'], s24: ['2024夏イベ', '公開中：2024/09/10 版（イベント終了）'] };
+        const segStyle = (on, i) => 'min-height: 34px; padding: 0 14px; font-family: inherit; font-size: 12px; cursor: pointer; border: 1px solid #3A3E46; ' + (i ? 'border-left: 0; border-radius: 0 4px 4px 0; ' : 'border-radius: 4px 0 0 4px; ') + 'background: ' + (on ? '#3D6FD0' : 'transparent') + '; color: ' + (on ? '#FFFFFF' : '#C9CDD3') + '; font-weight: ' + (on ? '700' : '400');
+        const isNew = mode === 'new';
+        // 新規作成は別の作業領域。元にするイベントがあれば札と段階をコピー（特効は空）、なければE1だけの空から始める
+        const fromBase = (b) => {
+          const src = this.state.mode === 'new' ? this.state.saved : { steps: this.state.steps, maps: this.state.maps };
+          if (b === 'none' || !src) return { steps: [], maps: ['E1'], sel: null, addFor: null, confirmDel: null };
+          return { steps: src.steps.map(x => ({ ...x })), maps: src.maps.slice(), sel: src.steps[0] && src.steps[0].id, addFor: null, confirmDel: null };
+        };
+        const switchMode = (k) => {
+          if (k === this.state.mode) return;
+          if (k === 'new') {
+            const saved = { steps: this.state.steps, maps: this.state.maps, sel: this.state.sel };
+            this.state.saved = saved;
+            this.setState({ mode: 'new', saved, ...(this.state.draftNew || fromBase(this.state.base)) });
+          } else {
+            const draftNew = { steps: this.state.steps, maps: this.state.maps, sel: this.state.sel };
+            this.setState({ mode: 'update', draftNew, ...this.state.saved, saved: null, addFor: null, confirmDel: null });
+          }
+        };
+        return {
+          modeOpts: [['update', '既存を更新'], ['new', '新規作成']].map(([k, label], i) => ({ label, on: mode === k, pick: () => switchMode(k), style: segStyle(mode === k, i) })),
+          isUpdate: !isNew, isNew,
+          mockEnded: !!this.state.mockEnded,
+          toggleMockEnded: () => this.setState({ mockEnded: !this.state.mockEnded, saveState: null, addFor: null }),
+          mockEndedLabel: this.state.mockEnded ? 'イベント終了後' : 'イベント開催中',
+          mockEndedStyle: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.mockEnded ? '#3A3E46' : '#3A2E16') + '; color: ' + (this.state.mockEnded ? '#E4E6EA' : '#F2C98A'),
+          latestName: ((this.state.evNames || {}).s26 ?? '2026夏イベ'),
+          canChoose: isAdminRole, collabOnly: !isAdminRole, adminUpdate: isAdminRole && !isNew,
+          evOpts: Object.keys(EV).filter(k => isAdminRole || k === 's26').map(k => ({ value: k, label: EV[k][0], on: ev === k })),
+          pickEv: (e) => this.setState({ ev: e.target.value }),
+          newName, typeName: (e) => this.setState({ newName: e.target.value }),
+          baseOpts: [['none', '使わない（空から作る）'], ...Object.keys(EV).map(k => [k, EV[k][0]])].map(([value, label]) => ({ value, label, on: base === value })),
+          pickBase: (e) => { const b = e.target.value; this.setState({ base: b, ...fromBase(b) }); },
+          ...(() => {
+            const D0 = { s26: ['2026-08-07T12:00', ''], a25: ['2025-11-14T11:00', '2025-12-02T11:00'], p25: ['2025-05-30T12:00', '2025-06-20T11:00'], s24: ['2024-08-02T11:00', '2024-09-10T11:00'] };
+            const D = { ...D0, ...(this.state.evDates || {}) };
+            const [st, en] = D[ev];
+            const setD = (i, v) => { const cur = (this.state.evDates || {})[ev] || D0[ev]; const nx = cur.slice(); nx[i] = v; this.setState({ evDates: { ...(this.state.evDates || {}), [ev]: nx } }); };
+            const fmt = (v) => v ? v.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}).*$/, '$1/$2/$3 $4:$5') : '';
+            return {
+              uStart: st, uEnd: en, uStartText: fmt(st), hasUEnd: !!en,
+              startEditable: isAdminRole, startReadonly: !isAdminRole,
+              typeUStart: (e) => setD(0, e.target.value), typeUEnd: (e) => setD(1, e.target.value), clearUEnd: () => setD(1, ''),
+              uDateError: isNew ? '' : (en && st && en <= st ? '終了日時は開始日時より後にしてください' : (en && en <= '2026-10-15T23:42' ? '終了日時は今より後にしてください（過去の日時にすると、その場で更新できなくなるため）' : '')),
+              ...(() => {
+                const NOW = '2026-10-15T23:42';
+                const savedEnd = D0[ev][1];
+                const isEnded = !isNew && (!!this.state.mockEnded || (!!savedEnd && savedEnd <= NOW));
+                const endAtText = this.state.mockEnded ? '2026/10/10 11:00' : fmt(en);
+                return {
+                  ended: isEnded, canEdit: !isEnded, updEditable: !isNew && !isEnded,
+                  endedAt: endAtText + ' 終了',
+                  endedNext: isAdminRole ? '次のイベントは「新規作成」から作ってください。' : '次のイベントは管理者が作成するまでお待ちください。',
+                  lockStyle: 'display: flex; flex-direction: column; gap: 12px; ' + (isEnded ? 'opacity: 0.55; pointer-events: none; user-select: none; filter: grayscale(0.4);' : ''),
+                  goNew: () => switchMode('new'),
+                  titleEditable: isNew || (isAdminRole && !isEnded), titleReadonly: !(isNew || (isAdminRole && !isEnded))
+                };
+              })(),
+              uPeriodText: !isNew ? '期間：' + fmt(st) + ' 〜 ' + (en ? fmt(en) : '終了日時は未定') : ''
+            };
+          })(),
+          titleValue: isNew ? newName : ((this.state.evNames || {})[ev] ?? EV[ev][0].replace('（最新）', '')),
+          typeTitle: (e) => { const v = e.target.value; if (isNew) this.setState({ newName: v }); else this.setState({ evNames: { ...(this.state.evNames || {}), [ev]: v } }); },
+          titleSuffix: isNew ? '新規' : (ev === 's26' ? '開催中' : ''),
+          titleStyle: 'min-width: 0; width: 240px; min-height: 34px; padding: 0 8px; background: #16171B; color: #E4E6EA; border: 1px solid ' + (isNew && this.state.triedPublish && !newName.trim() ? '#C9473F' : '#3A3E46') + '; border-radius: 4px; font-family: inherit; font-size: 15px; font-weight: 700',
+          evTitle: isNew ? (newName || '（イベント名を入力）') + '　新規' : ((this.state.evNames || {})[ev] ?? EV[ev][0].replace('（最新）', '')),
+          evStatus: isNew ? 'まだ公開していません' + (base !== 'none' ? '（' + EV[base][0].replace('（最新）', '') + 'を元に作成）' : '') : EV[ev][1],
+          hasPending: !isNew && ev === 's26',
+          hasLog: !isNew,
+          logOpen: !isNew && !!this.state.logOpen,
+          logLabel: '保存の記録を見る',
+          toggleLog: () => this.setState({ logOpen: true, logLimit: 8 }),
+          ...(() => {
+            const K = { save: ['下書き保存', '#22304A', '#CFE0FF'], pub: ['公開', '#E8B04B', '#101114'] };
+            const rows = [
+              ['10/15 22:52', '[協力者A]', 'save', 'E3', 'E3 ゲージ4 の特効を追加（第二十七駆逐隊 ×1.20）'],
+              ['10/15 22:40', '[協力者A]', 'save', 'E2', 'E2 ゲージ3 の大事さを「難所」→「重要」'],
+              ['10/15 21:40', '[あなた]', 'save', 'E2', 'E2 第三ボスの特効を更新（連合艦隊C を追加）'],
+              ['10/14 22:18', '[協力者B]', 'save', 'E3', 'E3 ゲージ3 の札を「ウルシー攻撃部隊」→「第六艦隊」'],
+              ['10/13 23:41', '[協力者A]', 'save', 'E2', 'E2 ゲージ1 輸送 の段階名を変更'],
+              ['10/12 23:05', '[協力者B]', 'save', 'E3', 'E3 の段階を追加（ゲージ4）'],
+              ['10/10 21:12', '[あなた]', 'pub', '', '2026/10/10 版を公開'],
+              ['10/10 20:58', '[あなた]', 'save', 'E1', 'E1 の特効を更新（第三十一戦隊 ×1.15）'],
+              ['10/09 22:30', '[協力者A]', 'save', 'E2', 'E2 ギミック の札を「第三十一戦隊」に変更'],
+              ['10/08 23:59', '[協力者B]', 'save', 'E3', 'E3 ゲージ2 輸送 を追加'],
+              ['08/04 20:10', '[あなた]', 'pub', '', '2026/08/04 版を公開'],
+              ['08/04 19:55', '[協力者A]', 'save', 'E1', 'E1〜E3 の札と段階を作成'],
+              ['08/03 22:40', '[あなた]', 'save', 'E1', '札の並び順を変更']
+            ];
+            if (this.state.saveState === 'saved') rows.unshift(['たった今', '[あなた]', 'save', 'E3', '下書きを保存（[協力者A]の E3 ゲージ4 の変更と合わせて保存）']);
+            const who = this.state.logWho || 'all', kind = this.state.logKind || 'all', mp = this.state.logMap || 'all', lim = this.state.logLimit || 8;
+            const hit = rows.filter(r => (who === 'all' || r[1] === who) && (kind === 'all' || r[2] === kind) && (mp === 'all' || r[3] === mp));
+            const opts = (list, cur) => list.map(([value, label]) => ({ value, label, on: cur === value }));
+            return {
+              logRows: hit.slice(0, lim).map(([at, w, k, m, what]) => ({ at, who: w, what, kind: K[k][0], kindStyle: 'flex: 0 0 auto; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: ' + K[k][1] + '; color: ' + K[k][2] })),
+              logEmpty: hit.length === 0, logMore: hit.length > lim,
+              logCount: Math.min(lim, hit.length) + ' / ' + hit.length + '件',
+              showMoreLog: () => this.setState({ logLimit: lim + 8 }),
+              logWhoOpts: opts([['all', '全員'], ['[あなた]', '[あなた]'], ['[協力者A]', '[協力者A]'], ['[協力者B]', '[協力者B]']], who),
+              logKindOpts: opts([['all', 'すべて'], ['save', '下書き保存'], ['pub', '公開']], kind),
+              logMapOpts: opts([['all', 'すべて'], ...this.state.maps.map(m => [m, m])], mp),
+              pickLogWho: (e) => this.setState({ logWho: e.target.value, logLimit: 8 }),
+              pickLogKind: (e) => this.setState({ logKind: e.target.value, logLimit: 8 }),
+              pickLogMap: (e) => this.setState({ logMap: e.target.value, logLimit: 8 }),
+              closeLog: () => this.setState({ logOpen: false }),
+              stop: (e) => e.stopPropagation()
+            };
+          })(),
+          showPresence: !isNew && ev === 's26',
+          saveDraft: () => this.setState(isNew ? { saveState: 'saved' } : { saveState: 'conflict', keep: null }),
+          conflict: this.state.saveState === 'conflict', savedMsg: this.state.saveState === 'saved',
+          conflictOpts: (() => {
+            const W = { 1: '普通', 2: '重要', 3: '難所' };
+            const mine = (this.state.steps.find(x => x.id === 'E2-3') || { weight: 3 }).weight;
+            return [['theirs', '[協力者A]の内容：' + W[2]], ['mine', 'あなたの内容：' + W[mine]]].map(([k, label]) => ({ label, on: this.state.keep === k, pick: () => this.setState({ keep: k }),
+              style: 'min-height: 32px; padding: 0 12px; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer; border: 1px solid ' + (this.state.keep === k ? '#6AA8FF' : '#3A3E46') + '; background: ' + (this.state.keep === k ? '#22304A' : 'transparent') + '; color: ' + (this.state.keep === k ? '#FFFFFF' : '#C9CDD3') }));
+          })(),
+          notChosen: !this.state.keep,
+          confirmSave: () => { if (!this.state.keep) return; const steps = this.state.keep === 'theirs' ? this.state.steps.map(x => x.id === 'E2-3' ? { ...x, weight: 2 } : x) : this.state.steps; this.setState({ steps, saveState: 'saved', keep: null }); },
+          seeConflict: () => this.setState({ sel: 'E2-3', confirmDel: null }),
+          seeMerged: () => this.setState({ sel: 'E3-4', confirmDel: null }),
+          cancelSave: () => this.setState({ saveState: null, keep: null }),
+          confirmStyle: 'min-height: 34px; padding: 0 14px; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; ' + (this.state.keep ? 'background: #E8B04B; color: #101114; cursor: pointer' : 'background: #3A3426; color: #8A7F66; cursor: not-allowed'),
+          draftNote: this.state.saveState === 'saved' ? 'たった今 あなたが保存' : isNew ? 'まだ保存していません' : (ev === 's26' ? '10/15 22:40 に[協力者A]が保存' : 'なし'),
+          ...(() => {
+            const { startAt, endAt, triedPublish } = this.state;
+            const fmt = (v) => v ? v.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}).*$/, '$1/$2/$3 $4:$5') : '';
+            const missing = [];
+            if (isNew && !newName.trim()) missing.push('イベント名');
+            if (isNew && !startAt) missing.push('開始日時');
+            const order = isNew && startAt && endAt && endAt <= startAt;
+            const err = !isNew ? '' : order ? '終了日時は開始日時より後にしてください' : (triedPublish && missing.length ? missing.join('と') + 'を入力してください' : '');
+            const blocked = isNew && (missing.length > 0 || order);
+            return {
+              startAt, endAt,
+              typeStart: (e) => this.setState({ startAt: e.target.value }),
+              typeEnd: (e) => this.setState({ endAt: e.target.value }),
+              startStyle: 'min-height: 34px; padding: 0 8px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 13px; color-scheme: dark; border-color: ' + (isNew && triedPublish && !startAt ? '#C9473F' : '#3A3E46'),
+              dateError: err,
+              periodTextNew: isNew && startAt ? '期間：' + fmt(startAt) + ' 〜 ' + (endAt ? fmt(endAt) : '終了日時は未定') : '',
+              cannotPublish: false,
+              tryPublish: () => this.setState({ triedPublish: true }),
+              publishStyle: 'min-height: 36px; padding: 0 14px; border: 0; border-radius: 4px; font-family: inherit; font-size: 13px; font-weight: 700; ' + (blocked ? 'background: #3A3426; color: #8A7F66; cursor: not-allowed' : 'background: #E8B04B; color: #101114; cursor: pointer')
+            };
+          })(),
+          publishLabel: isNew ? '公開して最新にする' : '変更を公開する'
+        };
+      })(),
+      detail: {
+        map: cur.map, label: cur.label, fuda: f.name,
+        cannotDelete: steps.length <= 1,
+        weightConflict: marks[cur.id] === 'conflict',
+        weightBox: 'display: flex; flex-direction: column; gap: 6px; ' + (marks[cur.id] === 'conflict' ? 'padding: 8px 10px; margin: -9px -11px; border-radius: 6px; animation: dcPulse 1.4s ease-in-out infinite;' : ''),
+        rename: (e) => { const v = e.target.value; this.setState({ steps: this.state.steps.map(x => x.id === cur.id ? { ...x, label: v } : x) }); },
+        confirming: this.state.confirmDel === cur.id,
+        askDelete: () => this.setState({ confirmDel: cur.id }),
+        cancelDelete: () => this.setState({ confirmDel: null }),
+        doDelete: () => {
+          const list = this.state.steps; const i = list.findIndex(x => x.id === cur.id);
+          const rest = list.filter(x => x.id !== cur.id);
+          const next = rest.slice(i).find(x => x.map === cur.map) || rest.slice(0, i).reverse().find(x => x.map === cur.map) || rest[Math.min(i, rest.length - 1)];
+          this.setState({ steps: rest, sel: next ? next.id : null, confirmDel: null });
+        },
+        headStyle: 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 6px 6px 0 0; background: ' + f.color + '; color: ' + f.ink,
+        fudaChoices: order.map(k => [k, F[k]]).map(([k, x]) => ({ name: x.name, pick: () => this.setState({ steps: this.state.steps.map(x => x.id === cur.id ? { ...x, fk: k } : x) }), style: 'min-height: 32px; padding: 0 10px; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer; border: 2px solid ' + (k === cur.fk ? '#FFFFFF' : 'transparent') + '; background: ' + x.color + '; color: ' + x.ink + '; opacity: ' + (k === cur.fk ? '1' : '0.6') })),
+        weights: weightOpts.map(([w, label], i) => ({ label, on: w === cur.weight, pick: () => this.setState({ steps: this.state.steps.map(x => x.id === cur.id ? { ...x, weight: w } : x) }), style: 'min-height: 32px; padding: 0 14px; font-family: inherit; font-size: 12px; cursor: pointer; border: 1px solid #3A3E46; ' + (i > 0 ? 'border-left: 0; ' : '') + 'border-radius: ' + (i === 0 ? '4px 0 0 4px' : i === 2 ? '0 4px 4px 0' : '0') + '; background: ' + (w === cur.weight ? (w === 3 ? '#F0A33A' : '#3D6FD0') : 'transparent') + '; color: ' + (w === cur.weight ? (w === 3 ? '#101114' : '#FFFFFF') : '#C9CDD3') + '; font-weight: ' + (w === cur.weight ? '700' : '400') })),
+        groups: groupsBy[sel] || [{ mult: '—', name: 'この段階の特効は未入力です', ships: [] }]
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

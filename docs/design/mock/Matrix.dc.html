@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>特効マトリクス</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a{color:#6AA8FF}a:hover{color:#9CC5FF}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+
+  <nav aria-label="メインメニュー" style="flex: 0 0 64px; background: #101114; border-right: 1px solid #2A2D33; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0">
+    <span style="font-weight: 700; font-size: 15px; color: #E8B04B; padding: 6px 0 12px">札</span>
+    <sc-for list="{{nav}}" as="n" hint-placeholder-count="6">
+      <a href="{{n.href}}" aria-label="{{n.label}}" style="{{n.style}}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="{{n.icon}}"></path></svg>
+        <span style="font-size: 10px">{{n.label}}</span>
+      </a>
+    </sc-for>
+  </nav>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 14px; font-weight: 700">特効マトリクス</h1>
+      <select aria-label="プラン" style="min-height: 32px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 3px; font-family: inherit; font-size: 13px"><option>2026夏 前段 甲・本命</option></select>
+      <span style="font-size: 11px; color: #9AA0AA">特効データ：2026/08/04 版</span>
+      <span style="flex: 1 1 40px"></span>
+      <button type="button" style="min-height: 32px; padding: 0 12px; background: #E8B04B; color: #101114; border: 0; border-radius: 3px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer">割り振り案を出す</button>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-start">
+
+      <aside aria-label="フィルタ" style="flex: 1 1 220px; max-width: 240px; background: #1B1D21; border-right: 1px solid #2A2D33; align-self: stretch; font-size: 12px">
+        <div style="padding: 8px 12px; border-bottom: 1px solid #2A2D33; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 11px; color: #9AA0AA">保存したフィルタ</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px">
+            <sc-for list="{{presets}}" as="p" hint-placeholder-count="3">
+              <button type="button" style="{{p.style}}">{{p.label}}</button>
+            </sc-for>
+            <button type="button" style="min-height: 26px; padding: 0 8px; background: transparent; color: #6AA8FF; border: 1px dashed #3A3E46; border-radius: 2px; font-family: inherit; font-size: 11px; cursor: pointer">＋ 今の条件を保存</button>
+          </div>
+        </div>
+
+        <sc-for list="{{facets}}" as="g" hint-placeholder-count="5">
+          <fieldset style="margin: 0; padding: 8px 12px; border: 0; border-bottom: 1px solid #2A2D33">
+            <legend style="padding: 0; margin-bottom: 4px; font-size: 11px; color: #9AA0AA; float: left; width: 100%">{{g.title}}</legend>
+            <div style="clear: both; display: flex; flex-direction: column; gap: 1px">
+              <sc-for list="{{g.items}}" as="i" hint-placeholder-count="4">
+                <label style="display: flex; align-items: center; gap: 6px; min-height: 26px; cursor: pointer">
+                  <input type="checkbox" checked="{{i.on}}" style="width: 14px; height: 14px; margin: 0">
+                  <span style="flex: 1; color: #E4E6EA">{{i.label}}</span>
+                  <span style="font-family: Consolas, monospace; font-size: 11px; color: #6B717C">{{i.count}}</span>
+                </label>
+              </sc-for>
+            </div>
+          </fieldset>
+        </sc-for>
+
+        <div style="padding: 8px 12px; border-bottom: 1px solid #2A2D33; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+          <label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #9AA0AA">倍率の下限
+            <select style="min-height: 28px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 3px; font-family: inherit; font-size: 12px"><option>指定なし</option><option selected>×1.15以上</option><option>×1.20以上</option></select>
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #9AA0AA">Lv 下限
+            <input type="number" value="80" style="min-height: 28px; padding: 0 6px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 3px; font-family: Consolas, monospace; font-size: 12px; box-sizing: border-box; width: 100%">
+          </label>
+        </div>
+        <div style="padding: 8px 12px">
+          <button type="button" style="min-height: 28px; padding: 0 10px; background: transparent; color: #9AA0AA; border: 1px solid #3A3E46; border-radius: 3px; font-family: inherit; font-size: 12px; cursor: pointer">条件をすべて解除</button>
+        </div>
+      </aside>
+
+      <div style="flex: 999 1 640px; min-width: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px">
+          <input type="search" aria-label="艦名で検索" placeholder="艦名で検索（ひらがな可）" style="flex: 1 1 200px; min-height: 30px; padding: 0 8px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 3px; font-family: inherit; font-size: 12px">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9AA0AA">並び順
+            <select style="min-height: 30px; background: #16171B; color: #E4E6EA; border: 1px solid #3A3E46; border-radius: 3px; font-family: inherit; font-size: 12px"><option>伸びしろ（他札との差）</option><option>評価</option><option>最高倍率</option><option>Lv</option><option>艦種</option></select>
+          </label>
+          <div role="group" aria-label="表示" style="display: flex">
+            <button type="button" style="min-height: 30px; padding: 0 10px; background: #3D6FD0; color: #FFFFFF; border: 0; border-radius: 3px 0 0 3px; font-family: inherit; font-size: 12px">同名艦をまとめる</button>
+            <button type="button" style="min-height: 30px; padding: 0 10px; background: #2A2D33; color: #C9CDD3; border: 0; border-radius: 0 3px 3px 0; font-family: inherit; font-size: 12px; cursor: pointer">個体ごと</button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px">
+          <span style="color: #9AA0AA; margin-right: 4px">{{shown}} / {{total}}隻</span>
+          <sc-for list="{{chips}}" as="c" hint-placeholder-count="3">
+            <button type="button" aria-label="{{c.label}} の条件を外す" style="display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 8px; background: #22304A; color: #CFE0FF; border: 1px solid #34507A; border-radius: 2px; font-family: inherit; font-size: 11px; cursor: pointer">{{c.label}} <span aria-hidden="true">×</span></button>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 6px">
+          <sc-for list="{{totals}}" as="t" hint-placeholder-count="4">
+            <button type="button" style="{{t.style}}">
+              <span style="font-size: 11px; color: #C9CDD3">{{t.name}}</span>
+              <span style="font-family: Consolas, monospace; font-size: 12px">{{t.count}}隻 ・ 評価 {{t.score}}</span>
+            </button>
+          </sc-for>
+        </div>
+
+        <section aria-label="艦×札×攻略段階の特効" style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 4px; overflow-x: auto">
+          <table style="width: 100%; min-width: 960px; border-collapse: collapse; font-size: 12px">
+            <thead>
+              <tr style="background: #1B1D21">
+                <th rowspan="2" style="padding: 6px 10px; text-align: left; font-weight: 400; color: #9AA0AA; border-bottom: 1px solid #2A2D33">艦</th>
+                <th rowspan="2" style="padding: 6px 6px; text-align: right; font-weight: 400; color: #9AA0AA; border-bottom: 1px solid #2A2D33">Lv</th>
+                <sc-for list="{{fudas}}" as="f" hint-placeholder-count="4">
+                  <th colspan="{{f.span}}" style="{{f.headStyle}}">{{f.name}}</th>
+                </sc-for>
+                <th rowspan="2" style="padding: 6px 10px; text-align: left; font-weight: 400; color: #9AA0AA; border-bottom: 1px solid #2A2D33">状況</th>
+              </tr>
+              <tr style="background: #1B1D21">
+                <sc-for list="{{subHeads}}" as="h" hint-placeholder-count="11">
+                  <th style="{{h.style}}">{{h.label}}<sc-if value="{{h.weight}}" hint-placeholder-val="{{false}}"><div style="font-size: 10px; color: #E8B04B; font-weight: 400">重み×{{h.weight}}</div></sc-if></th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{rows}}" as="r" hint-placeholder-count="14">
+                <sc-if value="{{r.isGroup}}" hint-placeholder-val="{{false}}">
+                  <tr style="background: #191B1F; border-top: 1px solid #2A2D33">
+                    <td colspan="{{colCount}}" style="padding: 5px 10px">
+                      <button type="button" aria-expanded="true" style="display: inline-flex; align-items: center; gap: 8px; min-height: 24px; padding: 0; background: transparent; border: 0; color: #E4E6EA; font-family: inherit; font-size: 12px; cursor: pointer">
+                        <span aria-hidden="true" style="color: #9AA0AA">▾</span>
+                        <span style="width: 56px; height: 16px; background: #2C2F36; border-radius: 2px" aria-hidden="true"></span>
+                        <b>{{r.name}}</b>
+                        <span style="font-size: 11px; color: #9AA0AA">{{r.summary}}</span>
+                      </button>
+                    </td>
+                  </tr>
+                </sc-if>
+                <sc-if value="{{r.isShip}}" hint-placeholder-val="{{true}}">
+                  <tr style="border-top: 1px solid #262930">
+                    <td style="{{r.nameStyle}}">{{r.name}}<sc-if value="{{r.sub}}" hint-placeholder-val="{{false}}"><span style="margin-left: 6px; font-size: 10px; color: #9AA0AA; border: 1px solid #3A3E46; padding: 0 4px; border-radius: 2px">{{r.sub}}</span></sc-if></td>
+                    <td style="padding: 4px 6px; text-align: right; font-family: Consolas, monospace; color: #C9CDD3">{{r.lv}}</td>
+                    <sc-for list="{{r.cells}}" as="x" hint-placeholder-count="11">
+                      <td style="{{x.tdStyle}}">
+                        <sc-if value="{{x.isPick}}" hint-placeholder-val="{{false}}"><button type="button" aria-label="{{x.label}}" style="{{x.pickStyle}}"></button></sc-if>
+                        <sc-if value="{{x.isVal}}" hint-placeholder-val="{{true}}"><span style="{{x.valStyle}}">{{x.text}}</span></sc-if>
+                      </td>
+                    </sc-for>
+                    <td style="{{r.statusStyle}}">{{r.status}}</td>
+                  </tr>
+                </sc-if>
+              </sc-for>
+            </tbody>
+          </table>
+          <div style="display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 10px; border-top: 1px solid #2A2D33; font-size: 11px; color: #9AA0AA; line-height: 1.6">
+            <span>○ を押してその札に割り当て</span>
+            <span>列見出しの札名を押すとその札の列だけ表示</span>
+            <span>評価 ＝ Σ（倍率−1）×100×重み</span>
+          </div>
+        </section>
+
+        <section style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 4px">
+          <h2 style="margin: 0; padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #2A2D33">取り合いの提案</h2>
+          <ul style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr))">
+            <sc-for list="{{suggestions}}" as="s" hint-placeholder-count="2">
+              <li style="padding: 8px 10px; border-top: 1px solid #262930; display: flex; flex-direction: column; gap: 6px">
+                <span style="font-weight: 700">{{s.title}}</span>
+                <span style="font-size: 12px; color: #C9CDD3; line-height: 1.6">{{s.body}}</span>
+                <span style="display: flex; gap: 6px">
+                  <button type="button" style="min-height: 28px; padding: 0 10px; background: #3D6FD0; color: #FFFFFF; border: 0; border-radius: 3px; font-family: inherit; font-size: 12px; cursor: pointer">適用</button>
+                  <button type="button" style="min-height: 28px; padding: 0 10px; background: transparent; color: #9AA0AA; border: 1px solid #3A3E46; border-radius: 3px; font-family: inherit; font-size: 12px; cursor: pointer">このままにする</button>
+                </span>
+              </li>
+            </sc-for>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const icons = {
+      matrix: 'M4 4h16v16H4zM4 10h16M4 15h16M10 4v16M15 4v16',
+      board: 'M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v13h-4z',
+      import: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+      plan: 'M5 3h10l4 4v14H5zM9 12h6M9 16h6',
+      diff: 'M7 4v16M17 4v16M3 8h8M13 16h8',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3'
+    };
+    const navItem = (label, href, icon, on) => ({ label, href, icon: icons[icon], style: 'display: flex; flex-direction: column; align-items: center; gap: 2px; width: 52px; min-height: 48px; justify-content: center; border-radius: 4px; text-decoration: none; color: ' + (on ? '#FFFFFF' : '#9AA0AA') + '; background: ' + (on ? '#2C3A52' : 'transparent') });
+
+    const fudas = [
+      { key: 's31', name: '第三十一戦隊', color: '#8B93A1', phases: [{ id: 'E1', label: 'E1 各ボス', w: 1 }, { id: 'E3-2', label: 'E3-2 輸送', w: 1 }] },
+      { key: 'tago', name: '多号作戦部隊', color: '#5FB0E8', phases: [{ id: 'E2-1', label: 'E2-1 輸送', w: 1 }] },
+      { key: 'rengo', name: '連合艦隊', color: '#4C8DF6', phases: [{ id: 'E2-2', label: 'E2-2', w: 2 }, { id: 'E2-3', label: 'E2-3', w: 3 }] },
+      { key: 'ulithi', name: 'ウルシー攻撃部隊', color: '#3FB37F', phases: [{ id: 'E3-1', label: 'E3-1', w: 1 }, { id: 'E3-4', label: 'E3-4', w: 3 }] }
+    ];
+
+    const A31 = { 'E1': 1.09, 'E3-2': 1.12 };
+    const RB = { 'E2-2': 1.19, 'E2-3': 1.24, 'E3-1': 1.14, 'E3-4': 1.14 };
+    const TAGO = { 'E2-1': 1.24 };
+    // 同名艦は group でまとめる。at が null なら未割当
+    const ships = [
+      { group: '時雨', name: '時雨改三', lv: 175, at: 'ulithi', b: { ...RB } },
+      { group: '時雨', name: '時雨改二', lv: 98, sub: 'サブ', at: 'rengo', b: { ...RB } },
+      { group: '雪風', name: '雪風改二', lv: 168, at: 'rengo', b: { ...A31, ...RB } },
+      { group: '雪風', name: '雪風改', lv: 85, sub: 'サブ', at: null, b: { ...A31, ...RB } },
+      { group: '長波', name: '長波改二', lv: 152, at: 'rengo', b: { ...A31, ...TAGO, ...RB } },
+      { group: '朝霜', name: '朝霜改二', lv: 140, at: 'tago', b: { ...A31, ...TAGO, ...RB } },
+      { group: '朝霜', name: '朝霜改二', lv: 92, sub: 'サブ', at: null, b: { ...A31, ...TAGO, ...RB } },
+      { group: '初霜', name: '初霜改二', lv: 131, at: 's31', b: { ...A31, ...TAGO, 'E2-3': 1.27 } },
+      { group: '冬月', name: '冬月改', lv: 120, at: 's31', b: { 'E1': 1.21, 'E3-2': 1.16, ...RB } },
+      { group: '不知火', name: '不知火改二', lv: 145, at: 'ulithi', b: { ...RB } }
+    ];
+
+    const score = (s, f) => Math.round(f.phases.reduce((a, p) => a + ((s.b[p.id] || 1) - 1) * 100 * p.w, 0));
+    const shade = (v) => v >= 1.25 ? '#8A6A1F' : v >= 1.18 ? '#6E5520' : v >= 1.1 ? '#4F4120' : '#3A3220';
+    const nameOf = (k) => k ? fudas.find(f => f.key === k).name : '未割当';
+
+    const fudaHead = fudas.map(f => ({
+      name: f.name, span: f.phases.length + 1,
+      headStyle: 'padding: 6px 8px; text-align: center; font-weight: 700; font-size: 12px; color: #E4E6EA; cursor: pointer; border-left: 1px solid #2A2D33; border-top: 3px solid ' + f.color
+    }));
+    const subHeads = [];
+    fudas.forEach(f => {
+      subHeads.push({ label: '割当', weight: false, style: 'padding: 4px 6px; font-weight: 400; font-size: 10px; color: #9AA0AA; border-left: 1px solid #2A2D33; border-bottom: 1px solid #2A2D33' });
+      f.phases.forEach(p => subHeads.push({ label: p.label, weight: p.w > 1 ? p.w : false, style: 'padding: 4px 6px; font-weight: 400; font-size: 11px; color: #C9CDD3; text-align: center; white-space: nowrap; border-bottom: 1px solid #2A2D33' }));
+    });
+    const colCount = 2 + subHeads.length + 1;
+
+    const totals = fudas.map(f => ({ key: f.key, name: f.name, count: 0, score: 0, color: f.color }));
+
+    const shipRow = (s) => {
+      const cells = [];
+      fudas.forEach((f, fi) => {
+        const on = s.at === f.key;
+        const bg = on ? 'background: #22304A;' : '';
+        cells.push({
+          isPick: true, isVal: false, label: s.name + 'を' + f.name + 'に割り当て',
+          tdStyle: 'padding: 3px 6px; text-align: center; border-left: 1px solid #2A2D33; ' + bg,
+          pickStyle: 'width: 18px; height: 18px; border-radius: 50%; cursor: pointer; padding: 0; border: 2px solid ' + (on ? '#6AA8FF' : '#4A4F58') + '; background: ' + (on ? 'radial-gradient(circle, #6AA8FF 45%, transparent 50%)' : 'transparent')
+        });
+        f.phases.forEach(p => {
+          const v = s.b[p.id];
+          cells.push({
+            isPick: false, isVal: true, text: v ? '×' + v.toFixed(2) : '–',
+            tdStyle: 'padding: 3px 4px; text-align: center; ' + bg,
+            valStyle: 'display: inline-block; min-width: 44px; padding: 3px 0; border-radius: 2px; font-family: Consolas, monospace; font-size: 12px; ' + (v ? 'background: ' + shade(v) + '; color: #F6E2B3' : 'color: #4A4F58')
+          });
+        });
+        if (on) { totals[fi].count += 1; totals[fi].score += score(s, f); }
+      });
+      let status = 'OK', color = '#7FC97F';
+      if (!s.at) {
+        const best = fudas.reduce((b, f) => score(s, f) > score(s, b) ? f : b, fudas[0]);
+        status = '未割当（' + best.name + 'で ' + score(s, best) + '）'; color = '#9AA0AA';
+      } else {
+        const mine = fudas.find(f => f.key === s.at);
+        const best = fudas.reduce((b, f) => score(s, f) > score(s, b) ? f : b, mine);
+        const diff = score(s, best) - score(s, mine);
+        if (best !== mine && diff >= 10) { status = best.name + 'なら +' + diff; color = '#F0A33A'; }
+      }
+      return {
+        isShip: true, isGroup: false, name: s.name, lv: s.lv, sub: s.sub || false, cells, status,
+        nameStyle: 'padding: 4px 10px 4px 34px; white-space: nowrap',
+        statusStyle: 'padding: 4px 10px; font-size: 11px; white-space: nowrap; color: ' + color
+      };
+    };
+
+    const groups = [];
+    ships.forEach(s => { let g = groups.find(x => x.name === s.group); if (!g) { g = { name: s.group, items: [] }; groups.push(g); } g.items.push(s); });
+    const rows = [];
+    groups.forEach(g => {
+      if (g.items.length > 1) {
+        rows.push({ isGroup: true, isShip: false, name: g.name + ' ×' + g.items.length, summary: g.items.map(s => nameOf(s.at)).join(' / ') });
+      }
+      g.items.forEach(s => { const r = shipRow(s); if (g.items.length === 1) r.nameStyle = 'padding: 4px 10px; white-space: nowrap'; rows.push(r); });
+    });
+
+    const item = (label, count, on) => ({ label, count, on: !!on });
+    const preset = (label, on) => ({ label, style: 'min-height: 26px; padding: 0 8px; border-radius: 2px; font-family: inherit; font-size: 11px; cursor: pointer; border: 1px solid ' + (on ? '#3D6FD0' : '#3A3E46') + '; background: ' + (on ? '#22304A' : 'transparent') + '; color: ' + (on ? '#CFE0FF' : '#C9CDD3') });
+
+    return {
+      nav: [navItem('特効', 'Matrix.dc.html', 'matrix', true), navItem('ボード', 'Main.dc.html', 'board'), navItem('取込', 'Import.dc.html', 'import'), navItem('定義', 'PlanEditor.dc.html', 'plan'), navItem('差分', 'Drift.dc.html', 'diff'), navItem('設定', '#', 'gear')],
+      presets: [preset('E2-3の特効候補'), preset('未割当の特効駆逐', true), preset('サブ艦だけ')],
+      facets: [
+        { title: '割当状態', items: [item('未割当', 18, true), item('割当済み', 28, true), item('他札の方が有利', 6, true)] },
+        { title: '札', items: [item('第三十一戦隊', 9, true), item('多号作戦部隊', 7, true), item('連合艦隊', 12, true), item('ウルシー攻撃部隊', 10, true)] },
+        { title: '特効がある段階（いずれか）', items: [item('E2-1 輸送', 21), item('E2-2', 30), item('E2-3', 34, true), item('E3-1', 29), item('E3-4', 33, true)] },
+        { title: '艦種', items: [item('駆逐', 32, true), item('軽巡', 6), item('重巡級', 4), item('戦艦級', 5), item('空母', 6)] },
+        { title: '同名艦', items: [item('本命（最高Lv）', 61, true), item('サブ艦', 14, true)] }
+      ],
+      chips: [{ label: '駆逐' }, { label: 'E2-3 または E3-4 で特効' }, { label: '×1.15以上' }, { label: 'Lv80以上' }],
+      shown: ships.length, total: 75,
+      fudas: fudaHead, subHeads, rows, colCount,
+      totals: totals.map(t => ({ ...t, style: 'display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-height: 40px; padding: 4px 10px; background: #1F2126; color: #E4E6EA; border: 1px solid #2A2D33; border-top: 3px solid ' + t.color + '; border-radius: 3px; font-family: inherit; cursor: pointer' })),
+      suggestions: [
+        { title: '初霜改二 → 連合艦隊', body: 'E2-3で連合艦隊C群（×1.27）。第三十一戦隊より評価が+60。31戦隊側の穴は未割当の雪風改（サブ, ×1.09/×1.12）で埋められます。' },
+        { title: '朝霜改二（サブ）→ 第三十一戦隊', body: '未割当のサブ艦。31戦隊はE1とE3-2の特効があり、本命を他の札に回す余裕が生まれます。' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

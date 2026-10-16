@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>計画と実際の札</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a{color:#6AA8FF}a:hover{color:#9CC5FF}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+
+  <div style="flex: 0 0 64px; align-self: stretch; min-height: 100vh"><dc-import name="SideNav" active="差分" role="{{role}}" hint-size="64px,100%"></dc-import></div>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 700">計画と実際の札</h1>
+      <span role="group" aria-label="見え方の確認（モック用）" style="display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 8px; border: 1px dashed #4A4F58; border-radius: 4px">
+        <span style="font-size: 10px; color: #9AA0AA; margin-right: 2px">見え方の確認</span>
+        <sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="3">
+          <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.on}}" style="{{r.style}}">{{r.label}}</button>
+        </sc-for>
+      </span>
+      <span style="font-size: 13px; font-weight: 700; color: #E4E6EA; padding: 2px 10px; background: #26292F; border: 1px solid #3A3E46; border-radius: 4px">2026夏イベ</span>
+      <span style="font-size: 12px; color: #9AA0AA">10/15 20:40 に取り込んだ札の状態と、計画を比べています</span>
+      <span style="flex: 1 1 40px"></span>
+      <a href="Import.dc.html" style="display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; background: #3D6FD0; color: #FFFFFF; border-radius: 4px; text-decoration: none; font-size: 12px">最新の状態を取り込む</a>
+    </div>
+
+    <div style="padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 1120px">
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px">
+        <sc-for list="{{summary}}" as="x" hint-placeholder-count="4">
+          <div style="{{x.style}}">
+            <span style="font-size: 26px; font-weight: 700; font-family: Consolas, monospace">{{x.n}}</span>
+            <span style="font-size: 12px">{{x.label}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <section style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+          <h2 style="margin: 0; font-size: 14px; white-space: nowrap">対応が必要 {{issues.length}}件</h2>
+          <span style="flex: 1 1 20px"></span>
+          <sc-if value="{{canBulk}}" hint-placeholder-val="{{true}}">
+            <button type="button" onClick="{{openBulk}}" style="min-height: 34px; padding: 0 14px; background: #E8B04B; color: #101114; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer">計画をまとめて実際に合わせる</button>
+          </sc-if>
+        </div>
+        <sc-if value="{{bulkOpen}}" hint-placeholder-val="{{false}}">
+          <div role="alertdialog" aria-label="まとめて合わせる確認" style="display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: #2A2416; border: 1px solid #7A6230; border-radius: 6px">
+            <span style="font-weight: 700; color: #F2C98A">次の変更を計画に反映します。合わせないものはチェックを外してください</span>
+            <sc-for list="{{bulkRows}}" as="b" hint-placeholder-count="3">
+              <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 8px; background: #1F2126; border-radius: 4px; cursor: pointer">
+                <input type="checkbox" checked="{{b.on}}" onChange="{{b.toggle}}" style="width: 18px; height: 18px; accent-color: #E8B04B">
+                <span style="font-weight: 700; min-width: 90px">{{b.name}}</span>
+                <span style="font-size: 12px; color: #C9CDD3">{{b.change}}</span>
+              </label>
+            </sc-for>
+            <span style="font-size: 11px; color: #D9CFB8">実際に付いた札が正しいものとして計画を書き換えます。札が抜けた枠は空いたままになるので、あとで割り振り画面で埋めてください</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <button type="button" onClick="{{applyBulk}}" disabled="{{noneChecked}}" style="{{applyStyle}}">{{applyLabel}}</button>
+              <button type="button" onClick="{{closeBulk}}" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">やめる</button>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{doneMsg}}" hint-placeholder-val="{{false}}">
+          <div role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 14px; background: #17291F; border: 1px solid #2E6B4A; border-radius: 6px; font-size: 12px; color: #BFE8D0">
+            <span style="flex: 1 1 auto">{{doneMsg}}</span>
+            <button type="button" onClick="{{undo}}" style="min-height: 30px; padding: 0 10px; background: transparent; color: #BFE8D0; border: 1px solid #2E6B4A; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">元に戻す</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{allDone}}" hint-placeholder-val="{{false}}">
+          <div style="padding: 14px; background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px; font-size: 13px; color: #9AA0AA">対応が必要なものはありません</div>
+        </sc-if>
+        <sc-for list="{{issues}}" as="i" hint-placeholder-count="3">
+          <article style="{{i.boxStyle}}">
+            <div style="flex: 1 1 360px; display: flex; flex-direction: column; gap: 8px">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+                <span style="{{i.bannerStyle}}">{{i.name}}</span>
+                <span style="{{i.fromStyle}}">{{i.from}}</span>
+                <span aria-hidden="true" style="color: #9AA0AA">→</span>
+                <span style="{{i.toStyle}}">{{i.to}}</span>
+              </div>
+              <span style="font-size: 13px; line-height: 1.6; color: #D7DADF">{{i.text}}</span>
+            </div>
+            <div style="flex: 0 1 auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+              <sc-for list="{{i.actions}}" as="a" hint-placeholder-count="2">
+                <button type="button" onClick="{{a.pick}}" style="{{a.style}}">{{a.label}}</button>
+              </sc-for>
+            </div>
+          </article>
+        </sc-for>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-size: 14px">札ごとの進み具合</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px">
+          <sc-for list="{{progress}}" as="p" hint-placeholder-count="5">
+            <div style="background: #1F2126; border: 1px solid #2A2D33; border-radius: 6px; overflow: hidden">
+              <div style="{{p.headStyle}}">{{p.name}}</div>
+              <div style="padding: 8px 10px; display: flex; flex-direction: column; gap: 6px">
+                <div style="display: flex; height: 10px; border-radius: 2px; overflow: hidden; background: #2A2D33">
+                  <span style="{{p.okBar}}"></span><span style="{{p.waitBar}}"></span>
+                </div>
+                <span style="font-size: 12px; color: #C9CDD3">札付き {{p.done}} ／ 計画 {{p.plan}}隻</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":980}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { role: 'admin', done: [], lastDone: [], bulkOpen: false, checked: { naga: true, choukai: true, suzu: true } }; }
+  renderVals() {
+    const roleOpts = [['user', '一般'], ['collab', '協力者'], ['admin', '管理者']].map(([k, label]) => ({
+      label, on: this.state.role === k, pick: () => this.setState({ role: k }),
+      style: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.role === k ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state.role === k ? '#FFFFFF' : '#C9CDD3')
+    }));
+    const icons = {
+      assign: 'M4 7h9M4 12h6M4 17h9M15 9l5 5-5 5',
+      board: 'M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v13h-4z',
+      import: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+      plan: 'M5 3h10l4 4v14H5zM9 12h6M9 16h6',
+      diff: 'M7 4v16M17 4v16M3 8h8M13 16h8',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3'
+    };
+    const navItem = (label, href, icon, on) => ({ label, href, icon: icons[icon], style: 'display: flex; flex-direction: column; align-items: center; gap: 2px; width: 52px; min-height: 48px; justify-content: center; border-radius: 4px; text-decoration: none; color: ' + (on ? '#FFFFFF' : '#9AA0AA') + '; background: ' + (on ? '#2C3A52' : 'transparent') });
+    const F = {
+      s31: { name: '第三十一戦隊', color: '#8B93A1', ink: '#101114' },
+      tago: { name: '多号作戦部隊', color: '#5FB0E8', ink: '#101114' },
+      rengo: { name: '連合艦隊', color: '#4C8DF6', ink: '#FFFFFF' },
+      ulithi: { name: 'ウルシー攻撃部隊', color: '#3FB37F', ink: '#101114' },
+      sixth: { name: '第六艦隊', color: '#A97EF0', ink: '#101114' },
+      none: { name: '札なし（計画外）', color: '#3A3E46', ink: '#E4E6EA' }
+    };
+    const chip = (k) => 'font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 3px; background: ' + F[k].color + '; color: ' + F[k].ink;
+    const btn = (primary) => 'min-height: 34px; padding: 0 12px; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer; ' + (primary ? 'background: #3D6FD0; color: #FFFFFF; border: 0;' : 'background: transparent; color: #C9CDD3; border: 1px solid #3A3E46;');
+    const issue = (id, name, from, to, text, actions, severe) => ({
+      id, name, change: '計画 ' + F[from].name + ' → ' + F[to].name, from: F[from].name, to: F[to].name, text, actions: actions.map((a, i) => ({ label: a, style: btn(i === 0), pick: /計画/.test(a) ? () => this.setState({ done: [...this.state.done, id], lastDone: [id], bulkOpen: false }) : () => {} })),
+      fromStyle: chip(from) + '; opacity: 0.6; text-decoration: line-through',
+      toStyle: chip(to),
+      bannerStyle: 'display: inline-flex; align-items: center; min-height: 30px; min-width: 120px; padding: 0 10px; border-radius: 3px; background: #2C2F36; font-weight: 700; box-shadow: inset 4px 0 0 ' + F[to].color,
+      boxStyle: 'display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 14px; background: #1F2126; border: 1px solid ' + (severe ? '#7A3A36' : '#2A2D33') + '; border-radius: 6px; box-shadow: inset 3px 0 0 ' + (severe ? '#FF8A80' : '#F0A33A')
+    });
+    const prog = (k, done, plan) => ({
+      name: F[k].name, done, plan,
+      headStyle: 'padding: 6px 10px; font-size: 13px; font-weight: 700; background: ' + F[k].color + '; color: ' + F[k].ink,
+      okBar: 'display: block; height: 100%; width: ' + Math.round(done / plan * 100) + '%; background: ' + F[k].color,
+      waitBar: 'display: block; height: 100%; flex: 1'
+    });
+    return {
+      role: this.state.role, roleOpts,
+      nav: [navItem('一覧', 'Main.dc.html', 'board'), navItem('割振', 'Assign.dc.html', 'assign'), navItem('取込', 'Import.dc.html', 'import'), navItem('差分', 'Drift.dc.html', 'diff', true), navItem('設定', '#', 'gear')],
+      summary: [
+        { n: 2, label: '計画と違う札が付いた', style: 'display: flex; flex-direction: column; padding: 10px 14px; border-radius: 6px; background: #3A2224; color: #FFB4AE; border: 1px solid #7A3A36' },
+        { n: 3, label: '計画にない艦に札が付いた', style: 'display: flex; flex-direction: column; padding: 10px 14px; border-radius: 6px; background: #2A2116; color: #F2C98A; border: 1px solid #4A3A22' },
+        { n: 12, label: '計画どおり', style: 'display: flex; flex-direction: column; padding: 10px 14px; border-radius: 6px; background: #1C2A22; color: #A8DDB5; border: 1px solid #2F5A3E' },
+        { n: 9, label: 'まだ出撃していない', style: 'display: flex; flex-direction: column; padding: 10px 14px; border-radius: 6px; background: #1F2126; color: #C9CDD3; border: 1px solid #2A2D33' }
+      ],
+      ...(() => {
+        const all = [
+        issue('naga', '長波改二', 'rengo', 'tago', '多号作戦部隊で出撃したため、連合艦隊の特効駆逐が1隻減りました（E2-3 ×1.24）。控えの浜波改なら同じ倍率で埋められます。', ['浜波改を連合艦隊へ', '計画を実際に合わせる'], true),
+        issue('choukai', '鳥海改二', 'rengo', 's31', '連合艦隊の重巡枠が空きました。E2-3 特効のある重巡は控えにいません。', ['代わりの艦を探す', '計画を実際に合わせる'], true),
+        issue('suzu', '涼風改二', 'none', 's31', '計画になかった艦に第三十一戦隊の札が付きました。', ['計画に追加する'], false)
+        ];
+        const { done, lastDone, checked, bulkOpen } = this.state;
+        const issues = all.filter(x => done.indexOf(x.id) < 0);
+        const picked = issues.filter(x => checked[x.id]);
+        return {
+          issues, canBulk: issues.length > 1, allDone: issues.length === 0 && !lastDone.length,
+          openBulk: () => this.setState({ bulkOpen: true, checked: { naga: true, choukai: true, suzu: true } }),
+          closeBulk: () => this.setState({ bulkOpen: false }),
+          bulkOpen: bulkOpen && issues.length > 0,
+          bulkRows: issues.map(x => ({ name: x.name, change: x.change, on: !!checked[x.id], toggle: () => this.setState({ checked: { ...this.state.checked, [x.id]: !this.state.checked[x.id] } }) })),
+          noneChecked: picked.length === 0,
+          applyLabel: picked.length + '件を計画に反映する',
+          applyStyle: 'min-height: 34px; padding: 0 14px; border: 0; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; ' + (picked.length ? 'background: #E8B04B; color: #101114; cursor: pointer' : 'background: #3A3426; color: #8A7F66; cursor: not-allowed'),
+          applyBulk: () => { const ids = picked.map(x => x.id); if (!ids.length) return; this.setState({ done: [...this.state.done, ...ids], lastDone: ids, bulkOpen: false }); },
+          doneMsg: lastDone.length ? lastDone.length + '件を計画に反映しました（' + all.filter(x => lastDone.indexOf(x.id) >= 0).map(x => x.name).join('・') + '）' : '',
+          undo: () => this.setState({ done: this.state.done.filter(d => this.state.lastDone.indexOf(d) < 0), lastDone: [] })
+        };
+      })(),
+      progress: [prog('s31', 9, 10), prog('tago', 5, 6), prog('rengo', 4, 12), prog('ulithi', 0, 11), prog('sixth', 0, 6)]
+    };
+  }
+}
+</script>
+</body>
+</html>

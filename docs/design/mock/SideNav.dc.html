@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>左メニュー</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#101114}
+</style>
+</helmet>
+<div style="height: 100%">
+<nav aria-label="メインメニュー" style="width: 64px; min-height: 100vh; height: 100%; box-sizing: border-box; background: #101114; border-right: 1px solid #2A2D33; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif">
+  <a href="Home.dc.html" aria-label="ホームへ" title="ホームへ" aria-current="{{homeCurrent}}" style="{{homeStyle}}">札</a>
+  <sc-for list="{{items}}" as="n" hint-placeholder-count="8">
+    <sc-if value="{{n.isDivider}}" hint-placeholder-val="{{false}}">
+      <span style="display: flex; flex-direction: column; align-items: center; width: 52px; margin: 8px 0 2px; padding-top: 8px; border-top: 1px solid #3A3E46">
+        <span style="font-size: 9px; font-weight: 700; color: #101114; background: #F0A33A; padding: 0 5px; border-radius: 2px">管理</span>
+      </span>
+    </sc-if>
+    <sc-if value="{{n.isButton}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{n.open}}" aria-label="{{n.label}}" aria-haspopup="dialog" style="{{n.style}}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="{{n.icon}}"></path></svg>
+        <span style="font-size: 10px">{{n.label}}</span>
+      </button>
+    </sc-if>
+    <sc-if value="{{n.isLink}}" hint-placeholder-val="{{true}}">
+      <a href="{{n.href}}" aria-label="{{n.label}}" aria-current="{{n.current}}" style="{{n.style}}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="{{n.icon}}"></path></svg>
+        <span style="font-size: 10px">{{n.label}}</span>
+      </a>
+    </sc-if>
+  </sc-for>
+</nav>
+<sc-if value="{{open}}" hint-placeholder-val="{{false}}">
+  <div onClick="{{close}}" style="position: fixed; inset: 0; z-index: 1000; background: rgba(8, 9, 11, 0.72); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; box-sizing: border-box; overflow-y: auto; font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif">
+    <div role="dialog" aria-modal="true" aria-label="設定" onClick="{{stop}}" style="width: 100%; max-width: 760px; background: #16171B; border: 1px solid #3A3E46; border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); color: #E4E6EA">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #2A2D33">
+        <h1 style="margin: 0; font-size: 15px; font-weight: 700">設定</h1>
+        <span style="flex: 1 1 auto; font-size: 12px; color: #9AA0AA">表示などの設定はこのブラウザに保存されます</span>
+        <button type="button" onClick="{{close}}" aria-label="閉じる" style="width: 36px; height: 36px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-size: 18px; line-height: 1; cursor: pointer">×</button>
+      </div>
+      <div style="padding: 16px">
+        <dc-import name="SettingsDialog" role="{{role}}" hint-size="100%,auto"></dc-import>
+      </div>
+      <div style="display: flex; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid #2A2D33">
+        <button type="button" onClick="{{close}}" style="min-height: 36px; padding: 0 18px; background: #3D6FD0; color: #FFFFFF; border: 0; border-radius: 4px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer">閉じる</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"active":{"editor":"text","default":"一覧"},"role":{"editor":"enum","options":["user","collab","admin"],"default":"admin"},"open":{"editor":"boolean","default":false},"$preview":{"width":64,"height":640}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { open: props && (props.open === true || props.open === 'true') }; }
+  renderVals() {
+    const active = this.props.active ?? '一覧';
+    const role = this.props.role ?? 'admin';
+    const icons = {
+      board: 'M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v13h-4z',
+      assign: 'M4 7h9M4 12h6M4 17h9M15 9l5 5-5 5',
+      import: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+      plan: 'M5 3h10l4 4v14H5zM9 12h6M9 16h6',
+      diff: 'M7 4v16M17 4v16M3 8h8M13 16h8',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3',
+      users: 'M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20c0-3 3-5 6-5s6 2 6 5M16 5a3 3 0 0 1 0 6M18 15c2 .5 4 2 4 5'
+    };
+    const link = (label, href, icon) => {
+      const on = label === active;
+      return {
+        isLink: true, isButton: false, isDivider: false, label, href, icon: icons[icon], current: on ? 'page' : 'false',
+        style: 'display: flex; flex-direction: column; align-items: center; gap: 2px; width: 52px; min-height: 48px; justify-content: center; border-radius: 4px; text-decoration: none; color: ' + (on ? '#FFFFFF' : '#9AA0AA') + '; background: ' + (on ? '#2C3A52' : 'transparent')
+      };
+    };
+    // 一般の画面（設定を含む）は全員。管理の下はログイン中の権限で出し分け
+    const items = [link('一覧', 'Main.dc.html', 'board'), link('割振', 'Assign.dc.html', 'assign'), link('取込', 'Import.dc.html', 'import'), link('差分', 'Drift.dc.html', 'diff'), { ...link('設定', '', 'gear'), isLink: false, isButton: true, style: link('設定', '', 'gear').style + '; border: 0; cursor: pointer; font-family: inherit; padding: 0', open: () => this.setState({ open: true }) }];
+    if (role === 'collab' || role === 'admin') {
+      items.push({ isDivider: true, isLink: false, isButton: false }, link('定義', 'PlanEditor.dc.html', 'plan'));
+    }
+    if (role === 'admin') {
+      items.push(link('協力者', 'Collaborators.dc.html', 'users'));
+    }
+    const onHome = active === 'ホーム';
+    return { items, role, homeCurrent: onHome ? 'page' : 'false',
+      homeStyle: 'display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin: 0 0 8px; border-radius: 6px; font-weight: 700; font-size: 17px; text-decoration: none; color: #E8B04B; ' + (onHome ? 'background: #2C3A52; box-shadow: inset 0 0 0 1px #E8B04B;' : 'background: transparent; box-shadow: inset 0 0 0 1px #3A3E46;'), open: this.state.open, close: () => this.setState({ open: false }), stop: (e) => e.stopPropagation() };
+  }
+}
+</script>
+</body>
+</html>

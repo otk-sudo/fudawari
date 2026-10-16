@@ -1,0 +1,71 @@
+/*
+ * 色・文字・角丸の CSS 変数。
+ *
+ * ダーク／ライトの切り替え：
+ * - <html data-theme="dark"> ならダーク、<html data-theme="light"> ならライト
+ * - data-theme がなければ端末の設定（prefers-color-scheme）に従う
+ *
+ * ダークの色はモック（docs/design/mock）の値。
+ * ライトの色はモックにないため、同じ役割で読みやすい値を仮に置いている（仮）。
+ * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
+ */
+
+/* 色以外（テーマで変わらない値） */
+:root {
+  /* 文字 */
+  --font-family: "Noto Sans JP", "Hiragino Sans", "Meiryo", system-ui, sans-serif;
+  --font-size-base: 13px;
+
+  /* 角丸：基本は 2〜4px。ウィンドウなど一部だけ大きめ */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+}
+
+/* ダーク（既定。モックの値） */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: #16171b; /* 下地 */
+  --color-surface: #1f2126; /* 面 */
+  --color-border: #2a2d33; /* 枠 */
+  --color-text: #e4e6ea; /* 文字 */
+  --color-text-muted: #9aa0aa; /* 補助の文字 */
+  --color-accent: #e8b04b; /* 強調の金 */
+  --color-action: #3d6fd0; /* 操作の青 */
+  --color-admin: #f0a33a; /* 管理の橙 */
+  --color-menu-bg: #101114; /* メニューの下地 */
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-bg: #f3f4f6; /* 下地（仮） */
+  --color-surface: #ffffff; /* 面（仮） */
+  --color-border: #d5d8de; /* 枠（仮） */
+  --color-text: #1c1e22; /* 文字（仮） */
+  --color-text-muted: #5c6370; /* 補助の文字（仮） */
+  --color-accent: #9a6700; /* 強調の金（仮。白地で読めるよう暗めにした） */
+  --color-action: #2f5fc4; /* 操作の青（仮） */
+  --color-admin: #a85a00; /* 管理の橙（仮。白地で読めるよう暗めにした） */
+  --color-menu-bg: #e6e8ec; /* メニューの下地（仮） */
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --color-bg: #f3f4f6; /* 下地（仮） */
+    --color-surface: #ffffff; /* 面（仮） */
+    --color-border: #d5d8de; /* 枠（仮） */
+    --color-text: #1c1e22; /* 文字（仮） */
+    --color-text-muted: #5c6370; /* 補助の文字（仮） */
+    --color-accent: #9a6700; /* 強調の金（仮） */
+    --color-action: #2f5fc4; /* 操作の青（仮） */
+    --color-admin: #a85a00; /* 管理の橙（仮） */
+    --color-menu-bg: #e6e8ec; /* メニューの下地（仮） */
+  }
+}

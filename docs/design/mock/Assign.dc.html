@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>割り振り</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#16171B}
+a{color:#6AA8FF}a:hover{color:#9CC5FF}
+</style>
+</helmet>
+<div style="font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif; color: #E4E6EA; background: #16171B; min-height: 100vh; font-size: 13px; display: flex; flex-wrap: wrap">
+
+  <div style="flex: 0 0 64px; align-self: stretch; min-height: 100vh"><dc-import name="SideNav" active="割振" role="{{role}}" hint-size="64px,100%"></dc-import></div>
+
+  <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: #1F2126; border-bottom: 1px solid #2A2D33">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 700">割り振り</h1>
+      <span role="group" aria-label="見え方の確認（モック用）" style="display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 8px; border: 1px dashed #4A4F58; border-radius: 4px">
+        <span style="font-size: 10px; color: #9AA0AA; margin-right: 2px">見え方の確認</span>
+        <sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="3">
+          <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.on}}" style="{{r.style}}">{{r.label}}</button>
+        </sc-for>
+      </span>
+      <span style="font-size: 13px; font-weight: 700; color: #E4E6EA; padding: 2px 10px; background: #26292F; border: 1px solid #3A3E46; border-radius: 4px">2026夏イベ</span>
+      <span style="font-size: 12px; color: #9AA0AA">ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
+      <span style="font-size: 12px; color: #9AA0AA">特効データ：2026/08/04 版</span>
+      <span style="flex: 1 1 40px"></span>
+      <button type="button" style="min-height: 34px; padding: 0 12px; background: transparent; color: #C9CDD3; border: 1px solid #3A3E46; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">元に戻す</button>
+      <a href="Main.dc.html" style="display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; background: #3D6FD0; color: #FFFFFF; border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 700">一覧で確認</a>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 14px 16px; align-items: flex-start">
+
+      <section aria-label="控えの艦" onDragOver="{{trayAllow}}" onDrop="{{trayDrop}}" style="{{trayStyle}}">
+        <div style="padding: 10px 12px 0; display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; justify-content: space-between; align-items: baseline">
+            <h2 style="margin: 0; font-size: 14px">控え</h2>
+            <span style="display: flex; align-items: center; gap: 8px">
+              <span style="font-size: 12px; color: #9AA0AA">{{shown}} / {{trayCount}}隻</span>
+              <span role="group" aria-label="表示の詰め具合" style="display: flex">
+                <sc-for list="{{viewOpts}}" as="v" hint-placeholder-count="2">
+                  <button type="button" onClick="{{v.pick}}" aria-pressed="{{v.on}}" style="{{v.style}}">{{v.label}}</button>
+                </sc-for>
+              </span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #4A6A9A">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6AA8FF" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M16 16l4 4"></path></svg>
+            <input type="search" aria-label="図鑑ID・名称で検索" placeholder="図鑑ID 名称検索" style="flex: 1; min-height: 32px; padding: 0 4px; background: transparent; color: #E4E6EA; border: 0; font-family: inherit; font-size: 13px">
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px">
+            <button type="button" onClick="{{toggleFilter}}" aria-expanded="{{filterOpen}}" style="{{filterBtnStyle}}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8z"></path></svg>
+              絞り込み<sc-if value="{{filterCount}}" hint-placeholder-val="{{false}}"><span style="font-size: 10px; background: #6AA8FF; color: #101114; border-radius: 8px; padding: 0 5px">{{filterCount}}</span></sc-if>
+            </button>
+            <button type="button" onClick="{{resetAll}}" style="min-height: 32px; padding: 0 8px; background: transparent; color: #C9CDD3; border: 0; font-family: inherit; font-size: 12px; cursor: pointer">リセット</button>
+            <span style="flex: 1"></span>
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: #9AA0AA">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h10M4 12h7M4 18h4M17 4v16M14 17l3 3 3-3"></path></svg>
+              <select aria-label="並び順" onChange="{{pickSort}}" style="min-height: 30px; background: #16171B; color: #E4E6EA; border: 0; border-bottom: 1px solid #5A606A; font-family: inherit; font-size: 12px">
+                <sc-for list="{{sortOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.value}}" selected="{{o.on}}">{{o.label}}</option></sc-for>
+              </select>
+            </label>
+          </div>
+
+          <sc-if value="{{filterOpen}}" hint-placeholder-val="{{false}}">
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 10px; background: #16171B; border: 1px solid #2E3138; border-radius: 4px">
+              <sc-for list="{{filterGroups}}" as="g" hint-placeholder-count="3">
+                <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 4px">
+                  <legend style="padding: 0 0 4px; font-size: 11px; color: #9AA0AA; border-bottom: 1px solid #2A2D33; width: 100%">{{g.title}}</legend>
+                  <div style="display: flex; flex-wrap: wrap; gap: 2px 12px">
+                    <sc-for list="{{g.items}}" as="i" hint-placeholder-count="3">
+                      <label style="display: flex; align-items: center; gap: 5px; min-height: 26px; font-size: 12px; cursor: pointer">
+                        <input type="checkbox" checked="{{i.on}}" onChange="{{i.toggle}}" style="width: 15px; height: 15px; margin: 0; accent-color: #3D8BFD">{{i.label}}
+                      </label>
+                    </sc-for>
+                  </div>
+                </fieldset>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <div role="tablist" aria-label="艦種" style="display: flex; flex-wrap: wrap; gap: 0 2px; margin: 0 -4px; border-bottom: 1px solid #2A2D33">
+            <sc-for list="{{typeTabs}}" as="t" hint-placeholder-count="13">
+              <button type="button" role="tab" aria-selected="{{t.on}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <sc-if value="{{anyOpen}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 8px 0; padding: 4px 4px 4px 10px; background: #1E2633; border: 1px solid #34507A; border-radius: 4px">
+            <span style="font-size: 12px; color: #CFE0FF">特効を表示中：{{openCount}}隻</span>
+            <button type="button" onClick="{{closeAll}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 10px; background: #2C3A52; color: #FFFFFF; border: 1px solid #4A6A9A; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>すべて閉じる
+            </button>
+          </div>
+        </sc-if>
+        <div style="padding: 4px 8px 8px; display: flex; flex-direction: column; max-height: 760px; overflow-y: auto; overscroll-behavior: contain">
+          <sc-for list="{{trayGroups}}" as="g" hint-placeholder-count="3">
+            <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 6px">
+              <button type="button" onClick="{{g.toggle}}" aria-expanded="{{g.openGroup}}" style="position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding: 0 4px; background: #1F2126; color: #C9CDD3; border: 0; border-bottom: 1px solid #2A2D33; font-family: inherit; font-size: 12px; text-align: left; cursor: pointer">
+                <span aria-hidden="true" style="color: #9AA0AA; width: 10px">{{g.chev}}</span>
+                <span style="flex: 1">{{g.title}}</span>
+                <span style="font-family: Consolas, monospace; font-size: 11px; color: #9AA0AA">{{g.count}}隻</span>
+              </button>
+              <sc-if value="{{g.openGroup}}" hint-placeholder-val="{{true}}">
+              <ul style="{{g.ulStyle}}">
+                <sc-for list="{{g.cards}}" as="c" hint-placeholder-count="2">
+                  <li draggable="true" onDragStart="{{c.dragStart}}" onDragEnd="{{c.dragEnd}}" onDragOver="{{c.allowDrop}}" onDrop="{{c.dropOn}}" style="{{c.liStyle}}">
+                    <dc-import name="ShipCard" card="{{c}}" hint-size="100%,32px"></dc-import>
+                    <sc-if value="{{c.swapHint}}" hint-placeholder-val="{{false}}"><span style="position: absolute; top: -8px; right: 6px; font-size: 11px; font-weight: 700; color: #101114; background: #6AA8FF; padding: 1px 8px; border-radius: 10px; pointer-events: none">⇄ 入れ替え</span></sc-if>
+                  </li>
+                </sc-for>
+              </ul>
+              </sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{trayEmpty}}" hint-placeholder-val="{{false}}"><span style="padding: 16px 4px; font-size: 12px; color: #6B717C; text-align: center">条件に合う艦はいません</span></sc-if>
+        </div>
+      </section>
+
+      <div style="flex: 999 1 420px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: start">
+        <sc-for list="{{columns}}" as="col" hint-placeholder-count="5">
+          <section onDragOver="{{col.allowDrop}}" onDrop="{{col.drop}}" style="{{col.boxStyle}}">
+            <div style="{{col.headStyle}}">
+              <span style="font-size: 14px; font-weight: 700">{{col.name}}</span>
+              <span style="font-size: 11px; opacity: 0.9">{{col.phases}} ／ {{col.count}}隻</span>
+            </div>
+            <sc-if value="{{col.showPlace}}" hint-placeholder-val="{{false}}">
+              <button type="button" onClick="{{col.place}}" style="{{col.placeStyle}}">{{col.placeLabel}}</button>
+            </sc-if>
+            <ul style="list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px">
+              <sc-for list="{{col.cards}}" as="c" hint-placeholder-count="4">
+                <li draggable="true" onDragStart="{{c.dragStart}}" onDragEnd="{{c.dragEnd}}" onDragOver="{{c.allowDrop}}" onDrop="{{c.dropOn}}" style="{{c.liStyle}}">
+                  <dc-import name="ShipCard" card="{{c}}" hint-size="100%,58px"></dc-import>
+                  <sc-if value="{{c.swapHint}}" hint-placeholder-val="{{false}}"><span style="position: absolute; top: -8px; right: 6px; font-size: 11px; font-weight: 700; color: #101114; background: #6AA8FF; padding: 1px 8px; border-radius: 10px; pointer-events: none">⇄ 入れ替え</span></sc-if>
+                </li>
+              </sc-for>
+              <sc-if value="{{col.moveHint}}" hint-placeholder-val="{{false}}">
+                <li style="padding: 12px; border: 2px dashed #6AA8FF; border-radius: 5px; text-align: center; font-size: 12px; color: #CFE0FF; pointer-events: none">ここに移動</li>
+              </sc-if>
+            </ul>
+          </section>
+        </sc-for>
+      </div>
+
+      <aside style="flex: 1 1 300px; max-width: 340px; display: flex; flex-direction: column; gap: 10px">
+        <sc-if value="{{detail}}" hint-placeholder-val="{{true}}">
+          <section aria-label="選択中の艦" style="background: #1F2126; border: 1px solid #34507A; border-radius: 6px; overflow: hidden">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; background: #22304A">
+              <div style="display: flex; flex-direction: column">
+                <span style="font-size: 16px; font-weight: 700">{{detail.name}}</span>
+                <span style="font-size: 12px; color: #B9C8E0">{{detail.type}} ・ Lv{{detail.lv}} ・ いま：{{detail.now}}</span>
+              </div>
+              <button type="button" onClick="{{clearSel}}" aria-label="選択をやめる" style="width: 32px; height: 32px; background: transparent; color: #CFE0FF; border: 1px solid #4A6A9A; border-radius: 4px; font-family: inherit; font-size: 14px; cursor: pointer">×</button>
+            </div>
+
+            <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+              <span style="font-size: 12px; color: #9AA0AA">この艦の特効（効く札の順）</span>
+              <sc-for list="{{detail.blocks}}" as="b" hint-placeholder-count="3">
+                <div style="{{b.boxStyle}}">
+                  <div style="display: flex; align-items: center; gap: 8px">
+                    <span style="{{b.dot}}" aria-hidden="true"></span>
+                    <span style="flex: 1; font-weight: 700">{{b.name}}</span>
+                    <span style="font-family: Consolas, monospace; font-size: 13px; color: #E8B04B">+{{b.score}}</span>
+                  </div>
+                  <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px">
+                    <sc-for list="{{b.lines}}" as="l" hint-placeholder-count="2">
+                      <li style="display: flex; align-items: center; gap: 6px; font-size: 12px">
+                        <span style="flex: 1">{{l.label}}</span>
+                        <sc-if value="{{l.type}}" hint-placeholder-val="{{false}}"><span style="font-size: 11px; color: #9AA0AA">艦種 {{l.type}}</span></sc-if>
+                        <span style="font-family: Consolas, monospace; font-weight: 700; color: #101114; background: #E8B04B; padding: 0 6px; border-radius: 2px">{{l.mult}}</span>
+                      </li>
+                    </sc-for>
+                  </ul>
+                  <sc-if value="{{b.canPlace}}" hint-placeholder-val="{{true}}">
+                    <button type="button" onClick="{{b.place}}" style="{{b.btnStyle}}">{{b.btnLabel}}</button>
+                  </sc-if>
+                  <sc-if value="{{b.isHere}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; color: #6AA8FF">いまこの札にいます</span></sc-if>
+                </div>
+              </sc-for>
+              <sc-if value="{{detail.none}}" hint-placeholder-val="{{true}}">
+                <span style="font-size: 12px; color: #6B717C">特効なし：{{detail.none}}</span>
+              </sc-if>
+            </div>
+          </section>
+        </sc-if>
+
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1300}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      role: 'admin',
+      sel: 'hatsushimo',
+      open: { hatsushimo: true },
+      dense: true,
+      folded: {},
+      tab: 'ALL',
+      sort: 'class',
+      filterOpen: true,
+      f: { stage: { none: true, mid: true, final: true }, boostOnly: true, fudas: [] },
+      assign: {
+        hatsushimo: 's31', fuyuzuki: 's31',
+        okinami: 'tago', asashimo: 'tago', kasumi: 'tago',
+        yukikaze: 'rengo', naganami: 'rengo', shigure2: 'rengo', ushio: 'rengo', kitakami: 'rengo', yahagi: 'rengo', nagato: 'rengo', zuikaku: 'rengo',
+        shigure: 'ulithi', shiranui: 'ulithi', yamato: 'ulithi',
+        i41: 'sixth'
+      }
+    };
+  }
+  renderVals() {
+    const roleOpts = [['user', '一般'], ['collab', '協力者'], ['admin', '管理者']].map(([k, label]) => ({
+      label, on: this.state.role === k, pick: () => this.setState({ role: k }),
+      style: 'min-height: 26px; padding: 0 8px; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; border: 0; background: ' + (this.state.role === k ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state.role === k ? '#FFFFFF' : '#C9CDD3')
+    }));
+    const icons = {
+      board: 'M3 4h5v16H3zM10 4h5v10h-5zM17 4h4v13h-4z',
+      assign: 'M4 7h9M4 12h6M4 17h9M15 9l5 5-5 5',
+      import: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+      plan: 'M5 3h10l4 4v14H5zM9 12h6M9 16h6',
+      diff: 'M7 4v16M17 4v16M3 8h8M13 16h8',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3'
+    };
+    const navItem = (label, href, icon, on) => ({ label, href, icon: icons[icon], style: 'display: flex; flex-direction: column; align-items: center; gap: 2px; width: 52px; min-height: 48px; justify-content: center; border-radius: 4px; text-decoration: none; color: ' + (on ? '#FFFFFF' : '#9AA0AA') + '; background: ' + (on ? '#2C3A52' : 'transparent') });
+
+    // ===== イベント定義（イベントごとに設定。ここでは2026夏 前段の定義を読み込んだ想定） =====
+    const fudas = [
+      { key: 's31', name: '第三十一戦隊', color: '#8B93A1', ink: '#101114', phaseLabel: 'E1・ギミック・E3-2' },
+      { key: 'tago', name: '多号作戦部隊', color: '#5FB0E8', ink: '#101114', phaseLabel: 'E2-1' },
+      { key: 'rengo', name: '連合艦隊', color: '#4C8DF6', ink: '#FFFFFF', phaseLabel: 'E2-2・E2-3' },
+      { key: 'ulithi', name: 'ウルシー攻撃部隊', color: '#3FB37F', ink: '#101114', phaseLabel: 'E3-1・E3-4' },
+      { key: 'sixth', name: '第六艦隊', color: '#A97EF0', ink: '#101114', phaseLabel: 'E3-3' },
+      { key: 'fr3', name: '仏第3艦隊', color: '#2BB3B1', ink: '#101114', phaseLabel: 'E4-1・E4ギミック・E4-2' },
+      { key: 'frmed', name: '仏地中海艦隊', color: '#E07A5F', ink: '#101114', phaseLabel: 'E4-3・E4-4・E4-5' },
+      { key: 'esc2', name: '2éme Escadre Légère', color: '#C9A227', ink: '#101114', phaseLabel: 'E5-1・E5ギミック' },
+      { key: 'ukrelief', name: 'イギリス救援艦隊', color: '#D16BA5', ink: '#101114', phaseLabel: 'E5-2 輸送' },
+      { key: 'raid', name: 'Force de Raid', color: '#B5651D', ink: '#FFFFFF', phaseLabel: 'E5-3・E5ギミック' },
+      { key: 'forceh', name: 'Force H', color: '#6C5CE7', ink: '#FFFFFF', phaseLabel: 'E5ギミック' },
+      { key: 'eurocomb', name: '欧州連合艦隊', color: '#E5484D', ink: '#FFFFFF', phaseLabel: 'E5-4' }
+    ];
+    const points = [
+      { id: 'E1:sea', label: 'E1 海域全体', fuda: 's31', w: 0 },
+      { id: 'E1:road', label: 'E1 道中', fuda: 's31', w: 0 },
+      { id: 'E1', label: 'E1 各ボス', fuda: 's31', w: 1 },
+      { id: 'E2:H', label: 'E2 Hマス他', fuda: 's31', w: 1 },
+      { id: 'E2-1', label: 'E2 第一ボス', fuda: 'tago', w: 1 },
+      { id: 'E2-2', label: 'E2 第二ボス', fuda: 'rengo', w: 2 },
+      { id: 'E2-3', label: 'E2 第三ボス', fuda: 'rengo', w: 3 },
+      { id: 'E3-1', label: 'E3 第一ボス', fuda: 'ulithi', w: 1 },
+      { id: 'E3-2', label: 'E3 第二ボス', fuda: 's31', w: 1 },
+      { id: 'E3-3', label: 'E3 第三ボス', fuda: 'sixth', w: 2 },
+      { id: 'E3-4', label: 'E3 第四ボス', fuda: 'ulithi', w: 3 }
+    ];
+    const A31 = { 'E1:sea': 1.03, 'E1:road': 1.06, 'E1': 1.09, 'E2:H': 1.08, 'E3-2': 1.12 };
+    const B31 = { 'E1:sea': 1.06, 'E1:road': 1.16, 'E1': 1.21, 'E2:H': 1.16, 'E3-2': 1.16 };
+    const RA = { 'E2-2': 1.14, 'E2-3': 1.18, 'E3-1': 1.08, 'E3-4': 1.08 };
+    const RB = { 'E2-2': 1.19, 'E2-3': 1.24, 'E3-1': 1.14, 'E3-4': 1.14 };
+    const TAGO = { 'E2-1': 1.24 };
+    const typeBoost = {
+      '駆逐': { 'E1:sea': 1.03, 'E1:road': 1.05, 'E1': 1.07, 'E2-3': 1.11, 'E3-3': 1.12, 'E3-4': 1.1 },
+      '軽巡': { 'E1:sea': 1.05, 'E1': 1.08, 'E2-3': 1.11, 'E3-4': 1.1 },
+      '雷巡': { 'E2-3': 1.11 },
+      '航巡': { 'E1': 1.08, 'E2-3': 1.11, 'E3-4': 1.1 },
+      '戦艦': { 'E1': 1.08, 'E3-4': 1.1 },
+      '航戦': { 'E1': 1.08, 'E3-4': 1.1 },
+      '正空': { 'E2-3': 1.11, 'E3-4': 1.12 },
+      '軽空': { 'E1:sea': 1.06, 'E2-3': 1.11, 'E3-4': 1.12 },
+      '水母': { 'E3-4': 1.1 },
+      '潜母': { 'E3-3': 1.38 }
+    };
+    // ===== 所持艦（取り込んだデータ） =====
+    const ships = [
+      { id: 'shigure', name: '時雨改三', type: '駆逐', lv: 175, luck: 59, b: { ...RB } },
+      { id: 'shigure2', name: '時雨改二', type: '駆逐', lv: 98, luck: 22, sub: true, b: { ...RB } },
+      { id: 'yukikaze', name: '雪風改二', type: '駆逐', lv: 168, luck: 72, b: { ...A31, ...RB } },
+      { id: 'yukikaze2', name: '雪風改', type: '駆逐', lv: 85, luck: 55, sub: true, b: { ...A31, ...RB } },
+      { id: 'naganami', name: '長波改二', type: '駆逐', lv: 152, luck: 31, b: { ...A31, ...TAGO, ...RB } },
+      { id: 'okinami', name: '沖波改二', type: '駆逐', lv: 130, luck: 28, b: { ...A31, ...TAGO, ...RB } },
+      { id: 'asashimo', name: '朝霜改二', type: '駆逐', lv: 140, luck: 34, b: { ...A31, ...TAGO, ...RB } },
+      { id: 'asashimo2', name: '朝霜改二', type: '駆逐', lv: 92, luck: 20, sub: true, b: { ...A31, ...TAGO, ...RB } },
+      { id: 'hatsushimo', name: '初霜改二', type: '駆逐', lv: 131, luck: 48, b: { ...A31, ...TAGO, 'E2-3': 1.27 } },
+      { id: 'ushio', name: '潮改二', type: '駆逐', lv: 125, luck: 40, b: { ...A31, ...TAGO, 'E2-3': 1.27 } },
+      { id: 'fuyuzuki', name: '冬月改', type: '駆逐', lv: 120, luck: 27, b: { ...B31, ...RB } },
+      { id: 'shiranui', name: '不知火改二', type: '駆逐', lv: 145, luck: 30, b: { ...RB } },
+      { id: 'kasumi', name: '霞改二乙', type: '駆逐', lv: 150, luck: 39, b: { ...TAGO } },
+      { id: 'hamanami', name: '浜波改', type: '駆逐', lv: 110, luck: 23, b: { ...TAGO, ...RB } },
+      { id: 'isuzu', name: '五十鈴改二', type: '軽巡', lv: 140, luck: 24, b: { ...A31 } },
+      { id: 'kitakami', name: '北上改二', type: '雷巡', lv: 160, luck: 40, b: { ...B31, ...RA } },
+      { id: 'yahagi', name: '矢矧改二乙', type: '軽巡', lv: 155, luck: 45, b: { ...RA } },
+      { id: 'tone', name: '利根改二', type: '航巡', lv: 150, luck: 35, b: { 'E2-2': 1.14, 'E2-3': 1.18, 'E3-4': 1.08 } },
+      { id: 'yamato', name: '大和改二重', type: '戦艦', lv: 175, luck: 61, b: { ...RA } },
+      { id: 'nagato', name: '長門改二', type: '戦艦', lv: 170, luck: 52, b: { ...RA } },
+      { id: 'hyuga', name: '日向改二', type: '航戦', lv: 140, luck: 42, b: { ...RA } },
+      { id: 'zuikaku', name: '瑞鶴改二甲', type: '正空', lv: 165, luck: 80, b: { 'E2-3': 1.27 } },
+      { id: 'zuiho', name: '瑞鳳改二乙', type: '軽空', lv: 130, luck: 55, b: { 'E2-3': 1.27 } },
+      { id: 'akitsushima', name: '秋津洲改', type: '水母', lv: 95, luck: 20, b: { ...TAGO } },
+      { id: 'taigei', name: '大鯨', type: '潜母', lv: 80, luck: 25, b: { ...RA } },
+      { id: 'hayasui', name: '速吸改', type: '補給', lv: 90, luck: 18, b: { 'E3-1': 1.14, 'E3-4': 1.14 } },
+      { id: 'akashi', name: '明石改', type: '工作', lv: 99, luck: 12, b: { ...TAGO } },
+      { id: 'akitsumaru', name: 'あきつ丸改', type: '揚陸', lv: 88, luck: 40, b: {} },
+      { id: 'i41', name: '伊41改', type: '潜水', lv: 120, luck: 30, b: { 'E3-3': 1.38 } },
+      { id: 'i168', name: '伊168改', type: '潜水', lv: 100, luck: 63, b: { 'E3-3': 1.24 } }
+    ];
+
+    const { sel, assign } = this.state;
+    const F = Object.fromEntries(fudas.map(f => [f.key, f]));
+    const pointsOf = (fk) => points.filter(p => p.fuda === fk);
+    const score = (s, fk) => Math.round(pointsOf(fk).reduce((a, p) => a + ((s.b[p.id] || 1) - 1) * 100 * p.w, 0));
+    const bestFuda = (s) => fudas.reduce((b, f) => score(s, f.key) > score(s, b.key) ? f : b, fudas[0]);
+    const selShip = ships.find(s => s.id === sel);
+    const select = (id) => () => {
+      const open = { ...(this.state.open || {}) };
+      if (this.state.sel === id) { delete open[id]; this.setState({ sel: null, open }); }
+      else { open[id] = true; this.setState({ sel: id, open }); }
+    };
+    const placeTo = (key) => () => { if (!this.state.sel) return; this.setState({ assign: { ...this.state.assign, [this.state.sel]: key }, sel: null }); };
+
+    // ドラッグ＆ドロップ：札（または控え）へ落とすと移動、カードに重ねると入れ替え
+    const { drag, over, overCard } = this.state;
+    const clearDrag = { drag: null, over: null, overCard: null };
+    const dragId = (e) => this.state.drag || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+    const dragStart = (id) => (e) => { try { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; } catch (err) {} this.setState({ drag: id, sel: null }); };
+    const dragEnd = () => this.setState(clearDrag);
+    const allow = (key, cardId) => (e) => {
+      e.preventDefault();
+      if (cardId) e.stopPropagation();
+      const oc = cardId || null;
+      if (this.state.over !== key || this.state.overCard !== oc) this.setState({ over: key, overCard: oc });
+    };
+    const moveTo = (key) => (e) => {
+      e.preventDefault();
+      const id = dragId(e);
+      if (!id) return this.setState(clearDrag);
+      const a = { ...this.state.assign };
+      if (key === 'tray') delete a[id]; else a[id] = key;
+      this.setState({ assign: a, ...clearDrag });
+    };
+    const swapWith = (targetId) => (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const id = dragId(e);
+      if (!id || id === targetId) return this.setState(clearDrag);
+      const a = { ...this.state.assign };
+      const fa = a[id], fb = a[targetId];
+      if (fb) a[id] = fb; else delete a[id];
+      if (fa) a[targetId] = fa; else delete a[targetId];
+      this.setState({ assign: a, ...clearDrag });
+    };
+    const dndFor = (id, zone) => ({
+      dragStart: dragStart(id), dragEnd, allowDrop: allow(zone, id), dropOn: swapWith(id),
+      swapHint: !!drag && drag !== id && overCard === id,
+      liStyle: 'position: relative; cursor: grab; ' + (drag === id ? 'opacity: 0.35;' : '') + (drag && drag !== id && overCard === id ? 'outline: 2px dashed #6AA8FF; outline-offset: 2px; border-radius: 5px;' : '')
+    });
+
+    const line = (p, v, dim) => ({
+      label: p.label, mult: '×' + v.toFixed(2),
+      dot: 'flex: 0 0 8px; height: 8px; border-radius: 2px; background: ' + F[p.fuda].color,
+      rowStyle: 'display: flex; align-items: center; gap: 6px; font-size: 12px; color: ' + (dim ? '#9AA0AA' : '#E4E6EA'),
+      multStyle: dim ? 'font-family: Consolas, monospace; color: #C9B07A' : 'font-family: Consolas, monospace; font-weight: 700; color: #101114; background: #E8B04B; padding: 0 5px; border-radius: 2px'
+    });
+    const mainPoints = (s, fk) => pointsOf(fk).filter(p => p.w > 0 && s.b[p.id]);
+
+    const card = (s, inFuda) => {
+      const bf = bestFuda(s);
+      let lines, note = false, noBoost = false, stripe;
+      if (inFuda) {
+        lines = mainPoints(s, inFuda).map(p => line(p, s.b[p.id], false));
+        if (!lines.length) noBoost = 'この札では特効なし';
+        const diff = score(s, bf.key) - score(s, inFuda);
+        if (bf.key !== inFuda && diff >= 10) {
+          const top = mainPoints(s, bf.key).sort((a, b) => s.b[b.id] - s.b[a.id])[0];
+          note = bf.name + 'なら ' + top.label + ' ×' + s.b[top.id].toFixed(2);
+        }
+        stripe = F[inFuda].color;
+      } else {
+        const ranked = fudas.filter(f => score(s, f.key) > 0).sort((a, b) => score(s, b.key) - score(s, a.key));
+        lines = ranked.flatMap(f => mainPoints(s, f.key)).map(p => line(p, s.b[p.id], false));
+        if (!lines.length) noBoost = '特効なし';
+        stripe = ranked.length ? ranked[0].color : '#4A4F58';
+      }
+      return { name: s.name, type: s.type, lv: s.lv, luck: s.luck, sub: !!s.sub, selected: sel === s.id, expanded: !!(this.state.open || {})[s.id], dense: !inFuda && this.state.dense, pick: select(s.id), stripeColor: stripe, lines, hasLines: lines.length > 0, hasBoost: lines.length > 0, noBoost, note, ...dndFor(s.id, inFuda || 'tray') };
+    };
+
+    // 控えと艦種フィルタ
+    // 艦種タブ（制空権シミュレータと同じ分け方。細かい艦種はタブにまとめる）
+    const tabDefs = [
+      ['ALL', null], ['空母', ['正空', '装空']], ['軽母', ['軽空']], ['戦艦', ['戦艦']], ['航戦', ['航戦']],
+      ['重巡', ['重巡']], ['航巡', ['航巡']], ['軽巡', ['軽巡', '雷巡', '練巡']], ['駆逐', ['駆逐']], ['海防', ['海防']],
+      ['潜水', ['潜水', '潜空']], ['水母', ['水母']], ['その他', ['潜母', '揚陸', '補給', '工作']]
+    ];
+    const { tab, sort, filterOpen, f } = this.state;
+    const tabTypes = Object.fromEntries(tabDefs)[tab];
+    const stage = (s) => /改二|改三|Mk\.II/.test(s.name) ? 'final' : /改/.test(s.name) ? 'mid' : 'none';
+    const trayShips = ships.filter(s => !assign[s.id]);
+    const passes = (s) => (!tabTypes || tabTypes.includes(s.type))
+      && f.stage[stage(s)]
+      && (!f.boostOnly || fudas.some(x => score(s, x.key) > 0))
+      && (f.fudas.length === 0 || f.fudas.some(k => score(s, k) > 0));
+    const filtered = trayShips.filter(passes);
+
+    const set = (path, v) => { const nf = JSON.parse(JSON.stringify(this.state.f)); path(nf, v); this.setState({ f: nf }); };
+    const filterGroups = [
+      { title: '改造状態', items: [['none', '未改造'], ['mid', '中間改造'], ['final', '最終改造']].map(([k, label]) => ({ label, on: f.stage[k], toggle: () => set((o) => { o.stage[k] = !o.stage[k]; }) })) },
+      { title: '特効', items: [{ label: '特効のある艦だけ', on: f.boostOnly, toggle: () => set((o) => { o.boostOnly = !o.boostOnly; }) }] },
+      { title: '特効が効く札', items: fudas.map(x => ({ label: x.name, on: f.fudas.includes(x.key), toggle: () => set((o) => { o.fudas = o.fudas.includes(x.key) ? o.fudas.filter(k => k !== x.key) : [...o.fudas, x.key]; }) })) }
+    ];
+    const filterCount = (['none', 'mid', 'final'].filter(k => !f.stage[k]).length) + (f.boostOnly ? 1 : 0) + f.fudas.length;
+
+    const sortOpts = [['class', '艦型'], ['lv', 'Lv'], ['boost', '特効の強さ'], ['name', '名前']].map(([value, label]) => ({ value, label, on: sort === value }));
+    let trayGroups;
+    if (sort === 'lv') {
+      const sorted = [...filtered].sort((a, b) => b.lv - a.lv);
+      const bands = [];
+      sorted.forEach(s => { const t = 'Lv ' + Math.floor(s.lv / 10) * 10 + ' 以上'; let g = bands.find(x => x.title === t); if (!g) { g = { title: t, cards: [] }; bands.push(g); } g.cards.push(card(s, null)); });
+      trayGroups = bands;
+    } else if (sort === 'class') {
+      // 艦型・艦種ごとに見出しを付ける。並びは艦種順 → 艦型名、中はLv順
+      const classOf = {
+        shigure: '白露型', shigure2: '白露型', yukikaze: '陽炎型', yukikaze2: '陽炎型', shiranui: '陽炎型',
+        naganami: '夕雲型', okinami: '夕雲型', asashimo: '夕雲型', asashimo2: '夕雲型', hamanami: '夕雲型',
+        hatsushimo: '初春型', ushio: '綾波型', fuyuzuki: '秋月型', kasumi: '朝潮型',
+        isuzu: '長良型', kitakami: '球磨型', yahagi: '阿賀野型', tone: '利根型',
+        yamato: '大和型', nagato: '長門型', hyuga: '伊勢型', zuikaku: '翔鶴型', zuiho: '祥鳳型',
+        akitsushima: '秋津洲型', taigei: '大鯨型', hayasui: '速吸型', akashi: '明石型', akitsumaru: '特種船丙型',
+        i41: '巡潜乙型改二', i168: '海大VI型'
+      };
+      const typeRank = ['戦艦', '航戦', '正空', '装空', '軽空', '重巡', '航巡', '軽巡', '雷巡', '練巡', '駆逐', '海防', '潜水', '潜空', '水母', '潜母', '揚陸', '補給', '工作'];
+      const keyOf = (s) => classOf[s.id] || 'その他';
+      const grouped = [];
+      [...filtered].sort((a, b) => (typeRank.indexOf(a.type) - typeRank.indexOf(b.type)) || keyOf(a).localeCompare(keyOf(b), 'ja') || b.lv - a.lv)
+        .forEach(s => { const t = keyOf(s); let g = grouped.find(x => x.title === t); if (!g) { g = { title: t, cards: [] }; grouped.push(g); } g.cards.push(card(s, null)); });
+      trayGroups = grouped;
+    } else if (sort === 'boost') {
+      const by = fudas.map(x => ({ title: x.name + 'で効く', cards: filtered.filter(s => bestFuda(s).key === x.key && score(s, x.key) > 0).sort((a, b) => score(b, x.key) - score(a, x.key)).map(s => card(s, null)) }));
+      by.push({ title: '特効なし', cards: filtered.filter(s => !fudas.some(x => score(s, x.key) > 0)).map(s => card(s, null)) });
+      trayGroups = by.filter(g => g.cards.length);
+    } else {
+      trayGroups = [{ title: '名前順', cards: [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'ja')).map(s => card(s, null)) }];
+    }
+    const folded = this.state.folded || {};
+    trayGroups = trayGroups.map(g => ({
+      ...g, count: g.cards.length, openGroup: !folded[g.title], chev: folded[g.title] ? '▸' : '▾',
+      toggle: () => this.setState({ folded: { ...folded, [g.title]: !folded[g.title] } }),
+      ulStyle: 'list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: ' + (this.state.dense ? '2px' : '6px')
+    }));
+    const viewOpts = [[true, '一行'], [false, 'カード']].map(([d, label], i) => ({
+      label, on: this.state.dense === d, pick: () => this.setState({ dense: d }),
+      style: 'min-height: 26px; padding: 0 8px; font-family: inherit; font-size: 11px; cursor: pointer; border: 1px solid #3A3E46; ' + (i ? 'border-left: 0; border-radius: 0 3px 3px 0; ' : 'border-radius: 3px 0 0 3px; ') + 'background: ' + (this.state.dense === d ? '#3D6FD0' : 'transparent') + '; color: ' + (this.state.dense === d ? '#FFFFFF' : '#C9CDD3')
+    }));
+    const typeTabs = tabDefs.map(([label]) => ({
+      label, on: tab === label, pick: () => this.setState({ tab: label }),
+      style: 'min-height: 32px; padding: 0 6px; background: ' + (tab === label ? '#22304A' : 'transparent') + '; color: ' + (tab === label ? '#FFFFFF' : '#C9CDD3') + '; border: 0; border-bottom: 2px solid ' + (tab === label ? '#6AA8FF' : 'transparent') + '; font-family: inherit; font-size: 12px; font-weight: ' + (tab === label ? '700' : '400') + '; cursor: pointer'
+    }));
+
+    const selBest = selShip ? bestFuda(selShip) : null;
+    const columns = fudas.map(f => {
+      const members = ships.filter(s => assign[s.id] === f.key);
+      const sc = selShip ? score(selShip, f.key) : 0;
+      const isBest = false;
+      const here = selShip && assign[selShip.id] === f.key;
+      return {
+        name: f.name, phases: f.phaseLabel, count: members.length, cards: members.map(s => card(s, f.key)),
+        allowDrop: allow(f.key, null), drop: moveTo(f.key),
+        moveHint: !!drag && over === f.key && !overCard && assign[drag] !== f.key,
+        showPlace: !!selShip && !here, place: placeTo(f.key),
+        placeLabel: 'ここに置く' + (sc > 0 ? '（特効あり）' : '（特効なし）'),
+        placeStyle: 'display: block; width: calc(100% - 16px); margin: 8px 8px 0; min-height: 40px; border-radius: 5px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; '
+          + (isBest ? 'background: #E8B04B; color: #101114; border: 0;' : sc > 0 ? 'background: #3A3220; color: #F6E2B3; border: 1px solid #6E5520;' : 'background: transparent; color: #6B717C; border: 1px dashed #3A3E46; font-weight: 400;'),
+        boxStyle: 'background: #1F2126; border-radius: 6px; overflow: hidden; border: 1px solid ' + (drag && over === f.key ? '#6AA8FF' : isBest ? '#E8B04B' : '#2A2D33') + '; box-shadow: ' + (drag && over === f.key ? '0 0 0 2px #2B4A7A' : isBest ? '0 0 0 2px #5C4A1E' : 'none') + '; opacity: ' + (selShip && sc === 0 && !here ? '0.55' : '1'),
+        headStyle: 'display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: ' + f.color + '; color: ' + f.ink
+      };
+    });
+
+    let detail = false;
+    if (selShip) {
+      const tb = typeBoost[selShip.type] || {};
+      const ranked = fudas.map(f => ({ f, sc: score(selShip, f.key) })).sort((a, b) => b.sc - a.sc);
+      const withBoost = ranked.filter(x => pointsOf(x.f.key).some(p => selShip.b[p.id]));
+      const without = ranked.filter(x => !pointsOf(x.f.key).some(p => selShip.b[p.id]));
+      detail = {
+        name: selShip.name, type: selShip.type, lv: selShip.lv,
+        now: assign[selShip.id] ? F[assign[selShip.id]].name : '控え',
+        blocks: withBoost.map(({ f, sc }, i) => {
+          const here = assign[selShip.id] === f.key;
+          const best = false;
+          return {
+            name: f.name, score: sc, isHere: here, canPlace: !here, place: placeTo(f.key),
+            lines: pointsOf(f.key).filter(p => selShip.b[p.id]).map(p => ({ label: p.label, mult: '×' + selShip.b[p.id].toFixed(2), type: tb[p.id] ? '×' + tb[p.id].toFixed(2) : false })),
+            dot: 'flex: 0 0 12px; height: 12px; border-radius: 3px; background: ' + f.color,
+            btnLabel: f.name + 'に置く',
+            btnStyle: 'min-height: 34px; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; ' + (best ? 'background: #E8B04B; color: #101114; border: 0;' : 'background: transparent; color: #E4E6EA; border: 1px solid #3A3E46;'),
+            boxStyle: 'display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 5px; background: #1A1C20; border: 1px solid ' + (here ? '#6AA8FF' : '#2E3138') + '; box-shadow: inset 4px 0 0 ' + f.color
+          };
+        }),
+        none: without.length ? without.map(x => x.f.name).join('、') : false
+      };
+    }
+
+    const contested = ships
+      .map(s => ({ s, list: fudas.map(f => ({ f, sc: score(s, f.key) })).filter(x => x.sc > 0).sort((a, b) => b.sc - a.sc) }))
+      .filter(x => x.list.length >= 2)
+      .slice(0, 7)
+      .map(({ s, list }) => ({
+        name: s.name, meta: 'Lv' + s.lv + '　運' + s.luck,
+        text: list.slice(0, 3).map(x => x.f.name).join(' ／ ') + '　いま：' + (assign[s.id] ? F[assign[s.id]].name : '控え'),
+        pick: select(s.id),
+        style: 'display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 6px 8px; border-radius: 4px; font-family: inherit; color: #E4E6EA; text-align: left; cursor: pointer; border: 1px solid ' + (sel === s.id ? '#6AA8FF' : 'transparent') + '; background: ' + (sel === s.id ? '#22304A' : 'transparent')
+      }));
+
+    return {
+      role: this.state.role, roleOpts,
+      nav: [navItem('一覧', 'Main.dc.html', 'board'), navItem('割振', 'Assign.dc.html', 'assign', true), navItem('取込', 'Import.dc.html', 'import'), navItem('差分', 'Drift.dc.html', 'diff'), navItem('設定', '#', 'gear')],
+      trayGroups, trayEmpty: filtered.length === 0, trayCount: trayShips.length, shown: filtered.length,
+      trayAllow: allow('tray', null), trayDrop: moveTo('tray'),
+      trayStyle: 'flex: 1 1 280px; max-width: 300px; background: #1F2126; border-radius: 6px; display: flex; flex-direction: column; border: 1px solid ' + (drag && over === 'tray' && !overCard && assign[drag] ? '#6AA8FF' : '#2A2D33') + '; box-shadow: ' + (drag && over === 'tray' && !overCard && assign[drag] ? '0 0 0 2px #2B4A7A' : 'none'),
+      typeTabs, viewOpts, sortOpts, filterGroups, filterOpen, filterCount: filterCount || false,
+      filterBtnStyle: 'display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 4px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: ' + (filterOpen ? '#E4E6EA' : 'transparent') + '; color: ' + (filterOpen ? '#101114' : '#E4E6EA') + '; border: 1px solid #C9CDD3',
+      toggleFilter: () => this.setState({ filterOpen: !this.state.filterOpen }),
+      pickSort: (e) => this.setState({ sort: e.target.value }),
+      resetAll: () => this.setState({ tab: 'ALL', sort: 'class', f: { stage: { none: true, mid: true, final: true }, boostOnly: false, fudas: [] } }),
+      anyOpen: Object.keys(this.state.open || {}).length > 0,
+      openCount: Object.keys(this.state.open || {}).length,
+      closeAll: () => this.setState({ open: {}, sel: null }),
+      columns, detail,
+      clearSel: () => this.setState({ sel: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

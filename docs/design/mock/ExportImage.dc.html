@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>保存される画像</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#101114}
+</style>
+</helmet>
+<div style="width: 1600px; height: 900px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: #121317; color: #ECEEF2; font-family: 'Noto Sans JP', 'Hiragino Sans', 'Meiryo', system-ui, sans-serif">
+  <div style="display: flex; align-items: center; gap: 18px; height: 96px; padding: 0 44px; background: #1B1D22; border-bottom: 4px solid #E8B04B">
+    <span style="font-size: 44px; font-weight: 800; letter-spacing: 0.02em">{{eventName}}</span>
+    <span style="font-size: 26px; font-weight: 700; color: #E8B04B">札割り</span>
+    <span style="flex: 1 1 auto"></span>
+    <sc-if value="{{multi}}" hint-placeholder-val="{{false}}"><span style="font-family: Consolas, monospace; font-size: 26px; font-weight: 700; color: #9AA0AA">{{pageLabel}}</span></sc-if>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px; padding: 18px 44px 0">
+    <sc-for list="{{timeline}}" as="m" hint-placeholder-count="5">
+      <div style="display: flex; align-items: stretch; gap: 6px; height: 44px">
+        <span style="flex: 0 0 52px; display: flex; align-items: center; font-family: Consolas, monospace; font-size: 24px; font-weight: 800; color: #ECEEF2">{{m.map}}</span>
+        <sc-for list="{{m.steps}}" as="s" hint-placeholder-count="5">
+          <span style="{{s.style}}">{{s.fuda}}<span style="{{s.subStyle}}">{{s.label}}</span></span>
+        </sc-for>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="{{gridStyle}}">
+    <sc-for list="{{cols}}" as="c" hint-placeholder-count="5">
+      <div style="display: flex; flex-direction: column; min-width: 0; background: #1B1D22; border-radius: 10px; overflow: hidden; border-top: 8px solid {{c.color}}">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 14px 8px">
+          <span style="font-size: 24px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{c.color}}">{{c.name}}</span>
+          <span style="flex: 0 0 auto; font-size: 16px; color: #9AA0AA">{{c.count}}隻</span>
+        </div>
+        <sc-for list="{{c.ships}}" as="s" hint-placeholder-count="6">
+          <div style="{{s.rowStyle}}">
+            <span style="font-size: 20px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{s.name}}</span>
+            <span style="font-family: Consolas, monospace; font-size: 14px; line-height: 1.15; color: #A9AEB8; text-align: right">Lv{{s.lv}}<br>運{{s.luck}}</span>
+            <span style="{{s.markStyle}}">{{s.mark}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 44px; font-size: 16px; color: #8A909A">
+    <span style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 5px; font-weight: 800; color: #E8B04B; box-shadow: inset 0 0 0 2px #3A3E46">札</span>
+    <span>札割り振りプランナー</span>
+    <span style="flex: 1 1 auto"></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px"><span style="font-size: 14px; font-weight: 800; color: #121317; background: #E8B04B; padding: 1px 8px; border-radius: 4px">特効</span>その札で特効あり　<span style="color: #555A63">－</span> 特効なし</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"sel":{"editor":"text","default":""},"page":{"editor":"text","default":"1"},"$preview":{"width":1600,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const fudas = [
+      { key: 's31', name: '第三十一戦隊', color: '#8B93A1', ink: '#101114', pts: ['E1', 'E2:H', 'E3-2'] },
+      { key: 'tago', name: '多号作戦部隊', color: '#5FB0E8', ink: '#101114', pts: ['E2-1'] },
+      { key: 'rengo', name: '連合艦隊', color: '#4C8DF6', ink: '#FFFFFF', pts: ['E2-2', 'E2-3'] },
+      { key: 'ulithi', name: 'ウルシー攻撃部隊', color: '#3FB37F', ink: '#101114', pts: ['E3-1', 'E3-4'] },
+      { key: 'sixth', name: '第六艦隊', color: '#A97EF0', ink: '#101114', pts: ['E3-3'] },
+      { key: 'fr3', name: '仏第3艦隊', color: '#2BB3B1', ink: '#101114', pts: [] },
+      { key: 'frmed', name: '仏地中海艦隊', color: '#E07A5F', ink: '#101114', pts: [] },
+      { key: 'esc2', name: '2éme Escadre Légère', color: '#C9A227', ink: '#101114', pts: [] },
+      { key: 'ukrelief', name: 'イギリス救援艦隊', color: '#D16BA5', ink: '#101114', pts: [] },
+      { key: 'raid', name: 'Force de Raid', color: '#B5651D', ink: '#FFFFFF', pts: [] },
+      { key: 'forceh', name: 'Force H', color: '#6C5CE7', ink: '#FFFFFF', pts: [] },
+      { key: 'eurocomb', name: '欧州連合艦隊', color: '#E5484D', ink: '#FFFFFF', pts: [] }
+    ];
+    const F = Object.fromEntries(fudas.map(f => [f.key, f]));
+    const A31 = { 'E1': 1, 'E2:H': 1, 'E3-2': 1 }, RB = { 'E2-2': 1, 'E2-3': 1, 'E3-1': 1, 'E3-4': 1 }, TAGO = { 'E2-1': 1 };
+    const ships = [
+      ['大和改二重', 175, 61, 'ulithi', RB], ['長門改二', 170, 52, 'rengo', RB], ['瑞鶴改二甲', 165, 80, 'rengo', { 'E2-3': 1 }],
+      ['北上改二', 160, 40, 'rengo', RB], ['矢矧改二乙', 155, 45, 'rengo', RB], ['五十鈴改二', 140, 24, 's31', A31],
+      ['時雨改三', 175, 59, 'ulithi', RB], ['雪風改二', 168, 72, 'rengo', RB], ['長波改二', 152, 31, 'rengo', RB],
+      ['沖波改二', 130, 28, 'tago', TAGO], ['朝霜改二', 140, 34, 'tago', TAGO], ['初霜改二', 131, 48, 's31', A31],
+      ['潮改二', 125, 40, 'rengo', { 'E2-3': 1 }], ['冬月改', 120, 27, 's31', A31], ['不知火改二', 145, 30, 'ulithi', RB],
+      ['霞改二乙', 150, 39, 'tago', TAGO], ['涼風改二', 92, 26, 's31', {}], ['伊41改', 120, 30, 'sixth', { 'E3-3': 1 }]
+    ].map(([name, lv, luck, at, b]) => ({ name, lv, luck, at, b }));
+    const has = (s, f) => f.pts.some(p => s.b[p]);
+    const want = (this.props.sel || '').split(',').filter(Boolean);
+    const used = fudas.filter(f => ships.some(s => s.at === f.key) && (!want.length || want.indexOf(f.key) >= 0));
+    // 1枚に6札まで。超えたら分割
+    const per = 6, pages = Math.max(1, Math.ceil(used.length / per));
+    const page = Math.min(pages, Math.max(1, +(this.props.page || 1)));
+    const slice = used.slice((page - 1) * per, page * per);
+    const cols = slice.map(f => {
+      const mem = ships.filter(s => s.at === f.key).sort((a, b) => b.lv - a.lv);
+      return {
+        name: f.name, count: mem.length, color: f.color,
+        ships: mem.map((s, i) => ({ name: s.name, lv: s.lv, luck: s.luck, mark: has(s, f) ? '特効' : '－',
+          rowStyle: 'display: grid; grid-template-columns: minmax(0, 1fr) auto 46px; align-items: center; column-gap: 10px; min-height: 42px; padding: 2px 14px; background: ' + (i % 2 ? '#1B1D22' : '#202329'),
+          markStyle: has(s, f) ? 'justify-self: end; font-size: 14px; font-weight: 800; color: #121317; background: #E8B04B; padding: 2px 6px; border-radius: 4px' : 'justify-self: end; font-size: 16px; color: #555A63; padding-right: 14px' }))
+      };
+    });
+    const step = (label, fk) => ({ label, fuda: F[fk].name,
+      style: 'flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 12px; border-radius: 6px; font-size: 17px; font-weight: 800; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: ' + F[fk].color + '; color: ' + F[fk].ink,
+      subStyle: 'font-size: 12px; font-weight: 500; opacity: 0.8; overflow: hidden; text-overflow: ellipsis' });
+    const timeline = [
+      { map: 'E1', steps: [step('ギミック〜ゲージ3', 's31')] },
+      { map: 'E2', steps: [step('ギミック', 's31'), step('ゲージ1 輸送', 'tago'), step('ゲージ2', 'rengo'), step('ゲージ3', 'rengo')] },
+      { map: 'E3', steps: [step('ギミック', 's31'), step('ゲージ1', 'ulithi'), step('ゲージ2 輸送', 's31'), step('ゲージ3', 'sixth'), step('ゲージ4', 'ulithi')] },
+      { map: 'E4', steps: [step('ゲージ1', 'fr3'), step('ギミック', 'fr3'), step('ゲージ2 輸送', 'fr3'), step('ゲージ3', 'frmed'), step('ゲージ4', 'frmed'), step('ゲージ5', 'frmed')] },
+      { map: 'E5', steps: [step('ギミック1・2', 'esc2'), step('ゲージ1', 'esc2'), step('ゲージ2 輸送', 'ukrelief'), step('ギミック3', 'raid'), step('ギミック4', 'forceh'), step('ゲージ3', 'raid'), step('ゲージ4', 'eurocomb')] }
+    ];
+    return {
+      eventName: '2026夏イベ', timeline, cols,
+      multi: pages > 1, pageLabel: page + ' / ' + pages,
+      gridStyle: 'flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(' + Math.max(cols.length, 3) + ', minmax(0, 1fr)); gap: 14px; align-items: start; padding: 18px 44px 0; overflow: hidden'
+    };
+  }
+}
+</script>
+</body>
+</html>

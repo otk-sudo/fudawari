@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>艦カード</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<button type="button" onClick="{{c.pick}}" aria-pressed="{{c.selected}}" aria-expanded="{{c.expanded}}" style="{{boxStyle}}">
+  <span style="{{bannerStyle}}">
+    <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{c.name}}</span>
+    <sc-if value="{{c.dense}}" hint-placeholder-val="{{false}}"><span style="flex: 0 0 auto; font-size: 11px; font-weight: 400; color: #9AA0AA; font-family: Consolas, monospace">Lv{{c.lv}} 運{{c.luck}}</span></sc-if>
+    <span style="{{flagStyle}}">{{flag}}</span>
+  </span>
+  <sc-if value="{{notDense}}" hint-placeholder-val="{{true}}">
+  <span style="display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; font-size: 11px">
+    <span style="color: #9AA0AA">{{c.type}} ・ Lv{{c.lv}} ・ 運{{c.luck}}</span>
+  </span>
+  </sc-if>
+
+  <sc-if value="{{c.expanded}}" hint-placeholder-val="{{false}}">
+    <span style="display: flex; flex-direction: column; gap: 3px; width: 100%; padding-top: 5px; border-top: 1px solid #3A3E46">
+      <sc-for list="{{c.lines}}" as="l" hint-placeholder-count="2">
+        <span style="{{l.rowStyle}}">
+          <span style="{{l.dot}}" aria-hidden="true"></span>
+          <span style="flex: 1; text-align: left">{{l.label}}</span>
+          <span style="{{l.multStyle}}">{{l.mult}}</span>
+        </span>
+      </sc-for>
+      <sc-if value="{{c.noBoost}}" hint-placeholder-val="{{false}}"><span style="font-size: 11px; color: #9AA0AA">{{c.noBoost}}</span></sc-if>
+    </span>
+  </sc-if>
+</button>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"card":{"editor":null},"$preview":{"width":220,"height":130}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const line = (color, label, mult) => ({
+      label, mult,
+      dot: 'flex: 0 0 8px; height: 8px; border-radius: 2px; background: ' + color,
+      rowStyle: 'display: flex; align-items: center; gap: 6px; font-size: 12px; color: #E4E6EA',
+      multStyle: 'font-family: Consolas, monospace; font-weight: 700; color: #101114; background: #E8B04B; padding: 0 5px; border-radius: 2px'
+    });
+    const sample = {
+      name: '時雨改三', type: '駆逐', lv: 175, luck: 59, selected: true, expanded: true, pick: () => {},
+      stripeColor: '#3FB37F', hasBoost: true,
+      lines: [line('#3FB37F', 'E3 第一ボス', '×1.14'), line('#3FB37F', 'E3 第四ボス', '×1.14')],
+      noBoost: false
+    };
+    const c = this.props.card ?? sample;
+    return {
+      c,
+      notDense: !c.dense,
+      flag: c.dense ? (c.hasBoost ? '特効' : '－') : (c.hasBoost ? '特効あり' : '特効なし'),
+      flagStyle: 'flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 2px; ' + (c.hasBoost ? 'font-weight: 700; color: #101114; background: #E8B04B' : 'font-weight: 400; color: #8A9099; border: 1px solid #3A3E46'),
+      boxStyle: 'display: flex; flex-direction: column; gap: 4px; width: 100%; box-sizing: border-box; padding: ' + (c.dense ? '2px 3px' : '5px 6px 6px') + '; border-radius: 5px; font-family: \'Noto Sans JP\', \'Hiragino Sans\', \'Meiryo\', system-ui, sans-serif; color: #E4E6EA; text-align: left; cursor: pointer; background: ' + (c.selected ? '#22304A' : c.expanded ? '#1E2128' : '#1A1C20') + '; border: 1px solid ' + (c.selected ? '#6AA8FF' : c.expanded ? '#3A4250' : '#2E3138') + '; box-shadow: ' + (c.selected ? '0 0 0 2px #2B4A7A' : 'none'),
+      bannerStyle: 'display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; box-sizing: border-box; min-height: 26px; padding: 0 6px 0 8px; border-radius: 3px; background: #2C2F36; font-size: 13px; font-weight: 700; color: #F2F3F5; box-shadow: inset 4px 0 0 ' + c.stripeColor
+    };
+  }
+}
+</script>
+</body>
+</html>
