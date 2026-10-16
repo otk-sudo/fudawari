@@ -28,6 +28,9 @@
 //   そのため「どこかが undefined なら errors は 1 件以上」が成り立つ。
 // - 日付・日時の実在の確認は、年月日・時分秒を数として自前で確かめる（Date の繰り上げに頼らない）。
 // - 海域・札の配列そのものが壊れているときは、段階からの参照の確認（unknown_reference）を省く（誤りが連鎖して増えるのを防ぐ）。
+// - 検証を通った値は、入力から読み取った値で作り直したもの（入力のオブジェクト・配列を使い回さない）で、
+//   返す前に深く凍結する（特効の計算が定義のオブジェクトごとに索引を覚えるため）。入力の値は凍結せず、書き換えもしない。
+import { deepFreeze } from "./freeze";
 import { isImportance } from "./importance";
 import type {
   Area,
@@ -516,7 +519,8 @@ function readStage(errors: Errors, value: unknown, path: string, context: StageC
 
 /**
  * JSON として読み込み済みの値を検証し、型付きの公開定義にする。
- * - 正しければ { ok: true, value }（value はゲーム内の札番号の省略を null にそろえた値）
+ * - 正しければ { ok: true, value }（value はゲーム内の札番号・終了日時の省略を null にそろえて作り直し、
+ *   入れ子まで凍結した値。入力の値は凍結しない）
  * - 不正なら { ok: false, errors }（見つかった問題をまとめて返す。1 件以上）
  */
 export function validatePublicDefinition(input: unknown): DefinitionValidationResult {
@@ -569,7 +573,7 @@ export function validatePublicDefinition(input: unknown): DefinitionValidationRe
   ) {
     return { ok: false, errors };
   }
-  const value: PublicDefinition = { schemaVersion, event, areas, fudas, stages };
+  const value: PublicDefinition = deepFreeze({ schemaVersion, event, areas, fudas, stages });
   return { ok: true, value };
 }
 
