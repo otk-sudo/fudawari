@@ -105,8 +105,14 @@ test.describe("取り込み画面", () => {
       (request) => request.url().includes(MARKER) || (request.postData() ?? "").includes(MARKER),
     );
     expect(leaking.map(describeRequest)).toEqual([]);
-    // 検証：取得（GET）以外のリクエスト（POST・sendBeacon など、何かを送るもの）がない
-    expect(requests.filter((request) => request.method() !== "GET").map(describeRequest)).toEqual([]);
+    // 検証：取得（GET）以外のリクエスト（POST・sendBeacon など、何かを送るもの）がない。
+    // HEAD は本文を持たず何も送れない。Next の静的書き出しでは、左メニューのリンクの先読みが行き先へ HEAD を送るため数えない
+    // （URL に目印を含まないことは上で確かめている）
+    expect(
+      requests
+        .filter((request) => request.method() !== "GET" && request.method() !== "HEAD")
+        .map(describeRequest),
+    ).toEqual([]);
     // 検証：ほかのサイトへのリクエストがない（あるのは同じサイトの静的ファイルの取得だけ）。
     // data: と blob: の URL はブラウザの中だけで読むもので外へ出ない（オリジンは "null"）ため、数えない
     const siteOrigin = new URL(baseURL ?? "").origin;
