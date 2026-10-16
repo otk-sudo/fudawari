@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "next dev",
+    "generate:ship-master": "tsx scripts/generate-ship-master.ts",
+    "prebuild": "npm run generate:ship-master",
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint",
@@ -42,6 +44,7 @@
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "serve": "^14.2.6",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"
   }
