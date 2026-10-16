@@ -1,2 +1,33 @@
 # Claude Code の個人用ローカル設定
 .claude/settings.local.json
+
+# 依存パッケージ
+/node_modules
+
+# Next.js（ビルドの生成物。next-env.d.ts は Next の推奨どおり追跡しない）
+/.next/
+/out/
+/build/
+next-env.d.ts
+
+# TypeScript
+*.tsbuildinfo
+
+# テスト（Vitest のカバレッジ、Playwright の結果・レポート・キャッシュ）
+/coverage/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# 環境変数（秘密の値を入れるためすべて追跡しない。見本の .env.example だけは追跡する）
+.env*
+!.env.example
+
+# ログ
+npm-debug.log*
+
+# OS・その他
+.DS_Store
+Thumbs.db
+*.pem
