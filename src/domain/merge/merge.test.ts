@@ -18,7 +18,7 @@ import {
   stageIdsOf,
   stageOf,
 } from "@/domain/definition-edit/test-helpers";
-import { summer2026Definition } from "@/test/fixtures";
+import { type Mutable, summer2026Definition } from "@/test/fixtures";
 import { mergeDefinitions, resolveMerge } from "./merge";
 import type { ChangeLocation, ConflictChoice, MergeConflict, MergeInput, ResolveResult } from "./types";
 
@@ -75,7 +75,7 @@ function expectConsistent(doc: DefinitionDoc): void {
 }
 
 /** テストの準備：海域の段階を、指定した順に並べ替える（draft を書き換える） */
-function reorderArea(draft: DefinitionDoc, areaId: string, order: string[]): void {
+function reorderArea(draft: Mutable<DefinitionDoc>, areaId: string, order: string[]): void {
   const queue = order.map((id) => {
     const stage = draft.stages.find((s) => s.id === id && s.areaId === areaId);
     if (!stage) throw new Error(`${areaId} に段階 ${id} がありません`);
@@ -90,7 +90,7 @@ function reorderArea(draft: DefinitionDoc, areaId: string, order: string[]): voi
 }
 
 /** テストの準備：札を、指定した順に並べ替える（draft を書き換える） */
-function reorderFudas(draft: DefinitionDoc, order: string[]): void {
+function reorderFudas(draft: Mutable<DefinitionDoc>, order: string[]): void {
   draft.fudas = order.map((id) => {
     const fuda = draft.fudas.find((f) => f.id === id);
     if (!fuda) throw new Error(`札 ${id} がありません`);
