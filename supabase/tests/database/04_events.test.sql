@@ -134,8 +134,10 @@ select is(
 );
 select is(
   (select content from public.drafts where event_id = pg_temp.got('created')::uuid),
-  pg_temp.doc(),
-  '作ったイベントの下書きの内容は渡した文書'
+  pg_temp.doc() || jsonb_build_object(
+    'event', (pg_temp.doc() -> 'event') || jsonb_build_object('id', pg_temp.got('created'))
+  ),
+  '作ったイベントの下書きの内容は渡した文書（event.id だけ作ったイベントの ID に書き直す）'
 );
 select is(
   (select updated_by from public.drafts where event_id = pg_temp.got('created')::uuid),

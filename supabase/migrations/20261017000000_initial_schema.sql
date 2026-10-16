@@ -202,7 +202,9 @@ begin
   if not found then
     perform public._raise('FD009', 'イベントが見つかりません');
   end if;
-  if v_event.ends_at is not null and v_event.ends_at <= now() then
+  -- 終了の判定は、ロックを取った後の実際の時刻で行う（now() はトランザクションの開始時刻のため、ロックを待つ間に終了日時を
+  -- 過ぎても更新できてしまう）
+  if v_event.ends_at is not null and v_event.ends_at <= clock_timestamp() then
     perform public._raise('FD002', 'このイベントは終了しているため更新できません');
   end if;
   if v_latest is not distinct from p_event_id then
@@ -356,8 +358,9 @@ declare
   v_event public.events%rowtype;
   v_draft public.drafts%rowtype;
   v_latest uuid;
-  v_today date := (now() at time zone 'Asia/Tokyo')::date;
-  v_label text := to_char((now() at time zone 'Asia/Tokyo')::date, 'YYYY/MM/DD') || ' 版';
+  v_now timestamptz;
+  v_today date;
+  v_label text;
   v_content jsonb;
   v_id uuid;
 begin
@@ -374,6 +377,11 @@ begin
   -- 公開版を入れるまでイベントの名前・期間が変わらないよう、行をロックしたまま読む（_check_editable_event で共有ロック済み）
   select * into v_event from public.events where id = p_event_id for share;
   select * into v_draft from public.drafts where event_id = p_event_id for update;
+
+  -- 公開日時・版の日付・版の表示は、ロックを取った後の 1 つの時刻から決める（日付の変わり目でロックを待っても食い違わない）
+  v_now := clock_timestamp();
+  v_today := (v_now at time zone 'Asia/Tokyo')::date;
+  v_label := to_char(v_today, 'YYYY/MM/DD') || ' 版';
   if not found then
     perform public._raise('FD009', '下書きが見つかりません');
   end if;
@@ -394,9 +402,9 @@ begin
     )
   );
 
-  -- 公開日時は clock_timestamp()（トランザクションの開始時刻ではなく、app_state のロックを取った後の時刻。公開の順と並びを合わせる）
+  -- 公開日時は v_now（トランザクションの開始時刻ではなく、app_state のロックを取った後の時刻。公開の順と並びを合わせる）
   insert into public.published_definitions (event_id, version_label, content, draft_version, published_by, published_at)
-  values (p_event_id, v_label, v_content, v_draft.version, v_uid, clock_timestamp())
+  values (p_event_id, v_label, v_content, v_draft.version, v_uid, v_now)
   returning id into v_id;
 
   insert into public.save_logs (event_id, user_id, user_name, kind, map_label, summary)
@@ -448,7 +456,7 @@ begin
   if p_ends_at is not null and p_ends_at <= p_starts_at then
     perform public._raise('FD005', '終了日時は開始日時より後にしてください');
   end if;
-  if p_ends_at is not null and p_ends_at <= now() then
+  if p_ends_at is not null and p_ends_at <= clock_timestamp() then
     perform public._raise('FD005', '終了日時は今より後にしてください');
   end if;
   perform public._check_document(p_content);
@@ -457,8 +465,17 @@ begin
   values (btrim(p_name), p_starts_at, p_ends_at, v_uid)
   returning id into v_id;
 
+  -- 画面はイベント ID を知らないまま初期の文書を作るので、下書きの event.id を作ったイベントの ID に書き直す
   insert into public.drafts (event_id, version, content, updated_by)
-  values (v_id, 1, p_content, v_uid);
+  values (
+    v_id,
+    1,
+    p_content || jsonb_build_object(
+      'event',
+      coalesce(p_content -> 'event', '{}'::jsonb) || jsonb_build_object('id', v_id::text)
+    ),
+    v_uid
+  );
 
   return v_id;
 end;
@@ -499,7 +516,7 @@ begin
   if p_ends_at is not null and p_ends_at <= p_starts_at then
     perform public._raise('FD005', '終了日時は開始日時より後にしてください');
   end if;
-  if p_ends_at is not null and p_ends_at <= now() then
+  if p_ends_at is not null and p_ends_at <= clock_timestamp() then
     perform public._raise('FD005', '終了日時は今より後にしてください');
   end if;
 
