@@ -235,6 +235,12 @@
   outline-offset: 2px;
 }
 
+/* 操作できない間（取り込みの処理中と確認の間）。「取り込む」の押せない間と同じ見た目にする */
+.lockOption:has(:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .lockLabel {
   font-size: 13px;
   font-weight: 700;
@@ -335,6 +341,14 @@
 .preset:focus-visible {
   outline: 2px solid var(--color-action);
   outline-offset: 2px;
+}
+
+/* 操作できない間（取り込みの処理中と確認の間）。「取り込む」の押せない間と同じ見た目にする */
+.stepButton:disabled,
+.levelInput:disabled,
+.preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 右側の下端まで空けて、「取り込む」を下に寄せる */

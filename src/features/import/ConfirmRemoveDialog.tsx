@@ -6,7 +6,7 @@ import styles from "./ConfirmRemoveDialog.module.css";
 
 /** 確認に出す内容 */
 export interface RemoveConfirmation {
-  /** 保存すると外れる割り当ての件数（previewImport の戻り値。1 以上） */
+  /** 保存すると外れる割り当ての件数（previewImport の戻り値。保存しているすべてのイベントの合計。1 以上） */
   removedAssignmentCount: number;
   /** 個体 ID がある形式か（false なら、すべての割り当てが外れる理由として引き継げないことを書く。U9） */
   hasUid: boolean;
@@ -26,7 +26,8 @@ export type ConfirmRemoveDialogProps = {
 /**
  * 取り込みで割り当てが外れるときの確認（2026-10-17 親の決定。Radix UI の Dialog を role="alertdialog" で使う）。
  *
- * - 「n件の割り当てが外れます」と、外れる理由（個体 ID がない古い形式なら、引き継げないこと）を書く
+ * - 「保存しているすべてのイベントの割り当てのうちn件が外れます」と、外れる理由（個体 ID がない古い形式なら、引き継げないこと）を書く
+ *   （件数は最新のイベントだけでなく、保存しているすべてのイベントの合計。2026-10-17 親の決定）
  * - ボタンは「やめる」「外して取り込む」。開いたときのフォーカスは、取り消せる側の「やめる」に置く
  * - 開いている間は後ろの画面を操作できない（Radix が後ろを支援技術から隠し、フォーカスを中に閉じ込める）
  */
@@ -68,7 +69,8 @@ export function ConfirmRemoveDialog({
               <>
                 <Dialog.Title className={styles.title}>割り当てが外れます</Dialog.Title>
                 <Dialog.Description className={styles.description}>
-                  この内容で取り込むと、<b>{confirmation.removedAssignmentCount}件</b>の割り当てが外れます。
+                  この内容で取り込むと、保存しているすべてのイベントの割り当てのうち
+                  <b>{confirmation.removedAssignmentCount}件</b>が外れます。
                   {confirmation.hasUid
                     ? "今回取り込む艦にいない艦（解体した艦や、取り込む範囲から外れた艦）の割り当てです。"
                     : "個体 ID がない古い形式のため、前の割り当ては引き継げません（札割りは控えから始まります）。"}

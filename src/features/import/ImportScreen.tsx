@@ -67,13 +67,16 @@ type MinLevelFieldProps = {
   /** 欄の文字（打ち込みの途中の空・範囲外も含む） */
   value: string;
   onChange: (next: string) => void;
+  /** 欄とボタンを操作できなくする（取り込みの処理中と確認の間） */
+  disabled: boolean;
 };
 
 /**
  * Lv 下限の欄（「−」「＋」付きの数値欄・「以上」・すぐ選べる Lv1／Lv50／Lv99／Lv150）。
- * 打ち込みの途中は文字のまま持ち、欄を離れたときに 1〜185 に収める（空は 1。2026-10-17 親の決定）
+ * 打ち込みの途中は文字のまま持ち、欄を離れたときに 1〜185 に収める（空は 1。2026-10-17 親の決定）。
+ * すぐ選べる Lv は、今の Lv 下限と同じものを押された状態（aria-pressed="true"）にする
  */
-function MinLevelField({ value, onChange }: MinLevelFieldProps): ReactNode {
+function MinLevelField({ value, onChange, disabled }: MinLevelFieldProps): ReactNode {
   const hintId = useId();
   const current = toMinLevel(value);
 
@@ -87,6 +90,7 @@ function MinLevelField({ value, onChange }: MinLevelFieldProps): ReactNode {
           type="button"
           aria-label="Lv下限を下げる"
           className={`${styles.stepButton} ${styles.stepButtonDown}`}
+          disabled={disabled}
           onClick={() => onChange(String(clampMinLevel(current - 1)))}
         >
           −
@@ -101,6 +105,7 @@ function MinLevelField({ value, onChange }: MinLevelFieldProps): ReactNode {
           aria-describedby={hintId}
           className={styles.levelInput}
           value={value}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
           onBlur={(event) => onChange(String(toMinLevel(event.currentTarget.value)))}
         />
@@ -108,6 +113,7 @@ function MinLevelField({ value, onChange }: MinLevelFieldProps): ReactNode {
           type="button"
           aria-label="Lv下限を上げる"
           className={`${styles.stepButton} ${styles.stepButtonUp}`}
+          disabled={disabled}
           onClick={() => onChange(String(clampMinLevel(current + 1)))}
         >
           ＋
@@ -115,16 +121,22 @@ function MinLevelField({ value, onChange }: MinLevelFieldProps): ReactNode {
         <span className={styles.levelSuffix}>以上</span>
       </div>
       <div className={styles.presets}>
-        {MIN_LEVEL_PRESETS.map((level) => (
-          <button
-            key={level}
-            type="button"
-            className={level === current ? `${styles.preset} ${styles.presetActive}` : styles.preset}
-            onClick={() => onChange(String(level))}
-          >
-            Lv{level}
-          </button>
-        ))}
+        {MIN_LEVEL_PRESETS.map((level) => {
+          const pressed = level === current;
+          return (
+            <button
+              key={level}
+              type="button"
+              className={pressed ? `${styles.preset} ${styles.presetActive}` : styles.preset}
+              // 押されていないボタンにも false を付け、押して切り替えるボタンであることを支援技術に伝える
+              aria-pressed={pressed}
+              disabled={disabled}
+              onClick={() => onChange(String(level))}
+            >
+              Lv{level}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -188,8 +200,11 @@ function ImportDoneSummary({ summary }: { summary: ImportSummary }): ReactNode {
  * - ヘッダー：画面名（h1）と「最終取り込み 10/15 20:40 ／ 5隻」（取り込んだことがあるときだけ）
  * - 左：「艦娘の情報をコピーする」「ここに貼り付ける」と貼り付け欄。右：「取り込む範囲」と「取り込む」
  * - 取り込みは 解析 → 外れる割り当ての件数 → 必要なら確認 → 保存 → 読み直し（useImportFlow）
- * - 公開定義を読み込めなくても取り込める（共通の警告を出し、取り込んだ後の読み直しは定義が読めたときだけ。2026-10-17 親の決定）
- * - 艦船マスタの読み込み中・失敗のときと、取り込みの途中は「取り込む」を押せない
+ * - 公開定義を読み込めなくても取り込める（共通の警告を出し、取り込んだ後の読み直しは定義が読めたときだけ。2026-10-17 親の決定）。
+ *   取り込みの途中で定義が読めたときは、保存した後に読み直す
+ * - 艦船マスタの読み込み中・失敗のときと、取り込みの途中は「取り込む」を押せない（マスタの読み込み中も、ほかの入力は止めない）
+ * - 取り込みの処理中と確認の間は、貼り付け欄・取り込む範囲・Lv 下限を操作できない
+ *   （取り込む内容が、押したときの内容と食い違わないように。貼り付け欄は中身を読めるよう readOnly、ほかは disabled）
  * - 貼り付けた内容はこのブラウザの中だけで解析・保存し、通信には乗せない
  */
 export function ImportScreen(): ReactNode {
@@ -209,13 +224,17 @@ export function ImportScreen(): ReactNode {
 
   const flow = useImportFlow({
     master: masterState.status === "success" ? masterState.master : null,
+    // useImportFlow は、保存した時点で最後に描いたときのこの関数を呼ぶ。
+    // そのため、取り込みの途中で定義が読めても、その定義で読み込んだ札割りのデータを読み直す
     onImported: () => {
       // 読み込む対象のイベントがない（定義を読めていない）ときは読み直さない
       if (definition !== null) void plan.reload();
     },
   });
   const { state } = flow;
-  const canImport = masterState.status === "success" && state.status !== "working" && state.status !== "confirm";
+  // 取り込みの処理中と確認の間（入力を操作できない間）
+  const busy = state.status === "working" || state.status === "confirm";
+  const canImport = masterState.status === "success" && !busy;
 
   function handleImport(): void {
     if (!canImport) return;
@@ -260,6 +279,7 @@ export function ImportScreen(): ReactNode {
               spellCheck={false}
               className={pasteBoxClass}
               value={pasted}
+              readOnly={busy}
               onChange={(event) => {
                 setPasted(event.target.value);
                 flow.dismissFailure();
@@ -286,6 +306,7 @@ export function ImportScreen(): ReactNode {
                       value={option.value}
                       className={styles.visuallyHidden}
                       checked={checked}
+                      disabled={busy}
                       onChange={() => setLockedOnly(option.lockedOnly)}
                     />
                     <span className={styles.lockLabel}>{option.label}</span>
@@ -294,7 +315,7 @@ export function ImportScreen(): ReactNode {
                 );
               })}
             </div>
-            <MinLevelField value={minLevelText} onChange={setMinLevelText} />
+            <MinLevelField value={minLevelText} onChange={setMinLevelText} disabled={busy} />
             <span className={styles.spacer} />
             <button
               ref={importButtonRef}
@@ -315,8 +336,9 @@ export function ImportScreen(): ReactNode {
           </div>
         </section>
 
+        {/* 失敗するたびに番号の key で作り直し、同じ理由で続けて失敗しても読み上げ直されるようにする */}
         {state.status === "failed" && (
-          <div role="alert" className={styles.error}>
+          <div key={state.seq} role="alert" className={styles.error}>
             {state.message}
           </div>
         )}

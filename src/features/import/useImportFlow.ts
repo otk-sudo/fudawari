@@ -5,7 +5,9 @@
 //   1 件以上なら確認を挟む（2026-10-17 親の決定）。やめれば保存しない
 // - 完了の表示の「外した件数」は saveImport の戻り値（確認の後に割り当てが変わっても、実際に外した件数を出す）
 // - 解析〜保存の途中と確認待ちの間は、次の取り込みを受け付けない（二重押しを防ぐ）
-import { useRef, useState } from "react";
+// - 保存した後に呼ぶ onImported は、呼ぶ時点で最後に描いたときに渡されたものを使う
+//   （取り込みの途中で公開定義が読めて札割りのデータの読み込み先が決まっても、最新の値で読み直せるように）
+import { useEffect, useRef, useState } from "react";
 import { type ImportFilter, type ImportSuccess, parseImportText } from "@/domain/import";
 import type { ShipMaster } from "@/domain/master";
 import { getPlanStorage } from "@/lib/plan";
@@ -52,13 +54,19 @@ export type ImportFlowState =
   | { status: "confirm"; pending: PendingImport }
   /** 保存した */
   | { status: "done"; summary: ImportSummary }
-  /** 解析・保存に失敗した（理由の文つき） */
-  | { status: "failed"; message: string };
+  /**
+   * 解析・保存に失敗した（理由の文つき）。
+   * seq は失敗の番号（失敗するたびに増える）。警告の key に使い、同じ理由で続けて失敗しても警告を作り直して読み上げ直す
+   */
+  | { status: "failed"; message: string; seq: number };
 
 export interface UseImportFlowOptions {
   /** 艦船マスタ（読み込み中・失敗のときは null。null の間は取り込まない） */
   master: ShipMaster | null;
-  /** 保存した後に呼ぶ（札割りのデータの読み直しなど） */
+  /**
+   * 保存した後に呼ぶ（札割りのデータの読み直しなど）。
+   * 取り込みを始めたときのものではなく、保存した時点で最後に描いたときに渡されたものを呼ぶ
+   */
   onImported: () => void;
 }
 
@@ -117,6 +125,19 @@ export function useImportFlow({ master, onImported }: UseImportFlowOptions): Imp
   // 今の段階。続けて押したときに 2 回目を無視するために使う
   // （状態は次の描画まで変わらないため、押した直後の 2 回目は状態では見分けられない）。描画には使わない
   const phaseRef = useRef<FlowPhase>("idle");
+  // これまでに失敗した回数（失敗の状態の番号に使う）。描画には使わない
+  const failureCountRef = useRef(0);
+  // 最後に描いたときに渡された onImported（保存は描画をまたいで終わるため、始めたときの関数を使うと古い値で読み直してしまう）
+  const onImportedRef = useRef(onImported);
+  useEffect(() => {
+    onImportedRef.current = onImported;
+  });
+
+  /** 失敗にする（前の失敗と同じ理由でも、新しい番号を振る） */
+  function fail(message: string): void {
+    failureCountRef.current += 1;
+    setState({ status: "failed", message, seq: failureCountRef.current });
+  }
 
   /** 保存して完了にする（失敗なら理由を出す） */
   async function save(parsed: ImportSuccess, filter: ImportFilter): Promise<void> {
@@ -125,9 +146,9 @@ export function useImportFlow({ master, onImported }: UseImportFlowOptions): Imp
     try {
       const result = await getPlanStorage().saveImport(toSaveInput(parsed, filter));
       setState({ status: "done", summary: toSummary(parsed, filter, result.removedAssignmentCount) });
-      onImported();
+      onImportedRef.current();
     } catch {
-      setState({ status: "failed", message: SAVE_FAILED_MESSAGE });
+      fail(SAVE_FAILED_MESSAGE);
     } finally {
       phaseRef.current = "idle";
     }
@@ -137,7 +158,7 @@ export function useImportFlow({ master, onImported }: UseImportFlowOptions): Imp
     if (phaseRef.current !== "idle" || master === null) return;
     const parsed = parseImportText(text, master, filter);
     if (!parsed.ok) {
-      setState({ status: "failed", message: failureMessage(parsed.reason) });
+      fail(failureMessage(parsed.reason, filter));
       return;
     }
 
@@ -148,7 +169,7 @@ export function useImportFlow({ master, onImported }: UseImportFlowOptions): Imp
       ({ removedAssignmentCount } = await getPlanStorage().previewImport(toSaveInput(parsed, filter)));
     } catch {
       phaseRef.current = "idle";
-      setState({ status: "failed", message: SAVE_FAILED_MESSAGE });
+      fail(SAVE_FAILED_MESSAGE);
       return;
     }
     if (removedAssignmentCount > 0) {

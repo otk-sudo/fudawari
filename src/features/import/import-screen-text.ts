@@ -2,7 +2,7 @@
 //
 // 画面（"use client" の ImportScreen）とページ（サーバーで描く src/app/import/page.tsx）の両方から読むため、
 // React に依存しないファイルに分けている（"use client" のファイルから読んだ値は、サーバーの部品では文字列として使えない）。
-import type { ImportFailureReason } from "@/domain/import";
+import type { ImportFailureReason, ImportFilter } from "@/domain/import";
 
 /** 画面名（h1 とページのタイトル） */
 export const IMPORT_SCREEN_TITLE = "艦娘の取り込み";
@@ -38,8 +38,17 @@ export function lockConditionLabel(lockedOnly: boolean): string {
   return lockedOnly ? "ロック済みだけ" : "すべての艦娘";
 }
 
-/** 解析に失敗した理由の文（何も貼り付けていないときの文は要件 3.4・モックのまま） */
-export function failureMessage(reason: ImportFailureReason): string {
+/** 取り込む範囲で絞り込んでいるか（「すべての艦娘」・Lv1 以上なら絞り込んでいない） */
+function isNarrowed(filter: ImportFilter): boolean {
+  return filter.lockedOnly || filter.minLevel > MIN_LEVEL_LOWEST;
+}
+
+/**
+ * 解析に失敗した理由の文（何も貼り付けていないときの文は要件 3.4・モックのまま）。
+ * 取り込む艦がいない（noShips）ときは、絞り込んでいなければ貼り付けた内容に艦娘がいないことを、
+ * 絞り込んでいれば取り込む範囲を見直すことを書く
+ */
+export function failureMessage(reason: ImportFailureReason, filter: ImportFilter): string {
   switch (reason) {
     case "empty":
       return "まだ何も貼り付けられていません。コピーした艦娘の情報を左の欄に貼り付けてから「取り込む」を押してください";
@@ -48,7 +57,9 @@ export function failureMessage(reason: ImportFailureReason): string {
     case "unexpectedShape":
       return "貼り付けた内容は艦娘の情報の形式ではありません。制空権シミュレータに艦娘を反映するときと同じ方法でコピーしてください";
     case "noShips":
-      return "取り込む範囲に当てはまる艦がいません。取り込む範囲（ロック済みだけ・Lv 下限）を見直してください";
+      return isNarrowed(filter)
+        ? "取り込む範囲に当てはまる艦がいません。取り込む範囲（ロック済みだけ・Lv 下限）を見直してください"
+        : "貼り付けた内容に艦娘の情報が含まれていません（取り込める艦がいません）。もう一度コピーして貼り付けてください";
   }
 }
 
