@@ -12,7 +12,7 @@ export type AppShellProps = {
 
 /**
  * 共通の枠（要件 3.0）：左に幅 64px の縦メニュー、右に各画面（上部のヘッダー帯と本文）。
- * 単独の画面（ログイン、招待。`@/lib/routes` の isStandalonePath）では左メニューを出さず、画面だけを出す。
+ * 単独の画面（ログイン。`@/lib/routes` の isStandalonePath）では左メニューを出さず、画面だけを出す。
  */
 export function AppShell({ children }: AppShellProps): ReactNode {
   const pathname = usePathname();

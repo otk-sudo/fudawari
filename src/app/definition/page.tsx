@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { ScreenHeader } from "@/components/ScreenHeader";
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { DEFINITION_TITLE, DefinitionPageContent } from "@/features/plan-editor";
 
-const TITLE = "イベント定義";
+export const metadata: Metadata = { title: DEFINITION_TITLE };
 
-export const metadata: Metadata = { title: TITLE };
-
-// イベント定義（要件 3.7、モック PlanEditor.dc.html。管理者・協力者専用）。中身は PR-11 で作る
+// イベント定義（要件 3.7、モック PlanEditor.dc.html。管理者・協力者専用）。
+// 一般利用者には拒否の表示を出す（中身は src/features/plan-editor の DefinitionScreen）
 export default function DefinitionPage() {
-  return (
-    <>
-      <ScreenHeader title={TITLE} />
-      <ScreenPlaceholder />
-    </>
-  );
+  return <DefinitionPageContent />;
 }

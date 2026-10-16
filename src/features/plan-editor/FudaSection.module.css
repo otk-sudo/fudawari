@@ -1,0 +1,225 @@
+/* 札の一覧と、札の追加・編集の入力の欄（モック PlanEditor.dc.html の section「札」） */
+
+.section {
+  flex: 1 1 260px;
+  max-width: 320px;
+  min-width: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.headHint {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+}
+
+/* 札の行 */
+.item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--pe-inset-bg);
+  border: 1px solid var(--pe-inset-border);
+  border-radius: 5px;
+}
+
+.itemDragging {
+  opacity: 0.4;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ドラッグの持ち手 */
+.handle {
+  display: inline-flex;
+  padding: 2px;
+  background: transparent;
+  color: var(--pe-handle);
+  border: 0;
+  border-radius: 3px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 1px;
+}
+
+.dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.uses {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.editButton {
+  min-height: 26px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.editButton:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 1px;
+}
+
+/* 札を落とすと、この札の前に入る（上に線を出す） */
+.dropBefore::before {
+  position: absolute;
+  top: -5px;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: var(--pe-drop);
+  border-radius: 2px;
+  content: "";
+  pointer-events: none;
+}
+
+/* 「＋ 札を追加」の行（札を落とすと最後へ移す） */
+.endItem {
+  position: relative;
+}
+
+.addButton {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 5px;
+}
+
+/* ---- 札の追加・編集の入力の欄 ---- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 5px;
+}
+
+.formLabel {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.colorItem {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ラジオボタンは見えなくして色の見本に重ねる */
+.colorInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.colorSwatch {
+  width: 26px;
+  height: 26px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 25%);
+}
+
+.colorInput:checked + .colorSwatch {
+  border-color: var(--color-text);
+}
+
+.colorInput:focus-visible + .colorSwatch {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 2px;
+}
+
+.numberInput {
+  width: 100px;
+}
+
+.formHint {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.formError {
+  margin: 0;
+  color: var(--pe-danger);
+  font-size: 12px;
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.formDelete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}

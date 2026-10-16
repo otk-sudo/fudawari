@@ -1,0 +1,153 @@
+/* 定義画面の上部の欄（モック PlanEditor.dc.html の最初の section） */
+
+.panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+/* 新規か更新か・更新するイベント・日時の欄の行 */
+.topRow {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.target {
+  font-size: 13px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* 折り返しの位置 */
+.break {
+  flex-basis: 100%;
+  height: 0;
+}
+
+.dateField {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.fieldLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.requiredBadge {
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--pe-danger-solid);
+  color: var(--pe-on-danger-solid);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.optionalBadge {
+  padding: 0 5px;
+  border: 1px solid var(--pe-badge-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+}
+
+.readonlyDate {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.readonlyDate b {
+  color: var(--color-text);
+  font-family: Consolas, monospace;
+}
+
+.fieldError {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--pe-danger);
+}
+
+/* イベント名・状態の表示 */
+.info {
+  display: flex;
+  flex: 1 1 300px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.nameInput {
+  width: 240px;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.nameSuffix {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.eventTitle {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.line {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.pending {
+  color: var(--pe-pending);
+}
+
+.link {
+  color: var(--pe-link);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 文書の問題（理由の文。ボタンを押せない理由） */
+.issues {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  background: var(--pe-danger-bg);
+  border: 1px solid var(--pe-danger-border);
+  border-radius: var(--radius-md);
+  color: var(--pe-danger-text);
+  font-size: 12px;
+}
