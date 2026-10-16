@@ -9,6 +9,12 @@ import { parsePublicDefinition } from "../src/domain/definition";
 
 const LATEST_DEFINITION = "/data/latest-definition.json";
 const EVENT_NAME = "2026夏イベ";
+/** 読み込みに失敗したときの警告の書き出し */
+const LOAD_FAILED = "イベントの定義を読み込めませんでした";
+/** 読み込みに失敗したときに警告に書く次の行動 */
+const RELOAD_ADVICE = "ページを再読み込みしてください";
+/** ヘッダーのイベント名の前に付ける、画面には出さない（視覚的に隠した）読み上げ用の文 */
+const EVENT_NAME_PREFIX = "最新イベント：";
 /** 2026夏イベの開催中の時刻 */
 const WHILE_RUNNING = new Date("2026-10-16T12:00:00+09:00");
 
@@ -78,6 +84,25 @@ test.describe("ホームの「開催中：（イベント名）」", () => {
     expect(definitionRequests.length).toBeGreaterThan(0);
     expect(requestedUrls.filter((url) => new URL(url).hostname.includes("supabase"))).toEqual([]);
   });
+
+  test("静的ファイルが取得できない（404）と、ホームにも「イベントの定義を読み込めませんでした」と理由、次の行動が出る", async ({
+    page,
+  }) => {
+    // 準備：静的ファイルへの取得だけを 404 にする
+    await page.route(`**${LATEST_DEFINITION}`, (route) =>
+      route.fulfill({ status: 404, contentType: "text/plain", body: "Not Found" }),
+    );
+
+    // 実行
+    await page.goto("/");
+
+    // 検証：ほかの画面と同じく、画面（main）の中の警告に出す
+    const alert = screenAlert(page);
+    await expect(alert).toContainText(LOAD_FAILED);
+    await expect(alert).toContainText("404");
+    await expect(alert).toContainText(RELOAD_ADVICE);
+    await expect(headerOf(page, "札割りプランナー")).not.toContainText("開催中：");
+  });
 });
 
 test.describe("各画面のヘッダーの最新イベント名", () => {
@@ -100,9 +125,29 @@ test.describe("各画面のヘッダーの最新イベント名", () => {
       await expect(headerOf(page, heading).getByText(EVENT_NAME, { exact: true })).toBeVisible();
       await expect(screenAlert(page)).toHaveCount(0);
     });
+
+    test(`${path} のヘッダーのイベント名の前に、画面には出さない「最新イベント：」があり、読み上げでは「最新イベント：2026夏イベ」になる`, async ({
+      page,
+    }) => {
+      // 準備・実行
+      await page.goto(path);
+      const header = headerOf(page, heading);
+      await expect(header.getByText(EVENT_NAME, { exact: true })).toBeVisible();
+
+      // 検証：文書の順で「最新イベント：」の直後にイベント名が続く
+      await expect(header).toContainText(`${EVENT_NAME_PREFIX}${EVENT_NAME}`);
+      // 「最新イベント：」は読み上げから外さず（display: none・visibility: hidden にしない）、
+      // 画面には見えない大きさ（1px 四方以下。視覚的に隠すときの定番の形）にする
+      const prefix = header.getByText(EVENT_NAME_PREFIX, { exact: true });
+      await expect(prefix).toBeVisible();
+      const box = await prefix.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box?.width ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(1);
+      expect(box?.height ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(1);
+    });
   }
 
-  test("静的ファイルが取得できない（404）と、一覧の画面に「イベントの定義を読み込めませんでした」と理由が出る", async ({
+  test("静的ファイルが取得できない（404）と、一覧の画面に「イベントの定義を読み込めませんでした」と理由、次の行動が出る", async ({
     page,
   }) => {
     // 準備：静的ファイルへの取得だけを 404 にする
@@ -115,8 +160,9 @@ test.describe("各画面のヘッダーの最新イベント名", () => {
 
     // 検証
     const alert = screenAlert(page);
-    await expect(alert).toContainText("イベントの定義を読み込めませんでした");
+    await expect(alert).toContainText(LOAD_FAILED);
     await expect(alert).toContainText("404");
+    await expect(alert).toContainText(RELOAD_ADVICE);
     await expect(headerOf(page, "札割り一覧").getByText(EVENT_NAME, { exact: true })).toHaveCount(0);
   });
 });

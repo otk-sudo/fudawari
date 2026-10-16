@@ -1,9 +1,10 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, type RenderResult, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // `@/` の別名が Vitest でも解決できることを兼ねて確かめるため、別名で読み込む
 import HomePage from "@/app/page";
 import { setRole } from "@/features/auth";
-import { resetLatestDefinitionCache } from "@/lib/definition";
+import { resetLatestDefinitionCache, useLatestDefinition } from "@/lib/definition";
 import {
   failNetwork,
   type FetchMock,
@@ -17,31 +18,97 @@ import {
 import { cloneSummer2026Definition } from "@/test/fixtures";
 
 // テスト用の 2026夏イベは 2026-08-07 12:00（日本時間）開始・終了日時は未定（src/test/fixtures/summer2026Definition.ts）
+/** 2026夏イベの開始日時 */
+const START_AT = new Date("2026-08-07T12:00:00+09:00");
 /** 2026夏イベの開催中の時刻 */
 const WHILE_RUNNING = new Date("2026-10-16T12:00:00+09:00");
 /** 2026夏イベの開始前の時刻 */
 const BEFORE_START = new Date("2026-08-01T12:00:00+09:00");
+/** 終了したイベントにするときの終了日時（今〔WHILE_RUNNING〕より前） */
+const ENDED_AT = "2026-09-01T11:00:00+09:00";
 
 /** 静的ファイルの置き場所（public/data/latest-definition.json） */
 const LATEST_DEFINITION = "/data/latest-definition.json";
 
-// 終了したイベント（2026-09-01 11:00 終了）の定義
-function endedDefinitionJson(): string {
-  const ended = cloneSummer2026Definition();
-  ended.event.endAt = "2026-09-01T11:00:00+09:00";
-  return JSON.stringify(ended);
+/** 読み込みに失敗したときの警告の書き出し（ほかの画面と同じ） */
+const LOAD_FAILED = "イベントの定義を読み込めませんでした";
+/** 読み込みに失敗したときに警告に書く次の行動 */
+const RELOAD_ADVICE = "ページを再読み込みしてください";
+
+// 協力者・管理者のイベント定義のタイルの説明（要件 3.1、U18）
+/** 協力者：最新のイベントが終了していない（開始前を含む） */
+const COLLAB_NOTE_UPDATABLE = "最新イベントの札・段階・特効を更新";
+/** 協力者：最新のイベントが終了している */
+const COLLAB_NOTE_ENDED = "更新できるイベントがありません（最新のイベントは終了しました）";
+/** 協力者：定義の読み込み中 */
+const COLLAB_NOTE_CHECKING = "イベントの情報を確認しています";
+/** 協力者：定義の読み込みの失敗（読み込めなかったことが分かる文言。言い回しは実装に任せ、要点だけを確かめる） */
+const COLLAB_NOTE_LOAD_FAILED = /読み込めませんでした/;
+/** 管理者（状態によらず同じ） */
+const ADMIN_NOTE = "札・段階・特効の設定、新規イベントの作成";
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+/** setTimeout・setInterval に渡せる待ち時間の上限（2^31−1 ミリ秒、約 24.8 日）。超えるとすぐに呼ばれてしまう */
+const MAX_TIMER_DELAY = 2 ** 31 - 1;
+
+/** 基準の時刻から ms だけずらした時刻 */
+function shift(base: Date, ms: number): Date {
+  return new Date(base.getTime() + ms);
 }
 
-// ホームが公開定義を取得し、その結果が画面に反映されるまで待つ。
-// 「出さない」ことを確かめるテストが、読み込む前の画面を見て通ってしまわないように、
-// ホームが静的ファイルを取得したことを確かめてから、応答の処理（本文の読み取り・検証・描画）が済むまで待つ
-async function waitUntilDefinitionLoaded(fetchMock: FetchMock): Promise<void> {
-  await waitFor(() => expect(requestedPaths(fetchMock)).toEqual([LATEST_DEFINITION]));
+/** 終了日時を決めた 2026夏イベの定義を返すようにする */
+function respondWithEndAt(fetchMock: FetchMock, endAt: string): void {
+  const definition = cloneSummer2026Definition();
+  definition.event.endAt = endAt;
+  respondWithDefinition(fetchMock, definition);
+}
+
+/** 確認用の部品が出す文の書き出し */
+const PROBE_LABEL = "確認用：定義の読み込みの状態＝";
+
+/**
+ * 共有している読み込みの状態（useLatestDefinition）を文字で出す、テストだけで使う確認用の部品。
+ * ホームと一緒に描き、読み込みが成功または失敗の状態になったことを確かめてから「出ない」ことを見るために使う
+ * （ホームと同じ状態を共有するため、取得は増えない）
+ */
+function DefinitionStatusProbe(): ReactNode {
+  const state = useLatestDefinition();
+  return <p>{`${PROBE_LABEL}${state.status}`}</p>;
+}
+
+/** ホームを確認用の部品と一緒に描く */
+function renderHomePage(): RenderResult {
+  return render(
+    <>
+      <HomePage />
+      <DefinitionStatusProbe />
+    </>,
+  );
+}
+
+/**
+ * 読み込みが指定の状態（成功・失敗）になるまで待つ（renderHomePage で描いたとき）。
+ * 状態が変わったことを確かめてから、その結果を受けた描き直し（effect とそこからの描き直し）を済ませる
+ */
+async function waitForDefinition(status: "success" | "error"): Promise<void> {
+  expect(await screen.findByText(`${PROBE_LABEL}${status}`)).toBeInTheDocument();
   await act(async () => {
-    for (let i = 0; i < 3; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await Promise.resolve();
   });
+}
+
+/** 偽の時計を ms だけ進める（その間に期限が来るタイマーを動かし、描き直しを済ませる） */
+async function advanceTime(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+/** 「管理」の区分のイベント定義のタイル（名前は「タイトル＋説明」になるため、タイトルの前方一致で探す） */
+function getDefinitionTile(): HTMLElement {
+  return screen.getByRole("link", { name: /^イベント定義/ });
 }
 
 describe("トップ画面", () => {
@@ -119,9 +186,9 @@ describe("トップ画面", () => {
       // 準備
       vi.setSystemTime(BEFORE_START);
 
-      // 実行
-      render(<HomePage />);
-      await waitUntilDefinitionLoaded(fetchMock);
+      // 実行：読み込みが成功の状態になるまで待つ
+      renderHomePage();
+      await waitForDefinition("success");
 
       // 検証
       expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
@@ -129,11 +196,11 @@ describe("トップ画面", () => {
 
     it("最新イベントが終了していれば「開催中：」を出さない", async () => {
       // 準備：2026-09-01 に終了したイベント、今は 2026-10-16
-      fetchMock.mockImplementation(async () => textResponse(endedDefinitionJson()));
+      respondWithEndAt(fetchMock, ENDED_AT);
 
-      // 実行
-      render(<HomePage />);
-      await waitUntilDefinitionLoaded(fetchMock);
+      // 実行：読み込みが成功の状態になるまで待つ
+      renderHomePage();
+      await waitForDefinition("success");
 
       // 検証
       expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
@@ -155,27 +222,313 @@ describe("トップ画面", () => {
       // 準備
       arrange(fetchMock);
 
-      // 実行
-      render(<HomePage />);
-      await waitUntilDefinitionLoaded(fetchMock);
+      // 実行：読み込みが失敗の状態になるまで待つ
+      renderHomePage();
+      await waitForDefinition("error");
 
       // 検証：画面は出ている（失敗で落ちない）。「開催中：」はない
       expect(screen.getByRole("heading", { level: 1, name: "札割りプランナー" })).toBeInTheDocument();
       expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
     });
+  });
 
-    it("協力者には、最新イベントが開催中ならイベント定義の説明を「開催中イベントの札・段階・特効を更新」にする", async () => {
-      // 準備
+  describe("時刻の境目での描き直し（ホームを開いたまま、最新イベントの開始日時・終了日時をまたぐ）", () => {
+    beforeEach(() => {
+      // 境目で描き直すタイマーも偽にする。Testing Library の待ち（findBy など）が止まらないよう、
+      // 偽の時計は実際の時間に合わせても進める（shouldAdvanceTime）。境目は数分以上先に置くので、そのずれは結果に響かない
+      vi.useFakeTimers({
+        toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+        shouldAdvanceTime: true,
+      });
+    });
+
+    afterEach(() => {
+      // 監視（spyOn）を外してから本物のタイマーに戻す（逆の順だと偽のタイマーが残る）
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    it("開始前に開いていて開始日時を過ぎたら、描き直して「開催中：2026夏イベ」を出す", async () => {
+      // 準備：開始の 1 時間前に開き、読み込みを済ませる
+      vi.setSystemTime(shift(START_AT, -HOUR));
+      renderHomePage();
+      await waitForDefinition("success");
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+
+      // 実行：開始の 1 分前まで進める
+      await advanceTime(HOUR - MINUTE);
+
+      // 検証：まだ出さない（早まって出さない）
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+
+      // 実行：開始日時を過ぎるまで進める（開始の 1 分後）
+      await advanceTime(2 * MINUTE);
+
+      // 検証
+      expect(screen.getByText(/開催中：2026夏イベ/)).toBeInTheDocument();
+    });
+
+    it("開催中に開いていて終了日時を過ぎたら、描き直して「開催中：」を消す", async () => {
+      // 準備：2026-09-01 11:00 に終了するイベント。終了の 1 時間前に開き、読み込みを済ませる
+      respondWithEndAt(fetchMock, ENDED_AT);
+      vi.setSystemTime(shift(new Date(ENDED_AT), -HOUR));
+      renderHomePage();
+      await waitForDefinition("success");
+      expect(screen.getByText(/開催中：2026夏イベ/)).toBeInTheDocument();
+
+      // 実行：終了の 1 分前まで進める
+      await advanceTime(HOUR - MINUTE);
+
+      // 検証：まだ消さない
+      expect(screen.getByText(/開催中：2026夏イベ/)).toBeInTheDocument();
+
+      // 実行：終了日時を過ぎるまで進める（終了の 1 分後）
+      await advanceTime(2 * MINUTE);
+
+      // 検証
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+    });
+
+    it("開始前に開いたまま開始日時と終了日時を続けてまたぐと、出してから消す（境目ごとにタイマーを仕掛け直す）", async () => {
+      // 準備：開始の 3 時間後に終了するイベント。開始の 1 時間前に開く
+      respondWithEndAt(fetchMock, "2026-08-07T15:00:00+09:00");
+      vi.setSystemTime(shift(START_AT, -HOUR));
+      renderHomePage();
+      await waitForDefinition("success");
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+
+      // 実行・検証：開始の 1 時間後（開催中）
+      await advanceTime(2 * HOUR);
+      expect(screen.getByText(/開催中：2026夏イベ/)).toBeInTheDocument();
+
+      // 実行・検証：終了の 1 時間後（終了）
+      await advanceTime(3 * HOUR);
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+    });
+
+    it("協力者には、開いたまま終了日時を過ぎたら、イベント定義の説明を「更新できるイベントがありません（最新のイベントは終了しました）」に変える", async () => {
+      // 準備：終了の 1 時間前に協力者で開く
       setRole("collab");
+      respondWithEndAt(fetchMock, ENDED_AT);
+      vi.setSystemTime(shift(new Date(ENDED_AT), -HOUR));
+      renderHomePage();
+      await waitForDefinition("success");
+      expect(getDefinitionTile()).toHaveTextContent(COLLAB_NOTE_UPDATABLE);
+
+      // 実行：終了の 1 時間後まで進める
+      await advanceTime(2 * HOUR);
+
+      // 検証
+      const tile = getDefinitionTile();
+      expect(tile).toHaveTextContent(COLLAB_NOTE_ENDED);
+      expect(tile).not.toHaveTextContent(COLLAB_NOTE_UPDATABLE);
+    });
+
+    it("境目が setTimeout の上限（約 24.8 日）より先でも、上限を超える待ち時間を渡さず、早まって出さず、境目を過ぎたら出す", async () => {
+      // 準備：開始の 25 日前に開く（25 日は上限の 2^31−1 ミリ秒を超える）。ページが仕掛けるタイマーの待ち時間を記録する
+      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+      const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+      vi.setSystemTime(shift(START_AT, -25 * DAY));
+      renderHomePage();
+      await waitForDefinition("success");
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+
+      // 検証：上限を超える待ち時間を渡していない（超えるとすぐに呼ばれ、早まって描き直したり、描き直しが止まらなくなったりする）
+      const delays = [...setTimeoutSpy.mock.calls, ...setIntervalSpy.mock.calls].map(([, delay]) =>
+        Number(delay ?? 0),
+      );
+      expect(delays.filter((delay) => delay > MAX_TIMER_DELAY)).toEqual([]);
+
+      // 実行・検証：少し進めても、まだ出さない
+      await advanceTime(MINUTE);
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+
+      // 実行・検証：上限を過ぎ、開始の 1 分前まで進めても、まだ出さない
+      await advanceTime(25 * DAY - 2 * MINUTE);
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+
+      // 実行・検証：開始日時を過ぎたら出す（開始の 1 分後）
+      await advanceTime(2 * MINUTE);
+      expect(screen.getByText(/開催中：2026夏イベ/)).toBeInTheDocument();
+    });
+
+    it("画面を外したら、境目のタイマーを残さない", async () => {
+      // 準備：開始の 1 時間前に開き、読み込みを済ませる（次の境目は開始日時）
+      vi.setSystemTime(shift(START_AT, -HOUR));
+      const { unmount } = renderHomePage();
+      await waitForDefinition("success");
+
+      // 実行
+      unmount();
+
+      // 検証：待っているタイマーがない
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe("読み込みの失敗の表示（ほかの画面と同じ警告。T2-3）", () => {
+    it.each([
+      ["404", (mock: FetchMock) => respondWithStatus(mock, 404), "404"],
+      ["ネットワークの失敗", (mock: FetchMock) => failNetwork(mock), "通信に失敗しました"],
+      [
+        "壊れた JSON",
+        (mock: FetchMock) => mock.mockImplementation(async () => textResponse("{ broken")),
+        "JSON として読めません",
+      ],
+      [
+        "検証の失敗",
+        (mock: FetchMock) => {
+          const broken = cloneSummer2026Definition();
+          broken.event.name = "";
+          mock.mockImplementation(async () => textResponse(JSON.stringify(broken)));
+        },
+        "event.name：空にはできません",
+      ],
+    ])(
+      "読み込みに失敗（%s）したら、警告（role=\"alert\"）に「イベントの定義を読み込めませんでした」、理由、次の行動「ページを再読み込みしてください」を出す",
+      async (_label, arrange, reason) => {
+        // 準備
+        arrange(fetchMock);
+
+        // 実行
+        render(<HomePage />);
+
+        // 検証
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent(LOAD_FAILED);
+        expect(alert).toHaveTextContent(reason);
+        expect(alert).toHaveTextContent(RELOAD_ADVICE);
+      },
+    );
+
+    it("読み込めたら警告を出さない", async () => {
+      // 準備・実行：読み込みが成功の状態になるまで待つ
+      renderHomePage();
+      await waitForDefinition("success");
+
+      // 検証
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("読み込み中は警告を出さない", async () => {
+      // 準備：応答を待たせる
+      holdFetch(fetchMock);
 
       // 実行
       render(<HomePage />);
 
+      // 検証：取得を始めたことを確かめてから、まだ出ていないことを見る
+      await waitFor(() => expect(requestedPaths(fetchMock)).toEqual([LATEST_DEFINITION]));
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("「管理」の区分のイベント定義のタイルの説明（要件 3.1、U18）", () => {
+    it("協力者には、最新イベントが開催中なら「最新イベントの札・段階・特効を更新」にする", async () => {
+      // 準備
+      setRole("collab");
+
+      // 実行
+      renderHomePage();
+      await waitForDefinition("success");
+
       // 検証
-      const tile = await screen.findByRole("link", {
-        name: /^イベント定義.*開催中イベントの札・段階・特効を更新/,
-      });
+      const tile = getDefinitionTile();
+      expect(tile).toHaveTextContent(COLLAB_NOTE_UPDATABLE);
       expect(tile).toHaveAttribute("href", "/definition");
+    });
+
+    it("協力者には、最新イベントの開始前でも（終了していなければ）「最新イベントの札・段階・特効を更新」にする。「開催中：」は出さない", async () => {
+      // 準備
+      setRole("collab");
+      vi.setSystemTime(BEFORE_START);
+
+      // 実行
+      renderHomePage();
+      await waitForDefinition("success");
+
+      // 検証
+      expect(getDefinitionTile()).toHaveTextContent(COLLAB_NOTE_UPDATABLE);
+      expect(screen.queryByText(/開催中：/)).not.toBeInTheDocument();
+    });
+
+    it("協力者には、最新イベントが終了していれば「更新できるイベントがありません（最新のイベントは終了しました）」にする", async () => {
+      // 準備：2026-09-01 に終了したイベント、今は 2026-10-16
+      setRole("collab");
+      respondWithEndAt(fetchMock, ENDED_AT);
+
+      // 実行
+      renderHomePage();
+      await waitForDefinition("success");
+
+      // 検証
+      const tile = getDefinitionTile();
+      expect(tile).toHaveTextContent(COLLAB_NOTE_ENDED);
+      expect(tile).not.toHaveTextContent(COLLAB_NOTE_UPDATABLE);
+    });
+
+    it("協力者には、定義の読み込み中は「イベントの情報を確認しています」にする", async () => {
+      // 準備：応答を待たせる
+      setRole("collab");
+      holdFetch(fetchMock);
+
+      // 実行
+      render(<HomePage />);
+      await waitFor(() => expect(requestedPaths(fetchMock)).toEqual([LATEST_DEFINITION]));
+
+      // 検証
+      const tile = getDefinitionTile();
+      expect(tile).toHaveTextContent(COLLAB_NOTE_CHECKING);
+      expect(tile).not.toHaveTextContent(COLLAB_NOTE_UPDATABLE);
+      expect(tile).not.toHaveTextContent(COLLAB_NOTE_ENDED);
+    });
+
+    it("協力者には、定義の読み込みに失敗したら、読み込めなかったことが分かる説明にする", async () => {
+      // 準備
+      setRole("collab");
+      respondWithStatus(fetchMock, 404);
+
+      // 実行
+      renderHomePage();
+      await waitForDefinition("error");
+
+      // 検証
+      const tile = getDefinitionTile();
+      expect(tile).toHaveTextContent(COLLAB_NOTE_LOAD_FAILED);
+      expect(tile).not.toHaveTextContent(COLLAB_NOTE_UPDATABLE);
+      expect(tile).not.toHaveTextContent(COLLAB_NOTE_CHECKING);
+    });
+
+    it.each([
+      ["終了後", (mock: FetchMock) => respondWithEndAt(mock, ENDED_AT), "success"],
+      ["読み込みの失敗", (mock: FetchMock) => respondWithStatus(mock, 404), "error"],
+    ] as const)(
+      "管理者には、最新イベントが%sでも「札・段階・特効の設定、新規イベントの作成」のまま",
+      async (_label, arrange, status) => {
+        // 準備
+        setRole("admin");
+        arrange(fetchMock);
+
+        // 実行
+        renderHomePage();
+        await waitForDefinition(status);
+
+        // 検証
+        expect(getDefinitionTile()).toHaveTextContent(ADMIN_NOTE);
+      },
+    );
+
+    it("管理者には、定義の読み込み中も「札・段階・特効の設定、新規イベントの作成」のまま", async () => {
+      // 準備：応答を待たせる
+      setRole("admin");
+      holdFetch(fetchMock);
+
+      // 実行
+      render(<HomePage />);
+      await waitFor(() => expect(requestedPaths(fetchMock)).toEqual([LATEST_DEFINITION]));
+
+      // 検証
+      expect(getDefinitionTile()).toHaveTextContent(ADMIN_NOTE);
     });
   });
 });

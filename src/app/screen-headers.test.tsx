@@ -25,6 +25,10 @@ const LATEST_DEFINITION = "/data/latest-definition.json";
 
 /** 失敗したときの文の書き出し */
 const LOAD_FAILED = "イベントの定義を読み込めませんでした";
+/** 失敗したときに警告に書く次の行動 */
+const RELOAD_ADVICE = "ページを再読み込みしてください";
+/** イベント名の前に付ける、画面には出さない（視覚的に隠した）読み上げ用の文 */
+const EVENT_NAME_PREFIX = "最新イベント：";
 
 const SCREENS: ReadonlyArray<{ name: string; heading: string; Page: () => ReactNode }> = [
   { name: "一覧", heading: "札割り一覧", Page: ListPage },
@@ -137,5 +141,62 @@ describe.each(SCREENS)("$name の画面（見出し「$heading」）のヘッダ
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(LOAD_FAILED);
     expect(alert).toHaveTextContent("JSON として読めません");
+  });
+
+  it.each([
+    ["404", (mock: FetchMock) => respondWithStatus(mock, 404)],
+    ["ネットワークの失敗", (mock: FetchMock) => failNetwork(mock)],
+    ["壊れた JSON", (mock: FetchMock) => mock.mockImplementation(async () => textResponse("{ broken"))],
+    [
+      "検証の失敗",
+      (mock: FetchMock) => {
+        const broken = cloneSummer2026Definition();
+        broken.event.name = "";
+        mock.mockImplementation(async () => textResponse(JSON.stringify(broken)));
+      },
+    ],
+  ])("読み込みに失敗（%s）したら、警告に次の行動「ページを再読み込みしてください」を書く", async (_label, arrange) => {
+    // 準備
+    arrange(fetchMock);
+
+    // 実行
+    render(<Page />);
+
+    // 検証
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(LOAD_FAILED);
+    expect(alert).toHaveTextContent(RELOAD_ADVICE);
+  });
+
+  describe("イベント名の読み上げ", () => {
+    it("イベント名の前に、画面には出さない「最新イベント：」を付け、読み上げでは「最新イベント：2026夏イベ」になる", async () => {
+      // 準備
+      respondWithDefinition(fetchMock);
+
+      // 実行
+      render(<Page />);
+
+      // 検証：イベント名だけの要素（完全一致）は今までどおり探せる
+      const header = headerOf(heading);
+      expect(await within(header).findByText("2026夏イベ")).toBeInTheDocument();
+      // 「最新イベント：」の要素がある。読み上げから外していない（視覚的に隠すだけ。隠し方は画面テストで確かめる）
+      const prefix = within(header).getByText(EVENT_NAME_PREFIX);
+      expect(prefix).not.toHaveAttribute("aria-hidden", "true");
+      expect(prefix).toBeVisible();
+      // 文書の順で「最新イベント：」の直後にイベント名が続く（読み上げの順）
+      expect(header).toHaveTextContent(`${EVENT_NAME_PREFIX}2026夏イベ`);
+    });
+
+    it("読み込めないときは「最新イベント：」も出さない（名前のない「最新イベント：」を読み上げない）", async () => {
+      // 準備
+      respondWithStatus(fetchMock, 404);
+
+      // 実行
+      render(<Page />);
+      await screen.findByRole("alert");
+
+      // 検証
+      expect(within(headerOf(heading)).queryByText(EVENT_NAME_PREFIX)).not.toBeInTheDocument();
+    });
   });
 });
