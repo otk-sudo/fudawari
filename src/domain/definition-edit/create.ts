@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- 実装前の空の入れ物。実装するときにこの行を消す */
 // 新規作成の初期状態（要件 3.7「新規作成」、roadmap T3-6）
 import type { CreateDefinitionInput, DefinitionDoc } from "./types";
 
@@ -10,5 +9,23 @@ import type { CreateDefinitionInput, DefinitionDoc } from "./types";
  * - schemaVersion は 1
  */
 export function createDefinition(input: CreateDefinitionInput): DefinitionDoc {
-  throw new Error("未実装");
+  const event = { id: input.eventId, name: "", startAt: "", endAt: null, versionDate: "" };
+  const base = input.base ?? null;
+  if (base === null) {
+    return { schemaVersion: 1, event, areas: [{ id: "E1", name: "E1" }], fudas: [], stages: [] };
+  }
+  return {
+    schemaVersion: 1,
+    event,
+    areas: base.areas.map((a) => ({ ...a })),
+    fudas: base.fudas.map((f) => ({ ...f })),
+    stages: base.stages.map((s) => ({
+      id: s.id,
+      areaId: s.areaId,
+      name: s.name,
+      fudaId: s.fudaId,
+      importance: s.importance,
+      boosts: [],
+    })),
+  };
 }

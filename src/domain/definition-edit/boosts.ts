@@ -1,7 +1,53 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- 実装前の空の入れ物。実装するときにこの行を消す */
 // 特効グループの編集（要件 3.7「この段階のボスで効く特効」、U11・U16、roadmap T3-6）
 // 特効グループの ID は文書全体（すべての段階）で重複しないので、グループの操作は groupId だけで指定する。
+import type { BoostGroup, Stage } from "@/domain/definition/types";
+import { fail, ok } from "./result";
 import type { AddBoostGroupInput, BoostGroupPatch, DefinitionDoc, EditResult } from "./types";
+
+/** 倍率が許される値か（1 以上の有限の数） */
+function isValidMultiplier(multiplier: number): boolean {
+  return Number.isFinite(multiplier) && multiplier >= 1;
+}
+
+const invalidMultiplier = (): EditResult => fail("invalid_value", "倍率は 1 以上の数で入力してください");
+const emptyShipName = (): EditResult => fail("invalid_value", "空の艦名は追加できません");
+const groupNotFound = (): EditResult => fail("not_found", "特効グループが見つかりません");
+
+/** 重複を除く（先に出た順） */
+function unique(names: readonly string[]): string[] {
+  return [...new Set(names)];
+}
+
+/** 艦名の前後の空白（半角・全角）を除く。空の艦名があれば undefined */
+function trimShipNames(shipNames: readonly string[]): string[] | undefined {
+  const trimmed = shipNames.map((name) => name.trim());
+  return trimmed.includes("") ? undefined : trimmed;
+}
+
+/** 特効グループと、それを持つ段階 */
+interface GroupLocation {
+  readonly stage: Stage;
+  readonly group: BoostGroup;
+}
+
+/** 文書から特効グループを探す（なければ undefined） */
+function locateGroup(doc: DefinitionDoc, groupId: string): GroupLocation | undefined {
+  for (const stage of doc.stages) {
+    const group = stage.boosts.find((g) => g.id === groupId);
+    if (group !== undefined) return { stage, group };
+  }
+  return undefined;
+}
+
+/** 段階の特効グループを作り直した新しい文書（next が undefined なら、そのグループを取り除く） */
+function withGroup(doc: DefinitionDoc, at: GroupLocation, next: BoostGroup | undefined): DefinitionDoc {
+  const boosts = at.stage.boosts.flatMap((g) => {
+    if (g !== at.group) return [g];
+    return next === undefined ? [] : [next];
+  });
+  const updated: Stage = { ...at.stage, boosts };
+  return { ...doc, stages: doc.stages.map((s) => (s === at.stage ? updated : s)) };
+}
 
 /**
  * 段階に特効グループを追加する（その段階の特効の最後）。
@@ -10,7 +56,19 @@ import type { AddBoostGroupInput, BoostGroupPatch, DefinitionDoc, EditResult } f
  *   newGroupId が文書のどこかの特効グループの ID と同じ → duplicate_id、段階がない → not_found
  */
 export function addBoostGroup(doc: DefinitionDoc, input: AddBoostGroupInput): EditResult {
-  throw new Error("未実装");
+  const stage = doc.stages.find((s) => s.id === input.stageId);
+  if (stage === undefined) return fail("not_found", "特効グループを追加する段階が見つかりません");
+  if (locateGroup(doc, input.newGroupId) !== undefined) {
+    return fail("duplicate_id", "同じ ID の特効グループが既にあります");
+  }
+  const multiplier = input.multiplier ?? 1;
+  if (!isValidMultiplier(multiplier)) return invalidMultiplier();
+  const shipNames = trimShipNames(input.shipNames ?? []);
+  if (shipNames === undefined) return emptyShipName();
+
+  const group: BoostGroup = { id: input.newGroupId, name: input.name ?? "", multiplier, shipNames: unique(shipNames) };
+  const updated: Stage = { ...stage, boosts: [...stage.boosts, group] };
+  return ok({ ...doc, stages: doc.stages.map((s) => (s === stage ? updated : s)) });
 }
 
 /**
@@ -18,7 +76,14 @@ export function addBoostGroup(doc: DefinitionDoc, input: AddBoostGroupInput): Ed
  * - エラー：倍率が 1 未満・有限の数でない → invalid_value、グループがない → not_found
  */
 export function updateBoostGroup(doc: DefinitionDoc, groupId: string, patch: BoostGroupPatch): EditResult {
-  throw new Error("未実装");
+  const at = locateGroup(doc, groupId);
+  if (at === undefined) return groupNotFound();
+  if (patch.multiplier !== undefined && !isValidMultiplier(patch.multiplier)) return invalidMultiplier();
+
+  const { group } = at;
+  return ok(
+    withGroup(doc, at, { ...group, name: patch.name ?? group.name, multiplier: patch.multiplier ?? group.multiplier }),
+  );
 }
 
 /**
@@ -27,7 +92,12 @@ export function updateBoostGroup(doc: DefinitionDoc, groupId: string, patch: Boo
  * - エラー：空（空白だけを含む）の艦名がある → invalid_value、グループがない → not_found
  */
 export function addShipNames(doc: DefinitionDoc, groupId: string, shipNames: readonly string[]): EditResult {
-  throw new Error("未実装");
+  const at = locateGroup(doc, groupId);
+  if (at === undefined) return groupNotFound();
+  const trimmed = trimShipNames(shipNames);
+  if (trimmed === undefined) return emptyShipName();
+
+  return ok(withGroup(doc, at, { ...at.group, shipNames: unique([...at.group.shipNames, ...trimmed]) }));
 }
 
 /**
@@ -35,7 +105,11 @@ export function addShipNames(doc: DefinitionDoc, groupId: string, shipNames: rea
  * - エラー：グループがない、またはその艦名がグループにない → not_found
  */
 export function removeShipName(doc: DefinitionDoc, groupId: string, shipName: string): EditResult {
-  throw new Error("未実装");
+  const at = locateGroup(doc, groupId);
+  if (at === undefined) return groupNotFound();
+  if (!at.group.shipNames.includes(shipName)) return fail("not_found", "その艦名は特効グループにありません");
+
+  return ok(withGroup(doc, at, { ...at.group, shipNames: at.group.shipNames.filter((n) => n !== shipName) }));
 }
 
 /**
@@ -43,8 +117,12 @@ export function removeShipName(doc: DefinitionDoc, groupId: string, shipName: st
  * - エラー：グループがない → not_found
  */
 export function deleteBoostGroup(doc: DefinitionDoc, groupId: string): EditResult {
-  throw new Error("未実装");
+  const at = locateGroup(doc, groupId);
+  return at === undefined ? groupNotFound() : ok(withGroup(doc, at, undefined));
 }
+
+/** 艦名リストの区切り：改行（\r\n・\n・\r）、タブ、読点、カンマ（半角・全角）、スラッシュ（半角・全角） */
+const SHIP_NAME_SEPARATOR = /\r\n|[\n\r\t、,，/／]/;
 
 /**
  * 「攻略サイトの艦名リストを貼り付け」：区切られた艦名の文字列から艦名の一覧を作る。
@@ -53,5 +131,9 @@ export function deleteBoostGroup(doc: DefinitionDoc, groupId: string): EditResul
  * - 空の項目は除く。重複は除く（先に出た順に並べる）
  */
 export function parseShipNameList(text: string): string[] {
-  throw new Error("未実装");
+  const names = text
+    .split(SHIP_NAME_SEPARATOR)
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+  return unique(names);
 }

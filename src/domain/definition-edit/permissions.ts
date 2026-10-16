@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- 実装前の空の入れ物。実装するときにこの行を消す */
 // 権限ごとの定義の編集の可否（要件 2.3、3.7、U18、roadmap T3-6）
 //
 // 画面で欄やボタンを出し分けるための判定。権限の強制は DB の RLS・RPC で行う（画面で隠すだけにしない。要件 2.4）。
@@ -15,11 +14,35 @@
 //   （U18：終了後の延長は v1 では管理者が DB で直す）。
 // - 開始前でも、最新のイベントなら協力者は更新できる（U18）。
 // - 新規作成（mode "create"）は管理者だけが編集・公開できる。未公開の新規イベントは終了の判定をしない。
-import type { EditPermissions, EditPermissionsInput, UpdatePermissionInput, UpdatePermissionResult } from "./types";
+import { sameDateTime } from "./datetime";
+import { isEventEnded } from "./event";
+import type {
+  EditPermissions,
+  EditPermissionsInput,
+  ProtectedEventField,
+  UpdatePermissionInput,
+  UpdatePermissionResult,
+} from "./types";
 
 /** 権限・モード・終了の状態から、定義画面で何ができるかを返す */
 export function editPermissions(input: EditPermissionsInput): EditPermissions {
-  throw new Error("未実装");
+  const isAdmin = input.role === "admin";
+  const canOpen = input.role !== "user";
+  // 新規作成は未公開のため終了の判定をしない。一般利用者は画面を開けないので、終了かどうかも扱わない
+  const ended = input.mode === "update" && canOpen && isEventEnded(input.savedEndAt, input.now);
+  // 内容を編集できるか：新規作成は管理者だけ、既存の更新は協力者・管理者で、終了前だけ
+  const canEdit = input.mode === "create" ? isAdmin : canOpen && !ended;
+
+  return {
+    canOpen,
+    canEditContent: canEdit,
+    canPublish: canEdit,
+    canEditName: canEdit && isAdmin,
+    canEditStartAt: canEdit && isAdmin,
+    canEditEndAt: canEdit,
+    canCreate: isAdmin,
+    ended,
+  };
 }
 
 /**
@@ -31,5 +54,25 @@ export function editPermissions(input: EditPermissionsInput): EditPermissions {
  * 終了日時の変更は協力者もできる。日時の形式や前後の検証は validateEventInfo で行う（ここでは見ない）。
  */
 export function checkUpdatePermission(input: UpdatePermissionInput): UpdatePermissionResult {
-  throw new Error("未実装");
+  const { role, saved, next, now } = input;
+  if (role === "user") {
+    return { ok: false, code: "forbidden_role", message: "一般利用者は定義を保存できません" };
+  }
+  if (isEventEnded(saved.endAt, now)) {
+    return { ok: false, code: "event_ended", message: "このイベントは終了したため、更新できません" };
+  }
+  if (role === "collab") {
+    const fields: ProtectedEventField[] = [];
+    if (next.name !== saved.name) fields.push("name");
+    if (!sameDateTime(next.startAt, saved.startAt)) fields.push("startAt");
+    if (fields.length > 0) {
+      return {
+        ok: false,
+        code: "forbidden_field",
+        fields,
+        message: "協力者はイベント名・開始日時を変更できません",
+      };
+    }
+  }
+  return { ok: true };
 }
