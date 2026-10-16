@@ -165,6 +165,7 @@ create function public._raise(p_code text, p_message text)
 returns void
 language plpgsql
 volatile
+set search_path = public
 as $$
 begin
   raise exception using errcode = p_code, message = p_message;
@@ -231,6 +232,7 @@ create function public._check_document(p_content jsonb)
 returns void
 language plpgsql
 volatile
+set search_path = public
 as $$
 begin
   if p_content is null
@@ -246,6 +248,7 @@ create function public._check_logs(p_logs jsonb)
 returns void
 language plpgsql
 volatile
+set search_path = public
 as $$
 begin
   if p_logs is null or jsonb_typeof(p_logs) <> 'array' then
@@ -269,6 +272,7 @@ create function public._jst_text(p_at timestamptz)
 returns text
 language sql
 stable
+set search_path = public
 as $$
   select to_char(p_at at time zone 'Asia/Tokyo', 'YYYY-MM-DD"T"HH24:MI:SS') || '+09:00'
 $$;
