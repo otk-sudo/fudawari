@@ -36,6 +36,17 @@
   --color-action: #3d6fd0; /* 操作の青 */
   --color-admin: #f0a33a; /* 管理の橙 */
   --color-menu-bg: #101114; /* メニューの下地 */
+  --color-border-strong: #3a3e46; /* 強めの枠（ウィンドウ・区切り・閉じるボタン） */
+  --color-text-secondary: #c9cdd3; /* 控えめな文字（区分の見出し・閉じるボタン） */
+  --color-selected-bg: #2c3a52; /* 選択中の項目の下地（左メニューの今いる画面） */
+  --color-selected-text: #ffffff; /* 選択中の項目の文字 */
+  --color-on-action: #ffffff; /* 操作の青の上の文字 */
+  --color-on-admin: #101114; /* 管理の橙の上の文字（「管理」・権限名のバッジ） */
+  --color-admin-border: #4a3a22; /* 管理のタイルの枠 */
+  --color-hover-bg: #232833; /* タイルにポインターを重ねたときの下地 */
+  --color-hover-border: #4a6fa8; /* タイルにポインターを重ねたときの枠 */
+  --color-overlay: rgb(8 9 11 / 72%); /* ウィンドウの後ろの暗い部分 */
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / 60%); /* ウィンドウの影 */
 }
 
 /* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
@@ -51,6 +62,17 @@
   --color-action: #2f5fc4; /* 操作の青（仮） */
   --color-admin: #a85a00; /* 管理の橙（仮。白地で読めるよう暗めにした） */
   --color-menu-bg: #e6e8ec; /* メニューの下地（仮） */
+  --color-border-strong: #b9bec7; /* 強めの枠（仮） */
+  --color-text-secondary: #3d434d; /* 控えめな文字（仮） */
+  --color-selected-bg: #d6e2f7; /* 選択中の項目の下地（仮） */
+  --color-selected-text: #1c1e22; /* 選択中の項目の文字（仮） */
+  --color-on-action: #ffffff; /* 操作の青の上の文字（仮） */
+  --color-on-admin: #ffffff; /* 管理の橙の上の文字（仮。暗めの橙に白で読めるようにした） */
+  --color-admin-border: #e2c79c; /* 管理のタイルの枠（仮） */
+  --color-hover-bg: #eef3fb; /* タイルにポインターを重ねたときの下地（仮） */
+  --color-hover-border: #7f9fd6; /* タイルにポインターを重ねたときの枠（仮） */
+  --color-overlay: rgb(20 22 26 / 45%); /* ウィンドウの後ろの暗い部分（仮） */
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / 25%); /* ウィンドウの影（仮） */
 }
 
 /* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
@@ -67,5 +89,16 @@
     --color-action: #2f5fc4; /* 操作の青（仮） */
     --color-admin: #a85a00; /* 管理の橙（仮） */
     --color-menu-bg: #e6e8ec; /* メニューの下地（仮） */
+    --color-border-strong: #b9bec7; /* 強めの枠（仮） */
+    --color-text-secondary: #3d434d; /* 控えめな文字（仮） */
+    --color-selected-bg: #d6e2f7; /* 選択中の項目の下地（仮） */
+    --color-selected-text: #1c1e22; /* 選択中の項目の文字（仮） */
+    --color-on-action: #ffffff; /* 操作の青の上の文字（仮） */
+    --color-on-admin: #ffffff; /* 管理の橙の上の文字（仮） */
+    --color-admin-border: #e2c79c; /* 管理のタイルの枠（仮） */
+    --color-hover-bg: #eef3fb; /* タイルにポインターを重ねたときの下地（仮） */
+    --color-hover-border: #7f9fd6; /* タイルにポインターを重ねたときの枠（仮） */
+    --color-overlay: rgb(20 22 26 / 45%); /* ウィンドウの後ろの暗い部分（仮） */
+    --shadow-dialog: 0 16px 48px rgb(0 0 0 / 25%); /* ウィンドウの影（仮） */
   }
 }

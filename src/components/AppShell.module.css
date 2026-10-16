@@ -1,0 +1,21 @@
+/* 共通の枠：左メニュー（幅 64px）＋各画面 */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* 左メニューは本文をスクロールしても画面の左に残す */
+.navColumn {
+  position: sticky;
+  top: 0;
+  flex: 0 0 64px;
+  height: 100vh;
+}
+
+.main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
