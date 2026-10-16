@@ -498,6 +498,41 @@ describe("割り振り画面の中身（AssignScreen）", () => {
       expect(getCard(tray, "浜波改")).toBeInTheDocument();
       expect(queryCard(tray, "利根改二")).toBeNull();
     });
+
+    it("矢印キー（左右）で隣のタブを選んでフォーカスを移し、端では反対の端へ回る。Home で最初（ALL）、End で最後（その他）のタブ", async () => {
+      // 準備：ALL のタブにフォーカスを置く
+      const { user } = renderAssignScreen();
+      await user.click(getTab("ALL"));
+      expect(getTab("ALL")).toHaveFocus();
+
+      /** 選ばれているタブがちょうど label の 1 つで、そこにフォーカスがあることを確かめる */
+      const expectSelected = (label: string): void => {
+        const tabs = within(within(getTray()).getByRole("tablist", { name: "艦種" })).getAllByRole("tab");
+        const selected = tabs.filter((tab) => tab.getAttribute("aria-selected") === "true");
+        expect(selected.map((tab) => tab.textContent?.trim())).toEqual([label]);
+        expect(getTab(label)).toHaveFocus();
+      };
+
+      // 実行・検証：右へ（ALL → 空母）、左へ（空母 → ALL）
+      await user.keyboard("{ArrowRight}");
+      expectSelected("空母");
+      await user.keyboard("{ArrowLeft}");
+      expectSelected("ALL");
+
+      // 実行・検証：最初のタブで左へ → 最後（その他）、最後のタブで右へ → 最初（ALL）
+      await user.keyboard("{ArrowLeft}");
+      expectSelected("その他");
+      await user.keyboard("{ArrowRight}");
+      expectSelected("ALL");
+
+      // 実行・検証：End → その他（控えもその他の艦〔大鯨・速吸改・明石改〕に絞る）、Home → ALL
+      await user.keyboard("{End}");
+      expectSelected("その他");
+      expect(getTray()).toHaveTextContent(trayCountPattern(3, 12));
+      await user.keyboard("{Home}");
+      expectSelected("ALL");
+      expect(getTray()).toHaveTextContent(trayCountPattern(11, 12));
+    });
   });
 
   describe("並び順と区切りの見出し", () => {
@@ -862,6 +897,27 @@ describe("割り振り画面の中身（AssignScreen）", () => {
         expect(within(getColumn(name)).getByRole("button", { name: "ここに置く（特効なし）" })).toBeInTheDocument();
       }
     });
+
+    it.each([
+      ["涼風改二（どの札でも効かない）", "第三十一戦隊", "涼風改二", ["多号作戦部隊", "連合艦隊", "ウルシー攻撃部隊", "第六艦隊"]],
+      ["速吸改（ウルシー攻撃部隊だけで効く）", "連合艦隊", "速吸改", ["第三十一戦隊", "多号作戦部隊", "第六艦隊"]],
+    ])(
+      "選んだ艦が今いる列は、その札で特効がなくても薄くしない（%s。ほかの特効のない札の列は薄くする）",
+      async (_label, here, shipName, dimmedNames) => {
+        // 準備：速吸改は連合艦隊に置いておく
+        const { user } = renderAssignScreen({ assignments: { ...summer2026Assignments, hayasui: "rengo" } });
+
+        // 実行
+        await user.click(getCard(getColumn(here), shipName));
+
+        // 検証
+        expect(getColumn(here)).not.toHaveAttribute("data-dimmed", "true");
+        expect(queryPlaceButton(getColumn(here))).toBeNull();
+        for (const name of dimmedNames) {
+          expect(getColumn(name), name).toHaveAttribute("data-dimmed", "true");
+        }
+      },
+    );
   });
 
   describe("選択中の艦のパネル", () => {
@@ -1101,6 +1157,87 @@ describe("割り振り画面の中身（AssignScreen）", () => {
 
       // 検証
       expect(save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("置いた後・閉じた後のフォーカス（レビュー提案 3。押したボタンが消えても、フォーカスを document.body に落とさない）", () => {
+    /** 今フォーカスのある要素を短く書く（失敗したときに画面全体を書き出さないため） */
+    function describeFocus(): string {
+      const focused = document.activeElement;
+      if (focused === null || focused === document.body) return "document.body";
+      const label = focused.getAttribute("aria-label") ?? focused.textContent ?? "";
+      return `${focused.tagName.toLowerCase()}「${label.trim().slice(0, 40)}」`;
+    }
+
+    /** フォーカスが card にあり、document.body に落ちていないことを確かめる（移す処理が描いた後でもよいように待つ） */
+    async function expectFocusOn(findCard: () => HTMLElement): Promise<void> {
+      await waitFor(() => {
+        const card = findCard();
+        const name = (card.textContent ?? "").trim().slice(0, 20);
+        expect(document.activeElement === card, `「${name}」のカードにフォーカスがあること（今のフォーカス：${describeFocus()}）`).toBe(true);
+      });
+      expect(document.activeElement).not.toBe(document.body);
+    }
+
+    it("控えの艦を「ここに置く」で置いた後は、移った艦のカード（札の列の中）にフォーカスがある", async () => {
+      // 準備
+      const { user } = renderAssignScreen();
+      await user.click(getCard(getTray(), "利根改二"));
+
+      // 実行
+      await user.click(within(getColumn("連合艦隊")).getByRole("button", { name: "ここに置く（特効あり）" }));
+
+      // 検証
+      await expectFocusOn(() => getCard(getColumn("連合艦隊"), "利根改二"));
+    });
+
+    it("パネルの「（札名）に置く」で置いた後は、移った艦のカード（札の列の中）にフォーカスがある", async () => {
+      // 準備
+      const { user } = renderAssignScreen();
+      await user.click(getCard(getTray(), "利根改二"));
+
+      // 実行
+      await user.click(within(getPanel()).getByRole("button", { name: "ウルシー攻撃部隊に置く" }));
+
+      // 検証
+      await expectFocusOn(() => getCard(getColumn("ウルシー攻撃部隊"), "利根改二"));
+    });
+
+    it("札に置いた艦を別の札の「ここに置く」で移した後は、移った先の列のカードにフォーカスがある", async () => {
+      // 準備
+      const { user } = renderAssignScreen();
+      await user.click(getCard(getColumn("連合艦隊"), "時雨改二"));
+
+      // 実行
+      await user.click(within(getColumn("ウルシー攻撃部隊")).getByRole("button", { name: "ここに置く（特効あり）" }));
+
+      // 検証
+      await expectFocusOn(() => getCard(getColumn("ウルシー攻撃部隊"), "時雨改二"));
+    });
+
+    it("パネルの「選択をやめる」（×）の後は、選んでいた艦のカード（控え）にフォーカスが戻る", async () => {
+      // 準備
+      const { user } = renderAssignScreen();
+      await user.click(getCard(getTray(), "利根改二"));
+
+      // 実行
+      await user.click(within(getPanel()).getByRole("button", { name: "選択をやめる" }));
+
+      // 検証
+      expect(queryPanel()).not.toBeInTheDocument();
+      await expectFocusOn(() => getCard(getTray(), "利根改二"));
+    });
+
+    it("パネルの「選択をやめる」（×）の後は、選んでいた艦のカード（札の列）にフォーカスが戻る", async () => {
+      // 準備
+      const { user } = renderAssignScreen();
+      await user.click(getCard(getColumn("連合艦隊"), "時雨改二"));
+
+      // 実行
+      await user.click(within(getPanel()).getByRole("button", { name: "選択をやめる" }));
+
+      // 検証
+      await expectFocusOn(() => getCard(getColumn("連合艦隊"), "時雨改二"));
     });
   });
 

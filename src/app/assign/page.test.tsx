@@ -140,6 +140,15 @@ function PlanProbe(): ReactNode {
   return <p>{`確認用：利根改二→${text}`}</p>;
 }
 
+/** 確認用：同じページの別の部品が使う札割りのデータ（usePlanData）の、控えに戻した件数（returnedCount）を文字で出す */
+function ReturnedProbe(): ReactNode {
+  const state = useLatestDefinition();
+  const definition = state.status === "success" ? state.definition : null;
+  const plan = usePlanData(definition?.event.id ?? null, definition?.fudas.map((fuda) => fuda.id) ?? []);
+  const text = plan.status === "ready" ? String(plan.returnedCount) : plan.status;
+  return <p>{`確認用：控えに戻した件数→${text}`}</p>;
+}
+
 /** 読み込み中を出していて、中身・取り込みの案内・警告を出していないことを確かめる */
 function expectLoadingOnly(): void {
   expect(screen.getByRole("heading", { level: 1, name: "割り振り" })).toBeInTheDocument();
@@ -275,6 +284,18 @@ describe("割り振りの画面（/assign）", () => {
       expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
+
+    it("艦娘を取り込んでいなければ、艦船マスタ（/data/ship-master.json）を取得しない（取り込む前の人にマスタを配らない）", async () => {
+      // 準備：何も保存していない
+
+      // 実行：取り込みの案内が出るまで待つ（公開定義と札割りのデータは読み終えている）
+      renderAssignPage();
+      expect(await screen.findByText(/艦娘を取り込んでいません/)).toBeInTheDocument();
+
+      // 検証：公開定義だけを取得し、艦船マスタは取得しない
+      expect(requestedPaths(fetchMock)).toContain(LATEST_DEFINITION_PATH);
+      expect(requestedPaths(fetchMock)).not.toContain(SHIP_MASTER_PATH);
+    });
   });
 
   describe("読み込めたとき", () => {
@@ -406,6 +427,42 @@ describe("割り振りの画面（/assign）", () => {
 
       // 検証：もう知らせない（一度だけ）
       expect(screen.queryByText(/控えに戻しました/)).not.toBeInTheDocument();
+    });
+
+    it("控えに戻した件数を知らせたら、共有の札割りのデータ（usePlanData）の件数を 0 に戻す（知らせ終えた）。この画面にいる間は知らせを出したまま", async () => {
+      // 準備：利根改二と日向改二を、定義から消えた札に置いておく
+      await seedPlan(storage, { ...summer2026Assignments, tone: "removed-fuda", hyuga: "removed-fuda" });
+      render(
+        <>
+          <AssignPage />
+          <ReturnedProbe />
+        </>,
+      );
+      await waitForReady();
+      expect(await screen.findByText(/控えに戻しました/)).toHaveTextContent(/(?<!\d)2\s*件/);
+
+      // 検証：共有の札割りのデータでは知らせ終えた（0 件）
+      await waitFor(() => expect(screen.getByText(/確認用：控えに戻した件数/)).toHaveTextContent("確認用：控えに戻した件数→0"));
+      // 検証：この画面の知らせは消さない
+      expect(screen.getByText(/控えに戻しました/)).toHaveTextContent(/(?<!\d)2\s*件/);
+    });
+
+    it("知らせた後に、共有の札割りのデータを捨てずに割り振りの画面を外して描き直しても、同じ知らせは出さない（一度だけ）", async () => {
+      // 準備：利根改二と日向改二を、定義から消えた札に置いておき、知らせが出るまで進める
+      await seedPlan(storage, { ...summer2026Assignments, tone: "removed-fuda", hyuga: "removed-fuda" });
+      const { unmount } = renderAssignPage();
+      await waitForReady();
+      expect(await screen.findByText(/控えに戻しました/)).toHaveTextContent(/(?<!\d)2\s*件/);
+
+      // 実行：画面を外して描き直す（一覧などへ移って戻ったときと同じ。共有の読み込みの状態〔resetPlanDataCache など〕は捨てない）
+      unmount();
+      renderAssignPage();
+      await waitForReady();
+
+      // 検証：知らせない。2 隻は控えのまま
+      expect(screen.queryByText(/控えに戻しました/)).not.toBeInTheDocument();
+      expect(getCard(getTray(), "利根改二")).toBeInTheDocument();
+      expect(getCard(getTray(), "日向改二")).toBeInTheDocument();
     });
 
     it("控えに戻した割り当てがなければ知らせない", async () => {

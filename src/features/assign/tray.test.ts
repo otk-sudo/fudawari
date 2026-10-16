@@ -631,6 +631,22 @@ describe("並び順：Lv", () => {
       ["Lv 160 以上", 1],
     ]);
   });
+
+  it("Lv 10 未満の艦は「Lv 1 以上」の区切り（キー lv-0）に入り、最後に並ぶ（「Lv 0 以上」とは書かない）", () => {
+    // 準備：浜波改（Lv110）、Lv9 の時雨、マスタにない艦（Lv1）
+    const lowShigure: OwnedShip = { uid: "low-shigure", shipId: 43, level: 9, luck: 10, sallyArea: 0 };
+    const ships = [unknownShip, lowShigure, shipByUid("hamanami")];
+
+    // 実行
+    const result = tray({ sort: "lv" }, { ships, assignments: {} });
+
+    // 検証
+    expect(compactGroups(result)).toEqual([
+      ["Lv 110 以上", ["hamanami"]],
+      ["Lv 1 以上", ["low-shigure", "unknown"]],
+    ]);
+    expect(result.groups.at(-1)?.key).toBe("lv-0");
+  });
 });
 
 describe("並び順：特効の強さ", () => {
@@ -785,5 +801,91 @@ describe("マスタにない艦（名前が分からない艦）", () => {
     for (const tab of SHIP_TYPE_TABS_WITHOUT_ALL) {
       expect(shownUids(tray({ tab }))).not.toContain("unknown");
     }
+  });
+
+  it("並び順「艦型」では、最後の「艦型不明」の区切り（キー class-unknown）に入る", () => {
+    const result = tray({ sort: "class" });
+
+    expect(result.groups.at(-1)).toMatchObject({ key: "class-unknown", title: "艦型不明", count: 1 });
+    expect(groupUids(result, "艦型不明")).toEqual(["unknown"]);
+  });
+
+  it("並び順「名前」では、Lv が高くても最後に並ぶ（読みの五十音順の艦の後ろ）", () => {
+    // 準備：マスタにない艦を Lv の高い 1 隻と Lv1 の 1 隻にし、先頭に渡す
+    const highUnknown: OwnedShip = { uid: "unknown-high", shipId: 99998, level: 175, luck: 10, sallyArea: 0 };
+    const ships = [highUnknown, unknownShip, ...knownShips];
+
+    // 実行
+    const result = tray({ sort: "name" }, { ships });
+
+    // 検証：マスタにない艦どうしは同点の順（Lv の高い順）
+    expect(shownUids(result).slice(-2)).toEqual(["unknown-high", "unknown"]);
+    expect(shownUids(result).slice(0, -2)).toHaveLength(TRAY_KNOWN_UIDS.length);
+  });
+
+  it.each<[string, TrayOptions["remodelStages"]]>([
+    ["未改造", { unremodeled: false, intermediate: true, final: true }],
+    ["中間改造", { unremodeled: true, intermediate: false, final: true }],
+    ["最終改造", { unremodeled: true, intermediate: true, final: false }],
+  ])("改造状態が分からないので、改造状態の「%s」を外しても消えない", (_label, remodelStages) => {
+    const result = tray({ remodelStages });
+
+    expect(shownUids(result)).toContain("unknown");
+  });
+
+  it("改造状態をすべて外すと、マスタにある艦は出なくなるが、マスタにない艦は残る", () => {
+    const result = tray({ remodelStages: { unremodeled: false, intermediate: false, final: false } });
+
+    expect(shownUids(result)).toEqual(["unknown"]);
+    expect(result.shownCount).toBe(1);
+    expect(result.totalCount).toBe(20);
+  });
+});
+
+describe("同点のときの順（どの並び順でも）", () => {
+  // 時雨改二（艦 ID 145・図鑑番号 1003）と時雨改三（961・1004）は、艦型（白露型）・読み（しぐれ）・特効（時雨）が同じで、
+  // 図鑑番号だけが違う。同じ Lv にすると、どの並び順でも同じ区切りの中で同点になる
+  const SHIGURE_KAI2 = 145;
+  const SHIGURE_KAI3 = 961;
+  const at99 = (uid: string, shipId: number): OwnedShip => ({ uid, shipId, level: 99, luck: 15, sallyArea: 0 });
+
+  it.each(ALL_SORTS)("並び順 %s：同じ Lv なら図鑑番号の小さい順（個体 ID の順とは逆でも）", (sort) => {
+    // 準備：個体 ID の順（a → b）と図鑑番号の順（b〔1003〕→ a〔1004〕）を逆にし、a を先に渡す
+    const ships = [at99("a", SHIGURE_KAI3), at99("b", SHIGURE_KAI2)];
+
+    // 実行
+    const result = tray({ sort }, { ships, assignments: {} });
+
+    // 検証
+    expect(result.groups).toHaveLength(1);
+    expect(shownUids(result)).toEqual(["b", "a"]);
+  });
+
+  it.each(ALL_SORTS)("並び順 %s：Lv も図鑑番号も同じなら個体 ID の順（渡した順によらない）", (sort) => {
+    // 準備：同じ艦（時雨改二）・同じ Lv の 3 隻を、個体 ID の順と違う順に渡す
+    const ships = [at99("c", SHIGURE_KAI2), at99("a", SHIGURE_KAI2), at99("b", SHIGURE_KAI2)];
+
+    // 実行
+    const result = tray({ sort }, { ships, assignments: {} });
+
+    // 検証
+    expect(shownUids(result)).toEqual(["a", "b", "c"]);
+  });
+
+  it.each(ALL_SORTS)("並び順 %s：個体 ID の数字の部分は数として比べる（取り込みの api_id。「99」は「100」より前）", (sort) => {
+    const ships = [at99("100", SHIGURE_KAI2), at99("99", SHIGURE_KAI2)];
+
+    const result = tray({ sort }, { ships, assignments: {} });
+
+    expect(shownUids(result)).toEqual(["99", "100"]);
+  });
+
+  it("Lv が違えば、図鑑番号・個体 ID より Lv の高い順が先", () => {
+    // 準備：図鑑番号・個体 ID が後ろの艦（z・時雨改三）の Lv を高くする
+    const ships = [at99("a", SHIGURE_KAI2), { ...at99("z", SHIGURE_KAI3), level: 100 }];
+
+    const result = tray({ sort: "name" }, { ships, assignments: {} });
+
+    expect(shownUids(result)).toEqual(["z", "a"]);
   });
 });

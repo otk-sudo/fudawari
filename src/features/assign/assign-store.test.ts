@@ -478,3 +478,109 @@ describe("割り当ての保存", () => {
     expect(summer2026Assignments.hatsushimo).toBe("s31");
   });
 });
+
+describe("保存の失敗（saveError）", () => {
+  /** 結果を後から決める保存の結果 */
+  function deferred() {
+    let resolve: () => void = () => {};
+    let reject: (reason: unknown) => void = () => {};
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  /** 保存の結果の知らせ（Promise の then）が届き終わるのを待つ */
+  async function flush(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("初めは null で、保存に失敗したらその理由（エラーのメッセージ）が入り、割り当ては変えたまま", async () => {
+    // 準備
+    const save = vi.fn<SaveAssignments>(() => Promise.reject(new Error("QuotaExceededError")));
+    const store = createAssignStore({ eventId: EVENT_ID, assignments: summer2026Assignments, save });
+    expect(store.getState().saveError).toBeNull();
+
+    // 実行
+    store.getState().dropOnFuda("yukikaze2", "rengo");
+    await flush();
+
+    // 検証
+    expect(store.getState().saveError).toBe("QuotaExceededError");
+    expect(fudaOf(store, "yukikaze2")).toBe("rengo");
+  });
+
+  it("後から頼んだ保存が先に成功し、前の保存が後から失敗しても、saveError は null のまま（最後に頼んだ保存の結果だけを映す）", async () => {
+    // 準備：1 回目の保存は結果を待たせ、2 回目はすぐに成功させる
+    const first = deferred();
+    const save = vi.fn<SaveAssignments>();
+    save.mockReturnValueOnce(first.promise).mockResolvedValueOnce(undefined);
+    const store = createAssignStore({ eventId: EVENT_ID, assignments: summer2026Assignments, save });
+    store.getState().dropOnFuda("yukikaze2", "rengo"); // 1 回目（待たせる）
+    store.getState().dropOnFuda("zuiho", "rengo"); // 2 回目（成功）
+    await flush();
+    expect(store.getState().saveError).toBeNull(); // 前提：2 回目の成功が届いた
+
+    // 実行：古い 1 回目の保存が後から失敗する
+    first.reject(new Error("古い保存の失敗"));
+    await flush();
+
+    // 検証
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(store.getState().saveError).toBeNull();
+  });
+
+  it("後から頼んだ保存が先に失敗し、前の保存が後から成功しても、saveError は失敗のまま", async () => {
+    // 準備：1 回目の保存は結果を待たせ、2 回目はすぐに失敗させる
+    const first = deferred();
+    const save = vi.fn<SaveAssignments>();
+    save.mockReturnValueOnce(first.promise).mockRejectedValueOnce(new Error("新しい保存の失敗"));
+    const store = createAssignStore({ eventId: EVENT_ID, assignments: summer2026Assignments, save });
+    store.getState().dropOnFuda("yukikaze2", "rengo"); // 1 回目（待たせる）
+    store.getState().dropOnFuda("zuiho", "rengo"); // 2 回目（失敗）
+    await flush();
+    expect(store.getState().saveError).toBe("新しい保存の失敗"); // 前提：2 回目の失敗が届いた
+
+    // 実行：古い 1 回目の保存が後から成功する
+    first.resolve();
+    await flush();
+
+    // 検証
+    expect(store.getState().saveError).toBe("新しい保存の失敗");
+  });
+
+  it("保存の関数がその場で例外を投げても、操作は止まらず（例外を外に出さず）saveError に理由が入る。割り当ては変わり、元に戻せる", () => {
+    // 準備：Promise を返さずにその場で投げる保存の関数
+    const save = vi.fn<SaveAssignments>(() => {
+      throw new Error("保存先を開けません");
+    });
+    const store = createAssignStore({ eventId: EVENT_ID, assignments: summer2026Assignments, save });
+
+    // 実行
+    expect(() => store.getState().dropOnFuda("yukikaze2", "rengo")).not.toThrow();
+
+    // 検証
+    expect(store.getState().saveError).toBe("保存先を開けません");
+    expect(fudaOf(store, "yukikaze2")).toBe("rengo");
+    expect(store.getState().canUndo).toBe(true);
+  });
+
+  it("その場で例外を投げた後、次の保存が成功したら saveError は null に戻る", async () => {
+    // 準備：1 回目だけその場で投げる
+    const save = vi.fn<SaveAssignments>(() => Promise.resolve());
+    save.mockImplementationOnce(() => {
+      throw new Error("保存先を開けません");
+    });
+    const store = createAssignStore({ eventId: EVENT_ID, assignments: summer2026Assignments, save });
+    store.getState().dropOnFuda("yukikaze2", "rengo");
+    expect(store.getState().saveError).toBe("保存先を開けません"); // 前提
+
+    // 実行
+    store.getState().dropOnFuda("zuiho", "rengo");
+    await flush();
+
+    // 検証
+    expect(store.getState().saveError).toBeNull();
+  });
+});
