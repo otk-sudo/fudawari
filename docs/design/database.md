@@ -114,26 +114,49 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 | save_logs | × | × | 全行 | 全行 |
 | invites | × | × | × | 全行 |
 
-- 判定には `public.current_role()`（`profiles` から自分の role を返す `security definer` 関数）を使う。
+- 判定には `public.app_role()`（`profiles` から自分の role を返す `security definer` 関数）を使う。`current_role` は SQL の予約語と重なるため使わない。
+- 表の権限：`anon`・`authenticated` には、上の表で読める表の SELECT だけを与える（`auto_expose_new_tables = false` のため、与えないと読めない）。
 - ビルド時の取得は anon キーで `app_state` と `published_definitions` を読む。サーバー専用のキー（service_role）はビルドにも画面にも置かない。
 
 ## 4. RPC（書き込み）
 
-すべて `security definer`、`set search_path = public`。最初に `current_role()` で権限を確かめ、条件に合わなければ例外（メッセージは日本語、コードは画面で出し分けられる形）を返す。
+すべて `security definer`、`set search_path = public`。最初に `app_role()` で権限を確かめ、条件に合わなければ例外を返す。実行の権限は `authenticated` だけに与える（`anon`・`public` からは取り消す）。
 
-| 関数 | 呼べる人 | 内容 |
+### 4.1 例外のコード（SQLSTATE）
+
+画面は supabase-js の `error.code` で出し分ける。`message` は日本語の説明。
+
+| コード | 意味 |
+|---|---|
+| FD001 | 権限がない（未ログイン、一般利用者、協力者が管理者だけの操作をした、協力者が名前・開始日時を変えようとした） |
+| FD002 | イベントが終了している（`ends_at <= now()`） |
+| FD003 | 更新できるイベントではない（協力者：最新のイベント以外。管理者：最新でも未公開でもないイベント。最新でないイベントを `p_make_latest = false` で公開しようとした） |
+| FD004 | 版が違う（`publish_definition` の `p_base_version` が今の下書きの版と違う） |
+| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、期限の選択肢、記録が配列でない など） |
+| FD006 | 招待が使用済み |
+| FD007 | 招待の期限切れ |
+| FD008 | 招待が取り消し済み |
+| FD009 | 見つからない（イベント・招待・協力者） |
+| FD010 | 既に権限がある人が招待を受けようとした |
+| FD011 | 管理者は外せない（自分自身も） |
+
+### 4.2 関数
+
+| 関数 | 呼べる人 | 内容と戻り値 |
 |---|---|---|
-| `save_draft(p_event_id, p_base_version, p_content, p_logs)` | 協力者・管理者 | 開いたときの版（`p_base_version`）が今の版と同じなら保存して版を 1 増やし、記録（`p_logs`：海域と文の配列）を入れる。違えば保存せず、今の版・内容・保存した人・日時を返す（画面で 3 方向マージする）。イベントが終了していれば拒否。協力者は最新のイベントだけ |
-| `publish_definition(p_event_id, p_base_version, p_version_label, p_make_latest)` | 協力者・管理者（`p_make_latest` は管理者だけ） | 下書きの版が `p_base_version` と同じなら、下書きの内容とイベント名・期間を公開版に保存し、記録（種類「公開」）を入れる。`p_make_latest` のときは `app_state.latest_event_id` を切り替える（新規作成の「公開して最新にする」） |
-| `create_event(p_name, p_starts_at, p_ends_at, p_source_event_id)` | 管理者 | イベントと下書きを作る。元にするイベントがあれば、その最新の公開版（なければ下書き）から札と段階をコピーし、特効は空にする。なければ E1 だけの空の文書 |
-| `update_event_meta(p_event_id, p_name, p_starts_at, p_ends_at)` | 協力者（終了日時だけ）・管理者 | 終了したイベントは拒否。終了日時は開始日時より後、かつ今より後（誤ってロックしない）。協力者が名前・開始日時を変えようとしたら拒否 |
-| `create_invite(p_expires_in)` | 管理者 | ランダムな招待コードを作り、ハッシュを保存して、コードを 1 度だけ返す。期限は '24 hours'／'3 days'／'7 days' に限る |
-| `revoke_invite(p_invite_id)` | 管理者 | 取り消す |
-| `accept_invite(p_code)` | ログイン済みで権限なしの人 | 使用済み・期限切れ・取り消し済みは理由つきで拒否。有効なら `profiles` に協力者として入れ、使用済みにする（同時に 2 人が使えないよう行をロックする） |
-| `remove_collaborator(p_user_id)` | 管理者 | 協力者の行を消す。管理者の行は消せない（自分自身も） |
-| `touch_profile(p_display_name)` | ログイン済み（行がある人） | 表示名を更新する |
+| `app_role() returns text` | だれでも（anon も） | 自分の `profiles.role`（'admin'／'collab'）。行がない・未ログインなら null。RLS の判定に使う |
+| `save_draft(p_event_id uuid, p_base_version integer, p_content jsonb, p_logs jsonb) returns jsonb` | 協力者・管理者 | `p_base_version` が今の版と同じなら `content` を保存して版を 1 増やし、`p_logs`（`[{ "mapLabel": "E2" または null, "summary": "…" }]`。空の配列も可）を 1 件ずつ `save_logs`（kind 'save'）に入れ、`{ "status": "saved", "version": 新しい版 }` を返す。違えば保存せず `{ "status": "conflict", "version": 今の版, "content": 今の内容, "updatedByName": 保存した人の表示名（外された人なら "不明"）, "updatedAt": 日時 }` を返す（画面で 3 方向マージする）。終了 → FD002、更新できない → FD003、文書の形 → FD005 |
+| `publish_definition(p_event_id uuid, p_base_version integer, p_make_latest boolean) returns jsonb` | 協力者・管理者（`p_make_latest = true` は管理者だけ。協力者なら FD001） | 下書きの版が `p_base_version` と同じなら、下書きの `content` の `event` を `events` 表の値で書き直して（`id`＝イベント ID の文字列、`name`、`startAt`・`endAt`＝日本時間の "YYYY-MM-DDTHH:MI:SS+09:00"（未定は null）、`versionDate`＝公開した日の日本時間の "YYYY-MM-DD"）`published_definitions` に保存し（`version_label`＝"YYYY/MM/DD 版"）、記録（kind 'publish'、`map_label` は null、文「公開（YYYY/MM/DD 版）」）を入れる。`p_make_latest` なら `app_state.latest_event_id` を切り替える。戻り値 `{ "status": "published", "id": 公開版の ID, "versionLabel": "…", "versionDate": "YYYY-MM-DD" }`。版が違う → FD004、終了 → FD002、最新でないのに `p_make_latest = false` → FD003 |
+| `create_event(p_name text, p_starts_at timestamptz, p_ends_at timestamptz, p_content jsonb) returns uuid` | 管理者 | イベントと下書き（版 1、`content` は `p_content`）を作り、イベント ID を返す。初期の文書（元にするイベントからのコピー・E1 だけの空の文書）は画面が `createDefinition`（PR-09）で作る。名前が空・`p_ends_at <= p_starts_at`・文書の形 → FD005 |
+| `update_event_meta(p_event_id uuid, p_name text, p_starts_at timestamptz, p_ends_at timestamptz) returns void` | 協力者（終了日時だけ）・管理者 | 名前・開始日時・終了日時を更新する。終了 → FD002、更新できない → FD003、協力者が名前か開始日時を今と違う値にした → FD001、名前が空・終了日時が開始日時以前・終了日時が今以前（誤ってロックしない） → FD005。終了日時の null（未定）は可 |
+| `create_invite(p_expires_in text) returns jsonb` | 管理者 | 招待コード（URL に使える 32 文字。乱数 24 バイトを base64url にしたもの）を作り、SHA-256 の 16 進を `code_hash` に保存して、`{ "id": 招待の ID, "code": コード, "expiresAt": 期限 }` を返す（コードはこのときだけ）。`p_expires_in` は '24 hours'／'3 days'／'7 days' だけ。ほか → FD005 |
+| `revoke_invite(p_invite_id uuid) returns void` | 管理者 | 取り消す（取り消し済みならそのまま）。ない → FD009、使用済み → FD006 |
+| `accept_invite(p_code text, p_display_name text) returns void` | ログイン済みで権限なしの人 | 招待の行をロックして確かめ、有効なら `profiles` に協力者（表示名 `p_display_name`）として入れ、使用済み（`used_by`・`used_at`）にする。未ログイン → FD001、既に権限がある → FD010、コードが合わない → FD009、取り消し済み → FD008、使用済み → FD006、期限切れ → FD007（この順に確かめる） |
+| `remove_collaborator(p_user_id uuid) returns void` | 管理者 | 協力者の行を消す。ない → FD009、相手が管理者（自分を含む） → FD011 |
+| `touch_profile(p_display_name text) returns void` | ログイン済み（行がある人） | 表示名を更新する。行がない → FD001 |
 
-- 最新の判定：協力者が更新できるのは `app_state.latest_event_id` のイベントだけ。管理者は、最新のイベントと、まだ公開していない新規イベントを更新できる（U18）。
+- **更新できるイベント**：協力者は `app_state.latest_event_id` のイベントだけ。管理者は、最新のイベントと、まだ公開していない（`published_definitions` に行がない）イベント（U18）。どちらも終了していないこと。
+- 保存・公開をしたら、`profiles.last_edited_at` を今に、`last_edited_note` を「下書きを保存」か「公開」にする。
 - 新規作成は管理者だけ。
 
 ## 5. リアルタイム（編集中の表示）
@@ -149,11 +172,13 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 
 ## 7. テスト（U20）
 
-- CI（GitHub Actions）でローカルの Supabase を起動し、マイグレーションを空の DB に適用してから、権限ごとの可否を確かめる（pgTAP か、supabase-js でテスト用のメール・パスワードのアカウントを作って RPC を呼ぶ）。
+- CI（GitHub Actions）でローカルの Supabase を起動し、マイグレーションを空の DB に適用してから（`supabase db reset`）、権限ごとの可否を pgTAP で確かめる（`supabase test db`。テストは `supabase/tests/database/*.test.sql`）。ログインした人は `auth.users` にテスト用の行を入れ、`set local role authenticated` と `request.jwt.claims` の `sub` で演じる。
 - 確かめること：roadmap T3-3 の受入条件（未ログインは公開版の読み取りだけ、協力者の制限、版の衝突、招待の 1 回限り・期限・取り消し、外された協力者はすぐ更新できない）。
 - 手元の PC に Docker がないため、手元では DB のテストを動かさず CI で確かめる。
 
-## 8. 決めていないこと（実装しながら親が決め、ここを更新する）
+## 8. 決めたこと（2026-10-17 親）
 
-- DB のテストを pgTAP で書くか、supabase-js で書くか（T3-3 の着手時）。
-- 招待コードの長さと文字の種類（推奨：URL に使える 32 文字程度）。
+- DB のテストは pgTAP で書く。
+- 招待コードは乱数 24 バイトの base64url（32 文字）。
+- 新規作成の初期の文書は画面で作り、`create_event` に渡す（元にするイベントの読み取りは RLS で協力者・管理者に許している）。
+- 版の日付は公開した日（日本時間）。画面からは渡さない。
