@@ -1,0 +1,152 @@
+// 日時（ISO 8601 の時差つき）の読み取り・比較・表示と、画面の日時の入力欄との変換
+//
+// - 定義の編集の中（イベントの情報・権限・文書の問題）と 3 方向マージで使う：parseDateTime・sameDateTime
+// - 入口（index.ts）から画面にも公開する：formatDateTimeJst（日本時間での表示）、
+//   toDateTimeLocalValue・fromDateTimeLocalValue（入力欄の値との変換。PR-11 の定義画面で使う）
+//
+// 受け付ける形式は公開定義の検証（src/domain/definition/validate.ts）と同じ：
+// "YYYY-MM-DDTHH:mm" ＋任意の秒 ＋ "Z" か "+09:00" などの時差。時差のない値・実在しない日時（2026-02-30、25 時など）は読めない。
+// Date の文字列の解釈（実装ごとの差、日付の繰り上げ）に頼らず、年月日・時分秒を数として確かめる。
+
+const DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:Z|([+-])(\d{2}):(\d{2}))$/;
+
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
+
+/** うるう年か（グレゴリオ暦） */
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+/** 実在する年月日か */
+function isRealDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1) return false;
+  const daysInMonth = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= (daysInMonth[month - 1] ?? 0);
+}
+
+/** 1970-01-01 からの日数（先発グレゴリオ暦。H. Hinnant の days_from_civil） */
+function daysFromCivil(year: number, month: number, day: number): number {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yearOfEra = y - era * 400;
+  const monthFromMarch = (month + 9) % 12;
+  const dayOfYear = Math.floor((153 * monthFromMarch + 2) / 5) + day - 1;
+  const dayOfEra = yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
+  return era * 146097 + dayOfEra - 719468;
+}
+
+/**
+ * ISO 8601 の時差つきの日時を、1970-01-01T00:00Z からのミリ秒（Date#getTime と同じ基準）にする。
+ * 形式が違う、または実在しない日時は undefined
+ */
+export function parseDateTime(text: string): number | undefined {
+  const match = DATE_TIME_PATTERN.exec(text);
+  if (match === null) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6] ?? "0");
+  const offsetSign = match[7] === "-" ? -1 : 1;
+  const offsetHour = Number(match[8] ?? "0");
+  const offsetMinute = Number(match[9] ?? "0");
+  if (!isRealDate(year, month, day)) return undefined;
+  if (hour > 23 || minute > 59 || second > 59 || offsetHour > 23 || offsetMinute > 59) return undefined;
+  const localMs = daysFromCivil(year, month, day) * DAY_MS + ((hour * 60 + minute) * 60 + second) * 1000;
+  return localMs - offsetSign * (offsetHour * 60 + offsetMinute) * MINUTE_MS;
+}
+
+/**
+ * 2 つの日時が同じか。どちらも読めれば時刻で比べ（"12:00+09:00" と "12:00:00+09:00" は同じ）、
+ * 読めない値があれば文字列で比べる
+ */
+export function sameDateTime(a: string, b: string): boolean {
+  const aMs = parseDateTime(a);
+  const bMs = parseDateTime(b);
+  if (aMs === undefined || bMs === undefined) return a === b;
+  return aMs === bMs;
+}
+
+/** 日本時間の時差（ミリ秒） */
+const JST_OFFSET_MS = 9 * 60 * MINUTE_MS;
+
+/** 2 桁にそろえる */
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** 日本時間での年・月・日・時・分（秒以下は切り捨て） */
+interface JstFields {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+}
+
+/** 日時（1970-01-01T00:00Z からのミリ秒）を、日本時間の年・月・日・時・分にする（秒以下は切り捨て） */
+function toJstFields(ms: number): JstFields {
+  const jst = new Date(ms + JST_OFFSET_MS);
+  return {
+    year: jst.getUTCFullYear(),
+    month: jst.getUTCMonth() + 1,
+    day: jst.getUTCDate(),
+    hour: jst.getUTCHours(),
+    minute: jst.getUTCMinutes(),
+  };
+}
+
+/**
+ * 日時を「2026/10/20 11:00」の形（日本時間）にする。読めない値はそのまま返す。
+ * 時差の書き方（"+09:00"・"Z"）が違っても、同じ時刻は同じ表示になる
+ */
+export function formatDateTimeJst(text: string): string {
+  const ms = parseDateTime(text);
+  if (ms === undefined) return text;
+  const { year, month, day, hour, minute } = toJstFields(ms);
+  return `${year}/${pad2(month)}/${pad2(day)} ${pad2(hour)}:${pad2(minute)}`;
+}
+
+// ---- 画面の日時の入力欄（<input type="datetime-local">）との変換（PR-11 の定義画面で使う） ----
+//
+// 入力欄の値は時差のない "YYYY-MM-DDTHH:mm"（例 "2026-08-07T12:00"）。日本時間として解釈する。
+// 文書の値は時差つきの ISO 8601（例 "2026-08-07T12:00+09:00"）。日時は分まで扱う（要件 3.7）。
+// 読めない値・実在しない日時は null を返す（例外は投げない）。
+//
+// 秒の扱い（文書の値には秒が付いていることがある。入力欄も step の指定などで秒を付けることがある）
+// - 文書 → 入力欄：秒は切り捨てて分までにする（"12:00:30+09:00" → "12:00"）
+// - 入力欄 → 文書：秒（"12:00:30"）は公開定義の検証が受け付けるので残す。
+//   秒の小数（"12:00:30.5"）は受け付けないので、小数だけを切り捨てる（→ "12:00:30+09:00"）
+
+/** 入力欄の値の形式：年月日・時分（1 つ目）＋任意の秒（2 つ目）＋任意の秒の小数（1〜3 桁。読み捨てる） */
+const LOCAL_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/;
+
+/**
+ * 文書の日時（時差つき）を、入力欄の値（日本時間の "YYYY-MM-DDTHH:mm"）にする。
+ * 時差の書き方（"+09:00"・"Z" など）が違っても日本時間に直す。秒は切り捨てる。
+ * null・空文字・読めない値と、日本時間に直すと 4 桁の年（0000〜9999 年）で表せない日時は null
+ */
+export function toDateTimeLocalValue(value: string | null): string | null {
+  if (value === null) return null;
+  const ms = parseDateTime(value);
+  if (ms === undefined) return null;
+  const { year, month, day, hour, minute } = toJstFields(ms);
+  if (year < 0 || year > 9999) return null;
+  return `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}`;
+}
+
+/**
+ * 入力欄の値（"YYYY-MM-DDTHH:mm"、日本時間）を、文書の日時（"YYYY-MM-DDTHH:mm+09:00"）にする。
+ * 秒が付いていれば残し（"YYYY-MM-DDTHH:mm:ss+09:00"）、秒の小数は切り捨てる。
+ * 作った値は公開定義の検証の日時の規則に合う。空文字・形式違い（時差つき、空白区切りなど）・実在しない日時は null
+ */
+export function fromDateTimeLocalValue(value: string): string | null {
+  const match = LOCAL_DATE_TIME_PATTERN.exec(value);
+  if (match === null) return null;
+  const seconds = match[2] === undefined ? "" : `:${match[2]}`;
+  const text = `${match[1] ?? ""}${seconds}+09:00`;
+  // 実在しない日時（2026-02-30、24 時など）は、文書の日時として読めるかで確かめる
+  return parseDateTime(text) === undefined ? null : text;
+}
