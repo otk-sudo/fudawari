@@ -23,6 +23,7 @@ src/features/     画面ごとの部品と状態（割り振り、取り込み�
 src/domain/       型と純粋な関数（特効計算、取り込み解析、差分、定義の編集・マージ）
 src/lib/          外部との境界（Dexie、Supabase、クリップボード）
 src/styles/       theme.css（CSS 変数。`<html data-theme="dark|light">`、なければ端末の設定）、globals.css
+src/test/         Vitest の共通の準備（jest-dom、fake-indexeddb、cleanup）。単体テストは対象の隣の *.test.ts(x)
 public/data/      最新イベントの公開定義 JSON・艦船マスタ（ビルド時に生成）
 scripts/          ビルド時の取得・生成
 supabase/migrations/  SQL マイグレーション

@@ -1,0 +1,70 @@
+# PR ごとと main への push で、型・Lint・単体テスト・ビルド・画面テストを実行する
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: 型・Lint・単体テスト・ビルド
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: 型チェック
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: 単体テスト
+        run: npm test
+      - name: ビルド（静的書き出し）
+        run: npm run build
+
+  e2e:
+    name: 画面テスト（Playwright）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Playwright のブラウザをキャッシュから戻す
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Playwright のブラウザを入れる（キャッシュなし）
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Playwright の依存パッケージを入れる（キャッシュあり）
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: 画面テスト（CI の中でビルドした静的出力に対して実行）
+        run: npm run test:e2e
+      - name: 失敗したときのレポートを残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
