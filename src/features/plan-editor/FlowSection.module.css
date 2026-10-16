@@ -1,0 +1,225 @@
+/* 攻略の流れ（モック PlanEditor.dc.html の section「攻略の流れ」） */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* 操作の説明 */
+.hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.hint {
+  padding: 1px 8px;
+  background: var(--pe-chip-bg);
+  border: 1px solid var(--pe-chip-border);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* 海域の行 */
+.row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.areaName {
+  display: flex;
+  flex: 0 0 36px;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-family: Consolas, monospace;
+  font-weight: 700;
+}
+
+/* 段階のボタン（下地は札の色。文字の色は札の色から決める） */
+.stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage:focus-visible {
+  outline: 3px solid var(--pe-drop);
+  outline-offset: 2px;
+}
+
+.stageName,
+.stageFuda {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stageName {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.stageFuda {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stageSelected {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.stageDragging {
+  opacity: 0.4;
+}
+
+/* 札・段階を落とすと、この段階の前に割り込む（左に線を出す） */
+.stageDropBefore {
+  margin-left: 6px;
+  box-shadow:
+    -2px 0 0 0 var(--color-surface),
+    -6px 0 0 0 var(--pe-drop);
+}
+
+/* 段階のない海域 */
+.empty {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.emptyOver {
+  background: var(--pe-drop-bg);
+  border-color: var(--pe-drop);
+}
+
+.emptyText {
+  flex: 1 1 auto;
+}
+
+/* 行の右端の「＋」 */
+.addCell {
+  position: relative;
+  display: flex;
+  flex: 0 0 36px;
+}
+
+.addButton {
+  flex: 1 1 auto;
+  width: 36px;
+  min-height: 48px;
+  background: transparent;
+  color: var(--pe-handle);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.addButton:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 2px;
+}
+
+.addButtonOver {
+  background: var(--pe-drop-bg);
+  color: var(--pe-drop);
+  border: 2px dashed var(--pe-drop);
+}
+
+/* 「＋」のメニュー */
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 200px;
+  padding: 8px;
+  background: var(--pe-chip-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  box-shadow: var(--pe-menu-shadow);
+}
+
+.menuTitle {
+  padding: 0 2px 2px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.menuEmpty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.menuItem {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 1px;
+}
+
+/* 「＋ E4 を追加」 */
+.addArea {
+  align-self: flex-start;
+  margin-left: 40px;
+  border-color: var(--pe-link-border);
+}

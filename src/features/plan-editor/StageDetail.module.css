@@ -1,0 +1,387 @@
+/* 段階の詳細と特効グループ（モック PlanEditor.dc.html の右下の section） */
+
+.section {
+  flex: 999 1 480px;
+  min-width: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+/* 見出し（下地は札の色） */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px 6px 0 0;
+}
+
+.headText {
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.headTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+}
+
+.headFuda {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.deleteButton {
+  min-height: 32px;
+  padding: 0 10px;
+  background: var(--color-surface);
+  color: var(--pe-danger);
+  border: 1px solid var(--pe-danger-border);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.deleteButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.deleteButton:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+/* 削除の確認 */
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--pe-danger-bg);
+  border-bottom: 1px solid var(--pe-danger-border);
+}
+
+.confirmText {
+  flex: 1 1 220px;
+  color: var(--pe-danger-text);
+  font-size: 12px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 14px;
+}
+
+/* 段階の名前・使う札・大事さ */
+.basics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.nameInput {
+  max-width: 280px;
+}
+
+.fudaChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fudaChoice {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ラジオボタンは見えなくして札の色の見本に重ねる */
+.fudaChoiceInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fudaChoiceLabel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.fudaChoiceInput:checked + .fudaChoiceLabel {
+  border-color: var(--color-text);
+  opacity: 1;
+}
+
+.fudaChoiceInput:focus-visible + .fudaChoiceLabel {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 2px;
+}
+
+/* この段階のボスで効く特効 */
+.boosts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.boostHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.boostTitle {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.boostNote {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.noBoosts {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--pe-inset-bg);
+  border: 1px dashed var(--pe-inset-border);
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+/* 特効グループ */
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--pe-inset-bg);
+  border: 1px solid var(--pe-inset-border);
+  border-radius: 5px;
+}
+
+/* 倍率（強調の金の札。その場で編集する） */
+.multiplier {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 8px;
+  background: var(--color-accent);
+  color: var(--pe-on-accent);
+  border-radius: 3px;
+  font-family: Consolas, monospace;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.multiplierInput {
+  width: 68px;
+  padding: 0 2px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  font: inherit;
+}
+
+.multiplierInput:focus-visible {
+  outline: 2px solid var(--pe-on-accent);
+  outline-offset: 1px;
+}
+
+.multiplierInput[aria-invalid="true"] {
+  text-decoration: underline wavy;
+}
+
+.groupBody {
+  display: flex;
+  flex: 1 1 300px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.groupNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.groupNameInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.removeGroup {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.removeGroup:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 1px;
+}
+
+/* 艦名のタグ */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 8px;
+  background: var(--pe-tag-bg);
+  color: var(--pe-tag-text);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.tagRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tagRemove:hover {
+  background: var(--pe-chip-border);
+}
+
+.tagRemove:focus-visible {
+  outline: 2px solid var(--pe-drop);
+}
+
+.tagAddItem {
+  display: inline-flex;
+}
+
+.tagAdd {
+  min-height: 24px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--pe-link);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tagInput {
+  width: 120px;
+  min-height: 24px;
+  padding: 0 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.warning {
+  margin: 0;
+  color: var(--pe-pending);
+  font-size: 12px;
+}
+
+.error {
+  margin: 0;
+  color: var(--pe-danger);
+  font-size: 12px;
+}
+
+.boostActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 艦名リストの貼り付け */
+.paste {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--pe-inset-bg);
+  border: 1px solid var(--pe-inset-border);
+  border-radius: 5px;
+}
+
+.pasteInput {
+  min-height: 80px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.pasteHint {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.pasteActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
