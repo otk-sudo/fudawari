@@ -13,7 +13,8 @@
 // - getPlanStorage() は、共有のストアと同じ保存先を包んだものを返す。取り込みの保存・取り込みの確認・
 //   取り込んだ艦娘データの削除は、ストアに残っている割り当ての保存がすべて終わってから行う。
 //   取り込みを保存したら、ストアに知らせる（それより前に作った割り当ては保存先に書かず、読み直すときに絞って保存し直す）。
-//   取り込みの確認・取り込みの保存が返す件数は、保存できていない割り当てが残っていれば、それで外れる件数で数える。
+//   取り込みの確認・取り込みの保存が返す件数は、保存できていない割り当てが残っていれば、それで外れる件数で数える
+//   （取り込みの保存で、数え直すための保存先の割り当てを読めなければ、取り込みは行い、保存先で数えた件数を返す）。
 //   包みの close は何もしない。
 import { useEffect, useSyncExternalStore } from "react";
 import type { AssignmentMap } from "@/domain/plan/types";
@@ -134,7 +135,8 @@ async function previewImportWithUnsaved(
  * 取り込みの保存。保存を終えたら、すぐにストアに知らせる（並んでいる割り当ての保存より先に取り込みの番号を進め、
  * 取り込みより前に作った割り当てを保存先に書き戻さない）。
  * 返す外した件数は、取り込みの確認（previewImportWithUnsaved）と同じく、保存できていない割り当てが残っていれば、
- * そのイベントは残っている割り当てで数える
+ * そのイベントは残っている割り当てで数える。
+ * 数え直しの準備（取り込みの前の保存先の割り当ての読み取り）が失敗しても、取り込みは行い、保存先で数えた件数を返す
  */
 async function saveImportWithUnsaved(
   inner: FudawariStorage,
@@ -142,12 +144,25 @@ async function saveImportWithUnsaved(
   input: SaveImportInput,
 ): Promise<SaveImportResult> {
   const unsaved = store.unsavedAssignments();
-  // 数え直すために、取り込みで変わる前の保存先の割り当てを読んでおく
-  const saved = unsaved === null ? null : await inner.loadAssignments(unsaved.eventId);
+  // 数え直すために、取り込みで変わる前の保存先の割り当てを読んでおく（読めなければ数え直さない）
+  const saved = unsaved === null ? null : await loadAssignmentsOrNull(inner, unsaved.eventId);
   const result = await inner.saveImport(input);
   store.noteImport(input.hasUid);
+  // 保存できていない割り当てがない・保存先の割り当てを読めなかったときは、保存先で数えた件数を返す
   if (unsaved === null || saved === null) return result;
   return recountWithUnsaved(result.removedAssignmentCount, saved, unsaved, input);
+}
+
+/**
+ * 保存先の割り当てを読む。読めなければ null（例外にしない）。
+ * 取り込みの保存の前の数え直しの準備に使い、読めなくても取り込みそのものは行う
+ */
+async function loadAssignmentsOrNull(inner: FudawariStorage, eventId: string): Promise<AssignmentMap | null> {
+  try {
+    return await inner.loadAssignments(eventId);
+  } catch {
+    return null;
+  }
 }
 
 /**
