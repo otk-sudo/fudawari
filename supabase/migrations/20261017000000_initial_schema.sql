@@ -197,10 +197,14 @@ $$;
 -- 更新できるイベントかを確かめる（設計書 4.2 の「更新できるイベント」）
 --   ない → FD009、終了 → FD002、
 --   協力者：最新のイベント以外 → FD003、管理者：最新でも未公開でもない → FD003
+-- 確かめた状態が書き込みまで変わらないよう、app_state とイベントの行を共有ロックする（トランザクションの終わりまで）。
+-- 最新の切り替え（publish_definition が app_state を排他ロック）と、イベントの名前・期間の更新（update_event_meta が
+-- イベントの行を排他ロック）は、確かめてから書くまでの間に割り込めない。
+-- ロックの順は、どの RPC でも app_state → イベント → 下書き（デッドロックを避ける）
 create function public._check_editable_event(p_event_id uuid, p_role text)
 returns void
 language plpgsql
-stable
+volatile
 security definer
 set search_path = public
 as $$
@@ -208,14 +212,14 @@ declare
   v_event public.events%rowtype;
   v_latest uuid;
 begin
-  select * into v_event from public.events where id = p_event_id;
+  select latest_event_id into v_latest from public.app_state for share;
+  select * into v_event from public.events where id = p_event_id for share;
   if not found then
     perform public._raise('FD009', 'イベントが見つかりません');
   end if;
   if v_event.ends_at is not null and v_event.ends_at <= now() then
     perform public._raise('FD002', 'このイベントは終了しているため更新できません');
   end if;
-  select latest_event_id into v_latest from public.app_state;
   if v_latest is not distinct from p_event_id then
     return;
   end if;
@@ -375,14 +379,15 @@ begin
   if v_make_latest and v_role <> 'admin' then
     perform public._raise('FD001', '最新のイベントを切り替えられるのは管理者だけです');
   end if;
-  perform public._check_editable_event(p_event_id, v_role);
-
+  -- 最新の切り替えを公開の終わりまで止めるため、先に app_state を排他ロックする（ロックの順は app_state → イベント → 下書き）
   select latest_event_id into v_latest from public.app_state for update;
+  perform public._check_editable_event(p_event_id, v_role);
   if v_latest is distinct from p_event_id and not v_make_latest then
     perform public._raise('FD003', '最新のイベントではないため、最新にせずに公開することはできません');
   end if;
 
-  select * into v_event from public.events where id = p_event_id;
+  -- 公開版を入れるまでイベントの名前・期間が変わらないよう、行をロックしたまま読む（_check_editable_event で共有ロック済み）
+  select * into v_event from public.events where id = p_event_id for share;
   select * into v_draft from public.drafts where event_id = p_event_id for update;
   if not found then
     perform public._raise('FD009', '下書きが見つかりません');
@@ -486,8 +491,11 @@ declare
   v_role text := public._require_role();
   v_event public.events%rowtype;
 begin
-  perform public._check_editable_event(p_event_id, v_role);
+  -- 同じイベントを 2 人が同時に更新しても、共有ロックからの格上げで行き詰まらないよう、
+  -- 確かめる前にイベントの行を排他ロックしておく（ロックの順は app_state → イベント）
+  perform 1 from public.app_state for share;
   select * into v_event from public.events where id = p_event_id for update;
+  perform public._check_editable_event(p_event_id, v_role);
 
   if v_role = 'collab'
      and (p_name is distinct from v_event.name or p_starts_at is distinct from v_event.starts_at) then
