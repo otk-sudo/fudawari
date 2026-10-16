@@ -25,9 +25,10 @@ export type Collaborator = {
  * - id-taken：その ID のアカウントがすでにある（auth.signUp の失敗。user_already_exists）
  * - already-registered：すでに権限がある人を登録しようとした（FD010）
  * - invalid-input：入力が不正（FD005）
- * - forbidden：権限がない（FD001）
+ * - forbidden：権限がない・ログインが切れている（FD001、PostgREST の 42501・PGRST301・状態コード 401、発行の前の確認でセッションがない）
  * - not-found：相手が見つからない（FD009）
  * - cannot-remove-admin：管理者は外せない（FD011）
+ * - config：Supabase の設定の失敗（「Confirm email」が ON で、auth.signUp がセッションなしで成功した。アカウントは作られている）
  * - network：通信の失敗
  * - unknown：上のどれでもない失敗
  */
@@ -38,6 +39,7 @@ export type CollaboratorError =
   | "forbidden"
   | "not-found"
   | "cannot-remove-admin"
+  | "config"
   | "network"
   | "unknown";
 
@@ -58,14 +60,17 @@ export type IssueCollaboratorInput = {
 export type CollaboratorRepository = {
   /** 編集できる人の一覧（profiles の全行） */
   list: () => Promise<CollaboratorResult<Collaborator[]>>;
-  /** アカウントを作り（保存しない別のクライアントで auth.signUp）、register_collaborator で協力者にする。作ったアカウントの user ID を返す */
+  /**
+   * アカウントを作り（保存しない別のクライアントで auth.signUp）、register_collaborator で協力者にする。作ったアカウントの user ID を返す。
+   * 作る前に、ふだんのクライアントに管理者のセッションがあるかを確かめ、なければアカウントを作らずに forbidden を返す
+   */
   issue: (input: IssueCollaboratorInput) => Promise<CollaboratorResult<{ userId: string }>>;
   /** 協力者を外す（remove_collaborator） */
   remove: (userId: string) => Promise<CollaboratorResult<void>>;
   /**
-   * ふだんのクライアントに、ログインのセッションがあるか（auth.getSession か auth.getUser で確かめる）。ない → { ok: true, value: false }。
+   * ふだんのクライアントに、ログインのセッションがあるか（auth.getUser で確かめる）。ない → { ok: true, value: false }。
    * 協力者画面は開いたときに、一覧を読む前にこれを呼ぶ（セッションがなければ保存した権限を消し、ログインし直す案内を出す）。
-   * PR-10b のレビュー対応のテストを先に書いた段階では省略できる形にしてある。実装で必須にする
+   * 発行の前にも呼び、アカウントを作る前に断られたこと（その ID はまだ使える）を、作った後の forbidden と見分ける
    */
-  checkSession?: () => Promise<CollaboratorResult<boolean>>;
+  checkSession: () => Promise<CollaboratorResult<boolean>>;
 };

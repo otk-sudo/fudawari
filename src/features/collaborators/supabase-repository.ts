@@ -1,14 +1,19 @@
 // 協力者の保管庫の Supabase の実装（docs/design/database.md 2.1.1・4 章）。
 //
 // - 一覧：profiles の全行（RLS で管理者・協力者は全行を読める）
-// - 発行：保存しない別のクライアント（createIssuingSupabaseClient）で auth.signUp（ID は「ID@fudawari.invalid」）し、
-//   返った user ID を、ふだんのクライアント（管理者のログイン）で rpc("register_collaborator", { p_user_id, p_display_name }) に渡す
+// - 発行：まず、ふだんのクライアントに管理者のセッションがあるかを確かめる（なければアカウントを作らずに forbidden）。
+//   次に、保存しない別のクライアント（createIssuingSupabaseClient）で auth.signUp（ID は「ID@fudawari.invalid」）し、
+//   返った user ID を、ふだんのクライアント（管理者のログイン）で rpc("register_collaborator", { p_user_id, p_display_name }) に渡す。
+//   発行用のクライアントは、使い終わったら（成功・失敗とも）破棄する
 // - 外す：ふだんのクライアントで rpc("remove_collaborator", { p_user_id })
+// - セッションの確認（checkSession）：ふだんのクライアントの auth.getUser
 // - クライアントは、各操作を呼んだときに作る（保管庫を作っただけでは作らない）
 // - 失敗は例外にせず、理由（CollaboratorError）で返す
 import {
   type AuthError,
+  isAuthApiError,
   isAuthRetryableFetchError,
+  isAuthSessionMissingError,
   type PostgrestError,
   type SupabaseClient,
 } from "@supabase/supabase-js";
@@ -16,6 +21,7 @@ import { loginIdToEmail } from "@/features/auth";
 import {
   createIssuingSupabaseClient,
   getSupabaseClient,
+  isPermissionFailure,
   isUnreachableStatus,
 } from "@/lib/supabase";
 import type {
@@ -46,7 +52,30 @@ function fail<T>(error: CollaboratorError): CollaboratorResult<T> {
 function postgrestError(error: PostgrestError, status: number): CollaboratorError {
   const mapped = RPC_ERRORS[error.code];
   if (mapped !== undefined) return mapped;
+  // 権限がない（42501）・JWT が無効か期限切れ（PGRST301）・状態コード 401 は、FD001 と同じく扱う
+  if (isPermissionFailure(error.code, status)) return "forbidden";
   return isUnreachableStatus(status) ? "network" : "unknown";
+}
+
+/** auth.getUser の失敗を、セッションの有無か保管庫の失敗の理由にする */
+function sessionErrorResult(error: AuthError): CollaboratorResult<boolean> {
+  // 届かなかった・Auth のサーバーの障害（AuthRetryableFetchError は fetch の失敗と 502〜504）
+  if (isAuthRetryableFetchError(error)) return fail("network");
+  if (isAuthApiError(error) && isUnreachableStatus(error.status)) return fail("network");
+  // セッションがない・期限切れで更新できない・JWT が受け付けられない（4xx）
+  if (isAuthSessionMissingError(error) || isAuthApiError(error)) return { ok: true, value: false };
+  return fail("unknown");
+}
+
+/** ふだんのクライアントに、ログインのセッションがあるかを確かめる（auth.getUser。Auth のサーバーに問い合わせる） */
+async function sessionOf(client: SupabaseClient): Promise<CollaboratorResult<boolean>> {
+  try {
+    const { data, error } = await client.auth.getUser();
+    if (error !== null) return sessionErrorResult(error);
+    return { ok: true, value: data.user !== null };
+  } catch {
+    return fail("network");
+  }
 }
 
 /** auth.signUp の失敗を、保管庫の失敗の理由にする */
@@ -118,14 +147,36 @@ async function list(): Promise<CollaboratorResult<Collaborator[]>> {
   }
 }
 
+/** 発行用のクライアント（保存しない別のクライアント）。設定がない・作れないときは null */
+function issuingClient(): SupabaseClient | null {
+  try {
+    return createIssuingSupabaseClient();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 使い終わった発行用のクライアントを破棄する（auth.dispose で、セッションの更新・タブ間の通知などの後始末をする）。
+ * auth.dispose がない版の supabase-js では、このクライアントのセッションを scope: "local" で終える（ふだんのクライアントのログインは変えない）。
+ * 失敗しても発行の結果は変えない
+ */
+async function disposeIssuingClient(client: SupabaseClient): Promise<void> {
+  try {
+    // 古い版の supabase-js には auth.dispose がないので、あるかを確かめてから呼ぶ
+    if (typeof client.auth.dispose === "function") {
+      await client.auth.dispose();
+    } else {
+      await client.auth.signOut({ scope: "local" });
+    }
+  } catch {
+    // 捨てるクライアントなので、片付けられなくても困らない
+  }
+}
+
 /** 保存しない別のクライアントでアカウントを作り、作ったアカウントの user ID を返す */
 async function createAccount(input: IssueCollaboratorInput): Promise<CollaboratorResult<string>> {
-  let client: SupabaseClient | null;
-  try {
-    client = createIssuingSupabaseClient();
-  } catch {
-    return fail("unknown");
-  }
+  const client = issuingClient();
   if (client === null) return fail("unknown");
   try {
     const { data, error } = await client.auth.signUp({
@@ -137,15 +188,25 @@ async function createAccount(input: IssueCollaboratorInput): Promise<Collaborato
     if (user === null) return fail("unknown");
     // 「Confirm email」が ON のときは、すでにあるメールアドレスでも失敗にせず、identities が空の利用者を返す
     if (Array.isArray(user.identities) && user.identities.length === 0) return fail("id-taken");
+    // 「Confirm email」が ON だと、アカウントは作られるがセッションが返らない（確認のメールを待つ状態で、ログインできない）。
+    // 協力者にはせず、Supabase の設定の失敗として返す（設計書 2.1.1 は OFF が前提）
+    if (data.session === null) return fail("config");
     return { ok: true, value: user.id };
   } catch {
     return fail("network");
+  } finally {
+    await disposeIssuingClient(client);
   }
 }
 
 async function issue(input: IssueCollaboratorInput): Promise<CollaboratorResult<{ userId: string }>> {
   const client = mainClient();
   if (client === null) return fail("unknown");
+
+  // 管理者のセッションがなければ、アカウントを作らない（作った後で register_collaborator が断られると、その ID が使えなくなるため）
+  const session = await sessionOf(client);
+  if (!session.ok) return fail(session.error);
+  if (!session.value) return fail("forbidden");
 
   const account = await createAccount(input);
   if (!account.ok) return account;
@@ -176,7 +237,13 @@ async function remove(userId: string): Promise<CollaboratorResult<void>> {
   }
 }
 
+async function checkSession(): Promise<CollaboratorResult<boolean>> {
+  const client = mainClient();
+  if (client === null) return fail("unknown");
+  return sessionOf(client);
+}
+
 /** 協力者の保管庫（Supabase の実装）を作る。クライアントは各操作を呼んだときに作る */
 export function createSupabaseCollaboratorRepository(): CollaboratorRepository {
-  return { list, issue, remove };
+  return { list, issue, remove, checkSession };
 }

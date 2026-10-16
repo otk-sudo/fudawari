@@ -3,12 +3,15 @@
 // 管理者・協力者のログインのフォーム（/login。U3・U14、要件 2.1・2.3）。
 // ID・パスワードの欄と「ログイン」。ログインできたらホーム（/）へ移り、できなければ理由を出す。
 // 開いただけでは Supabase に通信しない（「ログイン」を押したときに signIn が通信する）。ログイン中に開いても、そのままフォームを出す
+// 書き出した HTML（JavaScript が動く前）では「ログイン」を押せない。押せない送信ボタンしかないフォームは、Enter でも送られない。
+// 万一送られても、パスワードを URL のクエリに載せないよう method="post" にする
 import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 // 設定はファイルから直接読む（@/lib/supabase の入口は supabase-js を読み込むため。読み込むのはログインするときだけ）
 import { readSupabaseConfig } from "@/lib/supabase/config";
 import { LOGIN_ID_RULE_MESSAGE } from "./login-id";
+import { useRoleReady } from "./role";
 import { type SignInFailure, signIn } from "./session";
 import styles from "./LoginForm.module.css";
 
@@ -38,6 +41,9 @@ export function LoginForm(): ReactNode {
   const [submitting, setSubmitting] = useState(false);
   // 押した直後の二重送信も防ぐ（状態の更新を待たずに見られる印）
   const submittingRef = useRef(false);
+  // 書き出した HTML に重ねた（hydration の）後なら true。書き出した HTML と重ねる間は false
+  // （useRoleReady は hydration の後に true になる。ID とパスワードの欄は、その前から入力できる）
+  const hydrated = useRoleReady();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -58,7 +64,12 @@ export function LoginForm(): ReactNode {
   }
 
   return (
-    <form className={styles.form} onSubmit={(event) => void handleSubmit(event)} noValidate>
+    <form
+      className={styles.form}
+      method="post"
+      onSubmit={(event) => void handleSubmit(event)}
+      noValidate
+    >
       <div className={styles.field}>
         <label htmlFor={idFieldId} className={styles.label}>
           ID
@@ -94,7 +105,12 @@ export function LoginForm(): ReactNode {
           {message}
         </p>
       )}
-      <button type="submit" className={styles.submit} disabled={submitting} aria-busy={submitting}>
+      <button
+        type="submit"
+        className={styles.submit}
+        disabled={!hydrated || submitting}
+        aria-busy={submitting}
+      >
         ログイン
       </button>
     </form>

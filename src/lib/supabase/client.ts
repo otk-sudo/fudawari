@@ -17,8 +17,14 @@ export function getSupabaseClient(): SupabaseClient | null {
   if (mainClient !== null) return mainClient;
   const config = readSupabaseConfig();
   if (config === null) return null;
-  // 設定は既定のまま（セッションを localStorage に保存し、読み込み直してもログインが続く）
-  mainClient = createClient(config.url, config.publishableKey);
+  // セッションの保存は既定のまま（localStorage に保存し、読み込み直してもログインが続く）
+  mainClient = createClient(config.url, config.publishableKey, {
+    auth: {
+      // ログインは ID とパスワードだけで、URL でログインの情報を受け取る場面がない。
+      // 細工したリンクを開かされて、別の人のセッションに切り替わらないよう、URL は読まない
+      detectSessionInUrl: false,
+    },
+  });
   return mainClient;
 }
 

@@ -10,3 +10,14 @@
 export function isUnreachableStatus(status: number): boolean {
   return status === 0 || status >= 500;
 }
+
+/**
+ * 表の読み取り・RPC の失敗が、「権限がない・ログインが切れている」を表すか。
+ * - 42501：権限がない（PostgreSQL の insufficient_privilege。RLS・GRANT で断られた）
+ * - PGRST301：JWT が無効・期限切れ（PostgREST）
+ * - 状態コード 401：ログインの情報が受け付けられなかった
+ * 画面では「管理者でログインし直してください」と出す
+ */
+export function isPermissionFailure(code: string, status: number): boolean {
+  return code === "42501" || code === "PGRST301" || status === 401;
+}

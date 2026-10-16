@@ -1,7 +1,10 @@
 "use client";
 
 // 協力者画面の「協力者を追加」の欄（要件 3.8。モックの招待の欄を置き換える）。
-// ID と表示名を入れて「発行する」。パスワードは画面が作り（英数字 16 文字）、発行できたら ID とパスワードを一度だけ出す
+// ID と表示名を入れて「発行する」。パスワードは画面が作り（英数字 16 文字）、発行できたら ID とパスワードを一度だけ出す。
+// 発行の前に管理者のセッションを確かめ（checkSession）、なければアカウントを作らずに、ログインし直す案内を出す
+// （このときは「この ID は使えなくなりました」を出さない。保管庫の発行が返す forbidden は、アカウントを作った後の失敗として扱う）
+import Link from "next/link";
 import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
 import { isValidLoginId, LOGIN_ID_RULE_MESSAGE } from "@/features/auth";
 import { ROUTES } from "@/lib/routes";
@@ -11,6 +14,7 @@ import type {
   CollaboratorError,
   CollaboratorRepository,
   CollaboratorResult,
+  IssueCollaboratorInput,
 } from "./types";
 import styles from "./CollaboratorsScreen.module.css";
 
@@ -22,19 +26,27 @@ const ISSUE_ERROR_MESSAGES: Record<CollaboratorError, string> = {
   forbidden: "協力者を追加する権限がありません。管理者でログインし直してください",
   "not-found": "作ったアカウントが見つかりませんでした",
   "cannot-remove-admin": "発行できませんでした",
+  config:
+    "アカウントは作られましたが、ログインできる状態になっていません。Supabase の設定（Authentication → Providers → Email）で「Confirm email」を OFF にしてください",
   network: "通信に失敗しました。しばらくしてからもう一度お試しください",
   unknown: "発行できませんでした。しばらくしてからもう一度お試しください",
 };
 
+/** 発行の前の確認で、管理者のセッションがなかったときの文（アカウントは作っていないので、その ID はまだ使える） */
+const SESSION_EXPIRED_MESSAGE =
+  "ログインが切れています。管理者でログインし直してください（アカウントは作っていないので、この ID はそのまま使えます）";
+
 /**
  * アカウントを作った後（協力者にするところ）でしか起きない失敗。
- * 作ったアカウントは画面からは消せない（運用手順書で管理画面から消す）ので、その ID はもう使えない
+ * 作ったアカウントは画面からは消せない（運用手順書で管理画面から消す）ので、その ID はもう使えない。
+ * config（Confirm email が ON）も、確認待ちのアカウントが残るので、その ID はもう使えない
  */
 const FAILURES_AFTER_ACCOUNT_CREATED: ReadonlySet<CollaboratorError> = new Set<CollaboratorError>([
   "already-registered",
   "invalid-input",
   "forbidden",
   "not-found",
+  "config",
 ]);
 
 /** アカウントを作る前と後のどちらでも起きる失敗（通信の失敗など） */
@@ -53,6 +65,47 @@ function issueFailureMessages(error: CollaboratorError): string[] {
   if (FAILURES_AFTER_ACCOUNT_CREATED.has(error)) messages.push(ID_NO_LONGER_USABLE);
   else if (FAILURES_EITHER_SIDE.has(error)) messages.push(ID_MAYBE_UNUSABLE);
   return messages;
+}
+
+/** 「発行する」の下に出す失敗の知らせ（relogin なら、ログインの画面へのリンクも出す） */
+type IssueAlert = { messages: string[]; relogin: boolean };
+
+/** 発行を試した結果 */
+type IssueAttempt = { ok: true; userId: string } | { ok: false; alert: IssueAlert };
+
+/** 管理者のセッションを確かめてから、保管庫で発行する。保管庫が例外を投げても外に出さない */
+async function attemptIssue(
+  repository: CollaboratorRepository,
+  input: IssueCollaboratorInput,
+): Promise<IssueAttempt> {
+  // ここで止まったときはアカウントを作っていないので、「この ID は使えなくなりました」などは出さない
+  let session: CollaboratorResult<boolean>;
+  try {
+    session = await repository.checkSession();
+  } catch {
+    session = { ok: false, error: "unknown" };
+  }
+  if (!session.ok) {
+    return {
+      ok: false,
+      alert: { messages: [ISSUE_ERROR_MESSAGES[session.error]], relogin: session.error === "forbidden" },
+    };
+  }
+  if (!session.value) return { ok: false, alert: { messages: [SESSION_EXPIRED_MESSAGE], relogin: true } };
+
+  let result: CollaboratorResult<{ userId: string }>;
+  try {
+    result = await repository.issue(input);
+  } catch {
+    result = { ok: false, error: "unknown" };
+  }
+  if (!result.ok) {
+    return {
+      ok: false,
+      alert: { messages: issueFailureMessages(result.error), relogin: result.error === "forbidden" },
+    };
+  }
+  return { ok: true, userId: result.value.userId };
 }
 
 /** 発行した ID とパスワード */
@@ -106,18 +159,20 @@ function IssuedPanel({ credentials }: { credentials: IssuedCredentials }): React
 
 export type IssueSectionProps = {
   repository: CollaboratorRepository;
+  /** 発行できるか（編集できる人の一覧を読み終えるまでは false。「発行する」を押せない） */
+  canIssue: boolean;
   /** 発行して協力者にできたときに、表に加える人を渡す */
   onIssued: (member: Collaborator) => void;
 };
 
-export function IssueSection({ repository, onIssued }: IssueSectionProps): ReactNode {
+export function IssueSection({ repository, canIssue, onIssued }: IssueSectionProps): ReactNode {
   const headingId = useId();
   const idFieldId = useId();
   const idHintId = useId();
   const nameFieldId = useId();
   const [loginId, setLoginId] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [errors, setErrors] = useState<string[]>([]);
+  const [issueAlert, setIssueAlert] = useState<IssueAlert | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [issued, setIssued] = useState<IssuedCredentials | null>(null);
   // 押した直後の二重送信も防ぐ（状態の更新を待たずに見られる印）
@@ -125,38 +180,33 @@ export function IssueSection({ repository, onIssued }: IssueSectionProps): React
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (issuingRef.current) return;
+    if (issuingRef.current || !canIssue) return;
 
     const id = loginId.trim();
     const name = displayName.trim();
     const problems: string[] = [];
     if (!isValidLoginId(id)) problems.push(LOGIN_ID_RULE_MESSAGE);
     if (name === "") problems.push("表示名を入れてください");
-    setErrors(problems);
+    setIssueAlert(problems.length > 0 ? { messages: problems, relogin: false } : null);
     if (problems.length > 0) return;
 
     issuingRef.current = true;
     setIssuing(true);
     const password = generatePassword();
-    let result: CollaboratorResult<{ userId: string }>;
-    try {
-      result = await repository.issue({ loginId: id, displayName: name, password });
-    } catch {
-      result = { ok: false, error: "unknown" };
-    }
+    const attempt = await attemptIssue(repository, { loginId: id, displayName: name, password });
     issuingRef.current = false;
     setIssuing(false);
 
-    if (!result.ok) {
+    if (!attempt.ok) {
       // 前に発行した ID とパスワードは、写し終えていないかもしれないので出したままにする
-      setErrors(issueFailureMessages(result.error));
+      setIssueAlert(attempt.alert);
       return;
     }
     setIssued({ loginId: id, password });
     setLoginId("");
     setDisplayName("");
     onIssued({
-      userId: result.value.userId,
+      userId: attempt.userId,
       displayName: name,
       role: "collab",
       createdAt: new Date().toISOString(),
@@ -213,15 +263,27 @@ export function IssueSection({ repository, onIssued }: IssueSectionProps): React
               onChange={(event) => setDisplayName(event.target.value)}
             />
           </div>
-          <button type="submit" className={styles.primaryButton} disabled={issuing} aria-busy={issuing}>
+          <button
+            type="submit"
+            className={styles.primaryButton}
+            disabled={!canIssue || issuing}
+            aria-busy={issuing}
+          >
             発行する
           </button>
         </form>
-        {errors.length > 0 && (
+        {issueAlert !== null && (
           <div role="alert" className={styles.alert}>
-            {errors.map((message) => (
+            {issueAlert.messages.map((message) => (
               <p key={message}>{message}</p>
             ))}
+            {issueAlert.relogin && (
+              <p>
+                <Link href={ROUTES.login} className={styles.link}>
+                  ログインの画面へ
+                </Link>
+              </p>
+            )}
           </div>
         )}
         {issued !== null && <IssuedPanel key={issued.password} credentials={issued} />}

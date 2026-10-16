@@ -6,4 +6,4 @@ export {
 } from "./client";
 export { readSupabaseConfig } from "./config";
 export type { SupabaseConfig } from "./config";
-export { isUnreachableStatus } from "./errors";
+export { isPermissionFailure, isUnreachableStatus } from "./errors";
