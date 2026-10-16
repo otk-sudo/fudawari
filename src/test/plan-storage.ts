@@ -4,7 +4,8 @@
 //   同じテストファイルの中では DB の中身が残るため、テストごとに別の名前で開き、afterEach で cleanupTestStorages() を呼ぶ。
 // - ブラウザ内の保存が使えない（IndexedDB を開けない）場面は、どの操作も失敗する偽物（failingStorage）か、
 //   indexedDB.open を失敗させた本物の保存（openStorageWithoutIndexedDB）で作る。
-// - 保存・読み込みが重なる場面（競合）は、本物の保存の saveAssignments・loadShips を止めておける保存先（holdableStorage）で作る。
+// - 保存・読み込みが重なる場面（競合）は、本物の保存の saveAssignments・loadShips・saveImport を止めておける保存先
+//   （holdableStorage）で作る。returnOrphanedAssignments は、本物の呼び出しが終わった後で（結果を返す前に）止められる。
 import Dexie from "dexie";
 import { vi } from "vitest";
 import type { ImportFilter } from "@/domain/import/types";
@@ -106,6 +107,19 @@ export function importInput(
   };
 }
 
+/**
+ * 古い形式（個体 ID がない短縮形式）で取り込んだ個体の一覧を作る。
+ * 個体 ID は取り込みの並び順の連番（legacy-1 から）になるため、並びが変わると同じ個体 ID が別の艦を指す
+ */
+export function legacyShips(...bases: readonly OwnedShip[]): OwnedShip[] {
+  return bases.map((base, index) => ({ ...base, uid: `legacy-${index + 1}` }));
+}
+
+/** 古い形式（個体 ID・ロックの情報がない）の取り込みの保存の入力 */
+export function legacyImportInput(ships: readonly OwnedShip[], importedAt: string): SaveImportInput {
+  return importInput(ships, { importedAt, hasUid: false, hasLockInfo: false });
+}
+
 /** 並び順に左右されないよう、個体 ID の順に並べる */
 export function byUid(ships: readonly OwnedShip[]): OwnedShip[] {
   return [...ships].sort((a, b) => a.uid.localeCompare(b.uid));
@@ -129,6 +143,14 @@ export interface HoldableStorage {
   holdSaveAssignments(): HeldOperation;
   /** 次に呼ばれる loadShips を 1 回だけ止める（続けて頼むと、その次の呼び出しも順に止める） */
   holdLoadShips(): HeldOperation;
+  /** 次に呼ばれる saveImport を 1 回だけ止める（本物の保存先を呼ぶ前に止める。続けて頼むと、その次の呼び出しも順に止める） */
+  holdSaveImport(): HeldOperation;
+  /**
+   * 次に呼ばれる returnOrphanedAssignments を、本物の呼び出しが終わった後（保存先を読み書きし終えて、結果を返す前）で
+   * 1 回だけ止める。reached は本物の呼び出しが終わったら解決する。release で結果を返し、fail で結果の代わりに失敗する。
+   * 本物の呼び出しが失敗したときは止めない（失敗をそのまま返す）
+   */
+  holdAfterReturnOrphanedAssignments(): HeldOperation;
   /**
    * 本物の保存先の操作を呼んだ順の記録。呼んだときに操作名（例 "saveAssignments"）、
    * 終わったとき（成功・失敗とも）に「操作名:done」を足す。止めている間と、fail で失敗させた操作は記録しない
@@ -170,13 +192,19 @@ function createHold(): Hold {
 }
 
 /**
- * 本物の保存先へ中継し、saveAssignments・loadShips を止めておける保存先を返す
- * （保存の途中で読み込む・読み込みの途中で割り当てを変える、などの重なりを作るため）。
+ * 本物の保存先へ中継し、saveAssignments・loadShips・saveImport を止めておける
+ * （returnOrphanedAssignments は本物の呼び出しの後で止められる）保存先を返す
+ * （保存の途中で読み込む・読み込みの途中で割り当てを変える・取り込みの途中で割り当てを変える、などの重なりを作るため）。
  * 中継は呼ぶたびに本物の保存先のメソッドを読むので、本物の保存先への vi.spyOn も効く
  */
 export function holdableStorage(real: FudawariStorage): HoldableStorage {
   const calls: string[] = [];
-  const holds: { saveAssignments: Hold[]; loadShips: Hold[] } = { saveAssignments: [], loadShips: [] };
+  const holds: {
+    saveAssignments: Hold[];
+    loadShips: Hold[];
+    saveImport: Hold[];
+    afterReturnOrphanedAssignments: Hold[];
+  } = { saveAssignments: [], loadShips: [], saveImport: [], afterReturnOrphanedAssignments: [] };
 
   /** 本物の保存先の操作を呼び、呼んだこと・終わったことを記録する */
   async function call<T>(name: string, run: () => Promise<T>): Promise<T> {
@@ -204,7 +232,11 @@ export function holdableStorage(real: FudawariStorage): HoldableStorage {
   }
 
   const storage: FudawariStorage = {
-    saveImport: (input) => call("saveImport", () => real.saveImport(input)),
+    saveImport(input) {
+      // 止める指定がなければ、これまでどおりすぐに本物の保存先を呼ぶ
+      if (holds.saveImport.length === 0) return call("saveImport", () => real.saveImport(input));
+      return waitIfHeld(holds.saveImport).then(() => call("saveImport", () => real.saveImport(input)));
+    },
     previewImport: (input) => call("previewImport", () => real.previewImport(input)),
     async loadShips() {
       await waitIfHeld(holds.loadShips);
@@ -217,8 +249,17 @@ export function holdableStorage(real: FudawariStorage): HoldableStorage {
       await waitIfHeld(holds.saveAssignments);
       return call("saveAssignments", () => real.saveAssignments(eventId, assignments));
     },
-    returnOrphanedAssignments: (eventId, fudaIds) =>
-      call("returnOrphanedAssignments", () => real.returnOrphanedAssignments(eventId, fudaIds)),
+    returnOrphanedAssignments(eventId, fudaIds) {
+      const after = holds.afterReturnOrphanedAssignments.shift();
+      const run = call("returnOrphanedAssignments", () => real.returnOrphanedAssignments(eventId, fudaIds));
+      // 止める指定がなければ、これまでどおり本物の保存先の結果をそのまま返す
+      if (after === undefined) return run;
+      return run.then(async (result) => {
+        after.arrive();
+        await after.gate;
+        return result;
+      });
+    },
     loadSettings: () => call("loadSettings", () => real.loadSettings()),
     saveSettings: (patch) => call("saveSettings", () => real.saveSettings(patch)),
     close: () => real.close(),
@@ -228,6 +269,8 @@ export function holdableStorage(real: FudawariStorage): HoldableStorage {
     storage,
     holdSaveAssignments: () => hold(holds.saveAssignments),
     holdLoadShips: () => hold(holds.loadShips),
+    holdSaveImport: () => hold(holds.saveImport),
+    holdAfterReturnOrphanedAssignments: () => hold(holds.afterReturnOrphanedAssignments),
     calls,
   };
 }
