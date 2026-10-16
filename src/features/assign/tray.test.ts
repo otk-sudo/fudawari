@@ -239,6 +239,32 @@ describe("検索（図鑑 ID・名称）", () => {
 
     expect(result.shownCount).toBe(allShips.length);
   });
+
+  it("英字の大文字・小文字を区別しない（「warspite」「WARSPITE」「ｗａｒｓｐｉｔｅ」で Warspite改 が当たる）", () => {
+    // 準備：英字の名前の艦（仮マスタにない艦 ID）を足す
+    const warspite: OwnedShip = { uid: "warspite", shipId: 439, level: 99, luck: 12, sallyArea: 0 };
+    const withWarspite = createShipMaster([
+      ...summer2026MasterEntries,
+      {
+        id: 439,
+        name: "Warspite改",
+        baseName: "Warspite",
+        yomi: "うぉーすぱいと",
+        shipTypeId: 9,
+        shipClassId: 67,
+        shipClassName: "Queen Elizabeth級",
+        remodelStage: "final",
+        sortNo: 1100,
+        luckBase: 10,
+      },
+    ]);
+
+    // 実行・検証
+    for (const query of ["warspite", "WARSPITE", "ｗａｒｓｐｉｔｅ"]) {
+      const result = tray({ query }, { master: withWarspite, ships: [...summer2026Ships, warspite], assignments: {} });
+      expect(shownUids(result), `検索「${query}」`).toEqual(["warspite"]);
+    }
+  });
 });
 
 describe("艦種タブ（要件 3.3 の対応表）", () => {

@@ -6,6 +6,10 @@ export type {
   SaveAssignments,
 } from "./assign-store";
 export { createAssignStore, UNDO_LIMIT } from "./assign-store";
+export type { AssignScreenProps } from "./AssignScreen";
+export { AssignScreen } from "./AssignScreen";
+export { AssignPageContent } from "./AssignPageContent";
+export { ASSIGN_SCREEN_TITLE } from "./title";
 export type {
   BuildTrayInput,
   ShipTypeTab,

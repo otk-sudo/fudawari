@@ -1,20 +1,47 @@
 "use client";
 
-// 割り振り画面の中身（roadmap T2-7、要件 3.3、モック Assign.dc.html・ShipCard.dc.html）
+// 割り振り画面の中身（roadmap T2-7、要件 3.3、U17・U22、モック Assign.dc.html・ShipCard.dc.html）
 //
-// いまは画面テスト（AssignScreen.test.tsx、src/app/assign/page.test.tsx）を先に書くための空の入れ物で、何も描かない。
-// 中身（ヘッダー・控え・艦カード・札の列・選択中の艦のパネル・お知らせ）は実装の担当が作る。
+// 読み込み（公開定義・艦船マスタ・札割りのデータ・設定）と、読み込み中・失敗・未取り込みの表示はページ
+// （src/app/assign/page.tsx → AssignPageContent）が受け持ち、すべて読めて艦が 1 隻以上あるときに、この部品を描く。
+//
+// 画面の構成
+// - ヘッダー：画面名・最新イベント名・操作の説明・「特効データ：YYYY/MM/DD 版」・「元に戻す」・「一覧で確認」
+// - お知らせ：保存の失敗（role="alert"）、読み込みのときに控えに戻した割り当ての件数（U17）
+// - 控え（TrayPanel）・札の列（FudaColumn）・選択中の艦のパネル（SelectedShipPanel）
+//
+// 割り当て・選択・開閉・「元に戻す」・保存はストア（createAssignStore。画面を開くたびに作る）が持つ。
 // テストが探す形（role・名前・属性）は src/test/assign-screen.ts の冒頭にまとめてある。
-//
-// 読み込み（公開定義・艦船マスタ・札割りのデータ・設定）と、読み込み中・失敗・未取り込みの表示はページ（src/app/assign/page.tsx）が受け持ち、
-// すべて読めて艦が 1 隻以上あるときに、この部品を描く想定。
-import type { ReactNode } from "react";
+// ドラッグ＆ドロップと 600 隻の仮想スクロールは PR-06（T2-8）で、TrayGroupList・FudaColumn・ShipCard を包む形で足す。
+import Link from "next/link";
+import { type ReactNode, useMemo, useState } from "react";
+import { useStore } from "zustand";
+import { ScreenHeader } from "@/components/ScreenHeader";
 import type { PublicDefinition } from "@/domain/definition/types";
 import type { ShipMaster } from "@/domain/master/types";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip } from "@/domain/ship/types";
-import type { SaveAssignments } from "./assign-store";
-import type { TrayOptionsInit } from "./tray";
+import { ROUTES } from "@/lib/routes";
+import { createAssignStore, type SaveAssignments } from "./assign-store";
+import { FudaColumn, type PlaceButtonKind } from "./FudaColumn";
+import { SelectedShipPanel } from "./SelectedShipPanel";
+import { ShipCard } from "./ShipCard";
+import {
+  boostIn,
+  boostLines,
+  formatVersionDate,
+  fudaMapOf,
+  fudaStageLabels,
+  hasBoostIn,
+  placedFudaOf,
+  shipEntryOf,
+  shipsByFuda,
+  shipTypeLabel,
+} from "./ship-view";
+import { ASSIGN_SCREEN_TITLE } from "./title";
+import type { TrayEntry, TrayOptionsInit } from "./tray";
+import { TrayPanel } from "./TrayPanel";
+import styles from "./AssignScreen.module.css";
 
 /** 割り振り画面の中身に渡すもの */
 export interface AssignScreenProps {
@@ -31,7 +58,8 @@ export interface AssignScreenProps {
   initialAssignments: AssignmentMap;
   /**
    * 割り当てが変わるたびに呼ぶ保存の関数（createAssignStore に渡す。イベント ID は definition.event.id）。
-   * 失敗したら理由の文をメッセージに持つエラーで reject する（画面は「保存できませんでした」と理由を出す）
+   * 失敗したら理由の文をメッセージに持つエラーで reject する（画面は「保存できませんでした」と理由を出す）。
+   * 最初の描画で渡した関数を使い続ける（後から別の関数を渡しても切り替わらない）ので、何度描いても同じ関数を渡す
    */
   save: SaveAssignments;
   /** 読み込みのときに控えに戻した割り当ての件数（U17。0 なら知らせない） */
@@ -40,5 +68,184 @@ export interface AssignScreenProps {
   trayInit?: TrayOptionsInit;
 }
 
-/** 割り振り画面の中身（いまは空の入れ物。何も描かない） */
-export const AssignScreen: (props: AssignScreenProps) => ReactNode = () => null;
+/** 控えの艦を開いたときに、どの札でも効かなければ出す文 */
+const TRAY_NO_BOOST_TEXT = "特効なし";
+/** 札の列の艦を開いたときに、その札で効かなければ出す文 */
+const COLUMN_NO_BOOST_TEXT = "この札では特効なし";
+
+/** 割り振り画面の中身 */
+export function AssignScreen({
+  definition,
+  master,
+  ships,
+  initialAssignments,
+  save,
+  returnedCount,
+  trayInit,
+}: AssignScreenProps): ReactNode {
+  // ストアは最初の描画で 1 回だけ作る（初めの割り当て・保存の関数・イベント ID は、そのときの値を使い続ける）
+  const [store] = useState(() =>
+    createAssignStore({ eventId: definition.event.id, assignments: initialAssignments, save }),
+  );
+
+  const assignments = useStore(store, (state) => state.assignments);
+  const selectedUid = useStore(store, (state) => state.selectedUid);
+  const openUids = useStore(store, (state) => state.openUids);
+  const canUndo = useStore(store, (state) => state.canUndo);
+  const saveError = useStore(store, (state) => state.saveError);
+  // 操作はストアを作ったときから変わらない
+  const pressShip = useStore(store, (state) => state.pressShip);
+  const clearSelection = useStore(store, (state) => state.clearSelection);
+  const closeAll = useStore(store, (state) => state.closeAll);
+  const placeSelected = useStore(store, (state) => state.placeSelected);
+  const undo = useStore(store, (state) => state.undo);
+
+  const fudas = useMemo(() => fudaMapOf(definition), [definition]);
+  const fudaIds = useMemo(() => new Set(fudas.keys()), [fudas]);
+  const stageLabelsByFuda = useMemo(
+    () => new Map(definition.fudas.map((fuda) => [fuda.id, fudaStageLabels(definition, fuda.id)])),
+    [definition],
+  );
+  const entries = useMemo(
+    () => new Map(ships.map((ship) => [ship.uid, shipEntryOf(definition, master, ship)])),
+    [definition, master, ships],
+  );
+  const membersByFuda = useMemo(() => shipsByFuda(definition, ships, assignments), [definition, ships, assignments]);
+  const openSet = useMemo(() => new Set(openUids), [openUids]);
+
+  const selected = selectedUid === null ? undefined : entries.get(selectedUid);
+  const selectedFudaId = selected === undefined ? null : placedFudaOf(assignments, selected.ship.uid, fudaIds);
+
+  /** 控えの艦のカード：左端は一番効く札の色、開いたら効く札のスコアの高い順に効く段階をすべて並べる */
+  const renderTrayCard = (entry: TrayEntry, dense: boolean): ReactNode => {
+    const { ship, info, boost } = entry;
+    const expanded = openSet.has(ship.uid);
+    const best = boost.effective.at(0);
+    return (
+      <ShipCard
+        uid={ship.uid}
+        name={info.name}
+        typeLabel={shipTypeLabel(info)}
+        level={ship.level}
+        luck={ship.luck}
+        dense={dense}
+        hasBoost={best !== undefined}
+        stripeColor={best === undefined ? null : (fudas.get(best.fudaId)?.color ?? null)}
+        selected={ship.uid === selectedUid}
+        expanded={expanded}
+        lines={expanded ? boostLines(definition, fudas, boost.effective) : []}
+        noBoostText={TRAY_NO_BOOST_TEXT}
+        onPress={pressShip}
+      />
+    );
+  };
+
+  /** 札の列の艦のカード：いつもカード表示で、左端はその札の色、開いたらその札の段階で効くものだけを並べる */
+  const renderColumnCard = (entry: TrayEntry, fudaId: string, color: string): ReactNode => {
+    const { ship, info } = entry;
+    const expanded = openSet.has(ship.uid);
+    const boost = boostIn(entry, fudaId);
+    return (
+      <ShipCard
+        uid={ship.uid}
+        name={info.name}
+        typeLabel={shipTypeLabel(info)}
+        level={ship.level}
+        luck={ship.luck}
+        dense={false}
+        hasBoost={boost !== undefined}
+        stripeColor={color}
+        selected={ship.uid === selectedUid}
+        expanded={expanded}
+        lines={expanded && boost !== undefined ? boostLines(definition, fudas, [boost]) : []}
+        noBoostText={COLUMN_NO_BOOST_TEXT}
+        onPress={pressShip}
+      />
+    );
+  };
+
+  return (
+    <div className={styles.screen}>
+      <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
+        <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
+        <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
+        <span className={styles.headerSpacer} />
+        <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
+          元に戻す
+        </button>
+        <Link href={ROUTES.list} className={styles.listLink}>
+          一覧で確認
+        </Link>
+      </ScreenHeader>
+
+      {(saveError !== null || returnedCount > 0) && (
+        <div className={styles.notices}>
+          {saveError !== null && (
+            <div role="alert" className={styles.alert}>
+              <p className={styles.alertTitle}>保存できませんでした</p>
+              <p className={styles.alertReason}>{saveError}</p>
+            </div>
+          )}
+          {returnedCount > 0 && (
+            <p role="status" className={styles.notice}>
+              イベントの定義から消えた札に置いていた {returnedCount} 件の割り当てを、控えに戻しました
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className={styles.body}>
+        <TrayPanel
+          definition={definition}
+          master={master}
+          ships={ships}
+          assignments={assignments}
+          trayInit={trayInit}
+          openCount={openUids.length}
+          onCloseAll={closeAll}
+          renderCard={renderTrayCard}
+        />
+
+        <div className={styles.columns}>
+          {definition.fudas.map((fuda) => {
+            const members = membersByFuda.get(fuda.id) ?? [];
+            const isHere = selected !== undefined && selectedFudaId === fuda.id;
+            const boosted = selected !== undefined && hasBoostIn(selected, fuda.id);
+            const place: PlaceButtonKind = selected === undefined || isHere ? null : boosted ? "boost" : "no-boost";
+            return (
+              <FudaColumn
+                key={fuda.id}
+                fuda={fuda}
+                stageLabels={stageLabelsByFuda.get(fuda.id) ?? []}
+                count={members.length}
+                place={place}
+                dimmed={selected !== undefined && !boosted && !isHere}
+                onPlace={() => placeSelected(fuda.id)}
+              >
+                {members.map((ship) => {
+                  const entry = entries.get(ship.uid);
+                  return entry === undefined ? null : (
+                    <li key={ship.uid}>{renderColumnCard(entry, fuda.id, fuda.color)}</li>
+                  );
+                })}
+              </FudaColumn>
+            );
+          })}
+        </div>
+
+        <div className={styles.side}>
+          {selected !== undefined && (
+            <SelectedShipPanel
+              definition={definition}
+              fudas={fudas}
+              entry={selected}
+              placedFudaId={selectedFudaId}
+              onPlace={placeSelected}
+              onClose={clearSelection}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

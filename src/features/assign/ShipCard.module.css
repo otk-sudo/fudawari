@@ -1,0 +1,147 @@
+/*
+ * 艦カード（モック ShipCard.dc.html）。
+ * 色は theme.css の変数と、割り振り画面の変数（AssignScreen.module.css の .screen で決める --assign-*）を使う
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 5px 6px 6px;
+  background: var(--assign-card-bg);
+  border: 1px solid var(--assign-card-border);
+  border-radius: 5px;
+  font-family: inherit;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--assign-highlight);
+  outline-offset: 2px;
+}
+
+/* 一行表示（控えの「一行」）は詰める */
+.dense {
+  padding: 2px 3px;
+}
+
+/* 特効を開いている（選択中でない） */
+.expanded {
+  background: var(--assign-card-open-bg);
+  border-color: var(--assign-card-open-border);
+}
+
+/* 選択中 */
+.selected {
+  background: var(--assign-selected-bg);
+  border-color: var(--assign-highlight);
+  box-shadow: 0 0 0 2px var(--assign-highlight-ring);
+}
+
+/* 艦名の帯。左端の太い線が札の色（--card-stripe。なければ灰色） */
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-height: 26px;
+  padding: 0 6px 0 8px;
+  background: var(--assign-banner-bg);
+  border-radius: 3px;
+  box-shadow: inset 4px 0 0 var(--card-stripe, var(--assign-stripe-none));
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--assign-banner-text);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 一行表示の「Lv 運」 */
+.stats {
+  flex: 0 0 auto;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+/* 特効の印 */
+.flagOn,
+.flagOff {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+}
+
+.flagOn {
+  font-weight: 700;
+  color: var(--assign-on-accent);
+  background: var(--color-accent);
+}
+
+.flagOff {
+  font-weight: 400;
+  color: var(--assign-flag-muted);
+  border: 1px solid var(--color-border-strong);
+}
+
+/* カード表示の 2 行目「艦種 ・ Lv ・ 運」 */
+.meta {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* 開いたときの段階の倍率 */
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding-top: 5px;
+  border-top: 1px solid var(--color-border-strong);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+/* 段階の札の色の ■（色は style で渡す） */
+.dot {
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.lineLabel {
+  flex: 1;
+  text-align: left;
+}
+
+.multiplier {
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  color: var(--assign-on-accent);
+  background: var(--color-accent);
+}
+
+.noBoost {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
