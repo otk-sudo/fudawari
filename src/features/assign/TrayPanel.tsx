@@ -10,7 +10,7 @@
 // 絞り込み・並び順・表示の条件と、絞り込みの開閉・区切りの折りたたみはこの部品の中で持つ（画面を移ると初めに戻る）。
 // 控えの組み立て（絞り込み・並べ替え・区切り）は buildTray（tray.ts）が行う。
 // 控えへのドロップ（PR-06）は、この部品の <section> に dnd-kit の useDroppable を付ける想定。
-import { type KeyboardEvent, type ReactNode, useId, useMemo, useState } from "react";
+import { type KeyboardEvent, type ReactNode, type Ref, useId, useMemo, useState } from "react";
 import type { PublicDefinition } from "@/domain/definition/types";
 import type { RemodelStage, ShipMaster } from "@/domain/master/types";
 import type { AssignmentMap } from "@/domain/plan/types";
@@ -68,6 +68,8 @@ export interface TrayPanelProps {
   onCloseAll: () => void;
   /** 控えの艦のカードを描く（dense：一行表示か） */
   renderCard: (entry: TrayEntry, dense: boolean) => ReactNode;
+  /** 検索欄の ref（フォーカスを移したいカードが描かれていないときに、画面が代わりにフォーカスを移す先） */
+  searchRef?: Ref<HTMLInputElement>;
 }
 
 /** 控え */
@@ -80,6 +82,7 @@ export function TrayPanel({
   openCount,
   onCloseAll,
   renderCard,
+  searchRef,
 }: TrayPanelProps): ReactNode {
   const [options, setOptions] = useState<TrayOptions>(() => createInitialTrayOptions(trayInit));
   const [filterOpen, setFilterOpen] = useState(false);
@@ -165,6 +168,7 @@ export function TrayPanel({
             <path d="M16 16l4 4" />
           </svg>
           <input
+            ref={searchRef}
             type="search"
             className={styles.searchInput}
             aria-label="図鑑ID・名称で検索"

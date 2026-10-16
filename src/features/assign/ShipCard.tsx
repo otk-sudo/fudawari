@@ -7,9 +7,12 @@
 // - カード表示（控えの「カード」と札の列）：艦名、特効の印「特効あり」／「特効なし」、2 行目に「艦種 ・ Lv ・ 運」
 // - 開いたとき（aria-expanded）：段階ごとの倍率（■ 段階名 ×1.24）。なければ noBoostText（「特効なし」「この札では特効なし」）
 // - 選択中は aria-pressed。サブ艦の表記は出さない（同名艦は Lv と運で見分ける）
+// - 個体 ID を data-ship-uid に入れる（置いた・選択をやめた後に、画面がこのカードを探してフォーカスを移す）
 //
+// 艦を押すたびに画面全体（控えと札の列の全カード）を描き直すので、memo で props が変わったカードだけを描き直す
+// （呼ぶ側は lines・onPress を毎回同じものにする。props の説明を参照）。
 // ドラッグ（PR-06）は、この部品を包む要素（札の列・控えの <li>）に dnd-kit の useDraggable を付ける想定で、ここには入れない。
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, memo, type ReactNode } from "react";
 import type { ShipUid } from "@/domain/ship/types";
 import { type BoostLine, formatMultiplier } from "./ship-view";
 import styles from "./ShipCard.module.css";
@@ -37,16 +40,16 @@ export interface ShipCardProps {
   selected: boolean;
   /** 特効を開いているか */
   expanded: boolean;
-  /** 開いたときに並べる段階の倍率（閉じているときは空でよい） */
+  /** 開いたときに並べる段階の倍率（閉じているときは空でよい。描き直しを減らすため、毎回同じ空の配列を渡す） */
   lines: readonly BoostLine[];
   /** 開いたときに、効く段階がなければ出す文 */
   noBoostText: string;
-  /** カードを押したとき */
+  /** カードを押したとき（描き直しを減らすため、描き直しても変わらない関数を渡す） */
   onPress: (uid: ShipUid) => void;
 }
 
-/** 艦カード */
-export function ShipCard({
+/** 艦カード（props が変わったときだけ描き直す） */
+export const ShipCard = memo(function ShipCard({
   uid,
   name,
   typeLabel,
@@ -75,6 +78,7 @@ export function ShipCard({
       aria-pressed={selected}
       aria-expanded={expanded}
       data-stripe-color={stripeColor ?? "none"}
+      data-ship-uid={uid}
       onClick={() => onPress(uid)}
     >
       <span className={styles.banner}>
@@ -105,4 +109,4 @@ export function ShipCard({
       )}
     </button>
   );
-}
+});

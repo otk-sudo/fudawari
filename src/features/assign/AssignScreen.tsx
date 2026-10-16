@@ -11,22 +11,25 @@
 // - 控え（TrayPanel）・札の列（FudaColumn）・選択中の艦のパネル（SelectedShipPanel）
 //
 // 割り当て・選択・開閉・「元に戻す」・保存はストア（createAssignStore。画面を開くたびに作る）が持つ。
+// 置いた後は移った艦のカード、「×」の後は選んでいた艦のカードにフォーカスを移す（押したボタンが消えても document.body に落とさない）。
+// カードが描かれていない（区切りの折りたたみ・検索・絞り込み）ときは、控えの検索欄に移す。
 // テストが探す形（role・名前・属性）は src/test/assign-screen.ts の冒頭にまとめてある。
 // ドラッグ＆ドロップと 600 隻の仮想スクロールは PR-06（T2-8）で、TrayGroupList・FudaColumn・ShipCard を包む形で足す。
 import Link from "next/link";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import type { PublicDefinition } from "@/domain/definition/types";
 import type { ShipMaster } from "@/domain/master/types";
 import type { AssignmentMap } from "@/domain/plan/types";
-import type { OwnedShip } from "@/domain/ship/types";
+import type { OwnedShip, ShipUid } from "@/domain/ship/types";
 import { ROUTES } from "@/lib/routes";
 import { createAssignStore, type SaveAssignments } from "./assign-store";
 import { FudaColumn, type PlaceButtonKind } from "./FudaColumn";
 import { SelectedShipPanel } from "./SelectedShipPanel";
 import { ShipCard } from "./ShipCard";
 import {
+  type BoostLine,
   boostIn,
   boostLines,
   formatVersionDate,
@@ -72,6 +75,23 @@ export interface AssignScreenProps {
 const TRAY_NO_BOOST_TEXT = "特効なし";
 /** 札の列の艦を開いたときに、その札で効かなければ出す文 */
 const COLUMN_NO_BOOST_TEXT = "この札では特効なし";
+/** 閉じているカードに渡す段階の倍率（毎回同じ配列を渡して、ShipCard の memo を効かせる） */
+const EMPTY_LINES: readonly BoostLine[] = [];
+
+/** フォーカスを移す先の艦（頼むたびに新しいオブジェクトにする。同じ艦を続けて頼んでも移す） */
+interface FocusRequest {
+  readonly uid: ShipUid;
+}
+
+/** root の中の、個体 ID が uid の艦カード（ShipCard の data-ship-uid）。描かれていなければ null */
+function findShipCard(root: HTMLElement | null, uid: ShipUid): HTMLElement | null {
+  if (root === null) return null;
+  // 個体 ID をセレクターに埋め込まずに比べる（ID の文字を CSS の書き方に直さなくてよいように）
+  for (const card of root.querySelectorAll<HTMLElement>("[data-ship-uid]")) {
+    if (card.dataset.shipUid === uid) return card;
+  }
+  return null;
+}
 
 /** 割り振り画面の中身 */
 export function AssignScreen({
@@ -99,6 +119,30 @@ export function AssignScreen({
   const closeAll = useStore(store, (state) => state.closeAll);
   const placeSelected = useStore(store, (state) => state.placeSelected);
   const undo = useStore(store, (state) => state.undo);
+
+  const screenRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+
+  // 頼まれた艦のカードにフォーカスを移す（描き直した後。カードが描かれていなければ控えの検索欄）
+  useLayoutEffect(() => {
+    if (focusRequest === null) return;
+    (findShipCard(screenRef.current, focusRequest.uid) ?? searchRef.current)?.focus();
+  }, [focusRequest]);
+
+  /** 「ここに置く」「（札名）に置く」：選択中の艦をその札へ移し、移った艦のカードにフォーカスを移す */
+  const placeAndFocus = (fudaId: string): void => {
+    const uid = store.getState().selectedUid;
+    placeSelected(fudaId);
+    if (uid !== null) setFocusRequest({ uid });
+  };
+
+  /** 「×」（選択をやめる）：選んでいた艦のカードにフォーカスを戻す */
+  const clearAndFocus = (): void => {
+    const uid = store.getState().selectedUid;
+    clearSelection();
+    if (uid !== null) setFocusRequest({ uid });
+  };
 
   const fudas = useMemo(() => fudaMapOf(definition), [definition]);
   const fudaIds = useMemo(() => new Set(fudas.keys()), [fudas]);
@@ -133,7 +177,7 @@ export function AssignScreen({
         stripeColor={best === undefined ? null : (fudas.get(best.fudaId)?.color ?? null)}
         selected={ship.uid === selectedUid}
         expanded={expanded}
-        lines={expanded ? boostLines(definition, fudas, boost.effective) : []}
+        lines={expanded ? boostLines(definition, fudas, boost.effective) : EMPTY_LINES}
         noBoostText={TRAY_NO_BOOST_TEXT}
         onPress={pressShip}
       />
@@ -157,7 +201,7 @@ export function AssignScreen({
         stripeColor={color}
         selected={ship.uid === selectedUid}
         expanded={expanded}
-        lines={expanded && boost !== undefined ? boostLines(definition, fudas, [boost]) : []}
+        lines={expanded && boost !== undefined ? boostLines(definition, fudas, [boost]) : EMPTY_LINES}
         noBoostText={COLUMN_NO_BOOST_TEXT}
         onPress={pressShip}
       />
@@ -165,7 +209,7 @@ export function AssignScreen({
   };
 
   return (
-    <div className={styles.screen}>
+    <div ref={screenRef} className={styles.screen}>
       <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
         <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
         <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
@@ -204,6 +248,7 @@ export function AssignScreen({
           openCount={openUids.length}
           onCloseAll={closeAll}
           renderCard={renderTrayCard}
+          searchRef={searchRef}
         />
 
         <div className={styles.columns}>
@@ -220,7 +265,7 @@ export function AssignScreen({
                 count={members.length}
                 place={place}
                 dimmed={selected !== undefined && !boosted && !isHere}
-                onPlace={() => placeSelected(fuda.id)}
+                onPlace={() => placeAndFocus(fuda.id)}
               >
                 {members.map((ship) => {
                   const entry = entries.get(ship.uid);
@@ -240,8 +285,8 @@ export function AssignScreen({
               fudas={fudas}
               entry={selected}
               placedFudaId={selectedFudaId}
-              onPlace={placeSelected}
-              onClose={clearSelection}
+              onPlace={placeAndFocus}
+              onClose={clearAndFocus}
             />
           )}
         </div>

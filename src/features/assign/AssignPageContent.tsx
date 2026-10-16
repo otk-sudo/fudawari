@@ -10,7 +10,8 @@
 // 3. 艦船マスタ（useShipMaster）：艦を取り込んでいるときだけ取得する（取り込む前の人に 600 隻分のマスタを配らない）。
 //    読み込み中は「読み込み中」、失敗は警告
 // 4. すべて読めたら中身（AssignScreen）を出す。割り当ての変更は共有の札割りのデータ（setAssignments）を通して
-//    ブラウザ内に保存する（同じページの別の部品・一覧などにも新しい割り当てが届く）
+//    ブラウザ内に保存する（同じページの別の部品・一覧などにも新しい割り当てが届く）。
+//    控えに戻した割り当ての件数（U17）は、最初に描いたときの件数を出し続け、出した後に共有の件数を 0 に戻す（知らせは一度だけ）
 //
 // 通信するのは公開定義と艦船マスタの静的ファイルだけ。取り込んだ艦や割り当てはサーバーに送らない（要件 5 章）。
 import Link from "next/link";
@@ -76,6 +77,7 @@ function AssignWithMaster({
 }): ReactNode {
   const masterState = useShipMaster();
   const save = usePlanSave(plan);
+  const returnedCount = useReturnedNotice(plan, masterState.status === "success");
 
   if (masterState.status === "loading") {
     return (
@@ -100,10 +102,26 @@ function AssignWithMaster({
       ships={plan.ships}
       initialAssignments={plan.assignments}
       save={save}
-      returnedCount={plan.returnedCount}
+      returnedCount={returnedCount}
       trayInit={trayInit}
     />
   );
+}
+
+/**
+ * 控えに戻した割り当ての件数の知らせ（U17）。知らせる件数を返す。
+ *
+ * 最初に描いたときの件数を覚えて、この画面にいる間は出し続ける。知らせを描いた後（shown：中身を出したとき）に、
+ * 共有の札割りのデータの件数を 0 に戻す（acknowledgeReturned）。画面を外して戻ったときには同じ知らせを出さない。
+ * 艦船マスタを読めずに中身を出せなかったときは知らせていないので、0 に戻さない
+ */
+function useReturnedNotice(plan: ReadyPlanData, shown: boolean): number {
+  const [returnedCount] = useState(plan.returnedCount);
+  const { acknowledgeReturned } = plan;
+  useEffect(() => {
+    if (shown && returnedCount > 0) acknowledgeReturned();
+  }, [shown, returnedCount, acknowledgeReturned]);
+  return returnedCount;
 }
 
 /**
