@@ -6,6 +6,7 @@
     "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
+    "predev": "npm run generate:ship-master -- --if-missing",
     "dev": "next dev",
     "generate:ship-master": "tsx scripts/generate-ship-master.ts",
     "prebuild": "npm run generate:ship-master",

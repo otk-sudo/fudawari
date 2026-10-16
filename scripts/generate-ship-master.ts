@@ -4,6 +4,8 @@
 // - 取得や解析に失敗したら理由を表示して終了コード 1 で止める（古いマスタのまま公開しない）。
 // - 手元で通信できないときなどに、既にあるマスタを使い回したい場合は SKIP_SHIP_MASTER=1 を付けて実行する
 //   （ファイルがなければ止める）。CI と Cloudflare Pages では付けない。
+// - `--if-missing` を付けると、ファイルがあるときは生成しない（npm run dev の前の predev で使う。開発サーバーを
+//   起動するたびに取得しないため。最新にしたいときは npm run generate:ship-master を実行する）
 // 実行：npx tsx scripts/generate-ship-master.ts（npm run build の前に自動で実行される）
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -11,6 +13,11 @@ import { generateShipMaster, SHIP_MASTER_OUTPUT_PATH } from "@/lib/ship-master/g
 
 async function main(): Promise<void> {
   const outputPath = resolve(process.cwd(), SHIP_MASTER_OUTPUT_PATH);
+
+  if (process.argv.includes("--if-missing") && (await exists(outputPath))) {
+    console.log(`艦船マスタはすでにあります（--if-missing のため生成しません）：${SHIP_MASTER_OUTPUT_PATH}`);
+    return;
+  }
 
   if (process.env.SKIP_SHIP_MASTER === "1") {
     try {
@@ -32,6 +39,16 @@ async function main(): Promise<void> {
     },
   });
   console.log(`艦船マスタを生成しました：${result.outputPath}（${result.shipCount} 隻）`);
+}
+
+// ファイルがあるか
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 main().catch((error: unknown) => {
