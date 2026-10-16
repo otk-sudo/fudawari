@@ -59,6 +59,7 @@ export function failingStorage(
   };
   return {
     saveImport: fail,
+    previewImport: fail,
     loadShips: fail,
     loadLastImport: fail,
     clearImportedShips: fail,
@@ -99,6 +100,7 @@ export function importInput(
     importedAt: "2026-10-16T21:00:00.000+09:00",
     filter: IMPORT_ALL,
     hasUid: true,
+    hasLockInfo: true,
     ...overrides,
   };
 }
