@@ -6,16 +6,17 @@
 ## 正とする文書
 - `docs/requirements.md`：要件・決定事項・採用しなかった案・未決事項（U 番号）
 - `docs/roadmap.md`：タスク（T 番号）、担当、依存、受入条件、TDD の進め方
-- `docs/design/mock/*.dc.html`：画面の最終形。読むのは自由だが変更しない。`Matrix.dc.html` は不採用の旧案。各画面右上の「見え方の確認」はモック専用で、本番には作らない
+- `docs/design/mock/*.dc.html`：画面の最終形。読むのは自由だが変更しない。`Matrix.dc.html` は不採用の旧案。各画面右上の「見え方の確認」はモック専用で、本番には作らない。読み方は `docs/design/mock/README.md`
 - `docs/plan-v1.md`：v1（締め切り 2026-10-18 12:00）までの PR・時間割・切り捨て候補
 - `docs/research/import-and-master.md`：取り込み形式（制空権シミュ形式）と艦船マスタ（api_start2）の調査結果
 - U1〜U24 は 2026-10-16 にすべて決定した（`docs/requirements.md` 13.1）。新しい論点は勝手に決めず、親に戻す
 
 ## 技術構成（決定）
 Next.js 16（App Router、静的書き出し `output: "export"`）＋ TypeScript 6（strict）／Cloudflare Pages／Supabase（DB・Auth〔Discord〕・Realtime。管理者・協力者だけが使う）／Dexie.js（IndexedDB）／dnd-kit／TanStack Virtual／Radix UI（見た目を持たない部品）／Zustand／CSS Modules ＋ CSS 変数／modern-screenshot ＋ Clipboard API／Vitest・Testing Library・fake-indexeddb・Playwright（Chromium）／GitHub Actions。依存の追加・版の変更は親だけが行う。必要なら理由を添えて親に相談する。
-- 版の事情：TypeScript は typescript-eslint の対応範囲のため 6.0 系に固定（`~6.0.3`）。jsdom は Node 22.18 で動く 29 系。ESLint は 10 系（eslint-config-next 16.4 が対応。peer の警告は出るが `npm ci` は通る）。
+- 版の事情：TypeScript は typescript-eslint の対応範囲のため 6.0 系に固定（`~6.0.3`）。jsdom は Node 22.18 で動く 29 系。ESLint は 10 系（eslint-config-next 16.4 が対応。peer の警告は出るが `npm ci` は通る）。Node は `^22.13.0 || ^24.0.0 || >=26.0.0`（ESLint・jsdom・Vitest の対応範囲の重なり）。
+- ESLint 10 で動かないルールがあるため、次は有効にしない：`react/jsx-filename-extension`、`react/forward-ref-uses-ref`、`import/no-default-export`・`import/no-named-export`・`import/unambiguous`（ESLint 10 にない context の API を使う）。
 
-## ディレクトリ構成（`src/app/`・`src/styles/` は作成済み。ほかは予定）
+## ディレクトリ構成（作成済み：`src/app/`・`src/styles/`・`src/test/`・`e2e/`・`.github/workflows/`。ほかは予定）
 ```
 src/app/          画面（App Router）
 src/components/   共通部品（左メニュー、艦カード、ウィンドウ）
@@ -36,7 +37,7 @@ e2e/              Playwright
 - 型チェック：`npm run typecheck`（`next typegen && tsc --noEmit`。next-env.d.ts は追跡しないため先に型を生成する）
 - Lint：`npm run lint`
 - 単体テスト：`npm test`（Vitest）
-- 画面テスト：`npm run test:e2e`（Playwright。静的書き出しをビルドして serve で配信し、それに対して実行する）
+- 画面テスト：`npm run test:e2e`（Playwright。静的書き出しをビルドして serve で配信し、それに対して実行する）。初めて手元で動かすときは先に `npx playwright install chromium`。ポートはワークツリーごとに自動で変わる（`E2E_PORT` で上書きできる）ので、複数のワークツリーで同時に実行してよい
 - ビルド：`npm run build`（`out/` に静的書き出し。のちに最新イベントの公開定義 JSON と艦船マスタの生成を含める）
 - DB：Supabase CLI のマイグレーション（`supabase/migrations/`。手元に Docker がないため、DB のテストは CI で動かす）
 

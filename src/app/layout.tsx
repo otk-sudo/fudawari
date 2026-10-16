@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "@/styles/theme.css";
 import "@/styles/globals.css";
 
-// アプリ名は未決（U4）。決まったら title も差し替える
+// アプリ名は「札割りプランナー」（U4 で決定）。文字列を 1 か所にまとめるのは PR-03（T1-4）で行う
 export const metadata: Metadata = {
   title: "札割りプランナー",
   description: "艦これのイベントで、特効を踏まえてどの艦をどの札に回すかを計画するツール",
