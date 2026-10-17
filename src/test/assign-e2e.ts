@@ -32,9 +32,17 @@ export const EVENT_ID = summer2026Definition.event.id;
 
 /**
  * ドラッグを始めるときに、押したまま動かす距離（px）。
- * dnd-kit がクリックとドラッグを見分けるための動き（PointerSensor の activationConstraint の distance）より大きくする
+ * dnd-kit がクリックとドラッグを見分けるための動き（src/features/assign/useShipDnd.ts の MouseSensor の
+ * activationConstraint の distance：5px）より大きくする
  */
 const DRAG_START_DISTANCE = 12;
+
+/**
+ * 落とした後、次の操作の前に待つ時間（ミリ秒）。
+ * dnd-kit の MouseSensor は、離したときに起きるクリック（ドラッグした艦のカードが選ばれてしまう）を捨てるため、
+ * 落としてから 50ms の間はページのクリックを止める。その間に「元に戻す」などを押しても効かないので、それより長く待つ
+ */
+const AFTER_DROP_WAIT_MS = 60;
 
 // ---- 取得の差し替えと保存 ----
 
@@ -194,9 +202,13 @@ export async function dragOverPoint(page: Page, point: Point): Promise<void> {
   await page.mouse.move(point.x, point.y, { steps: 12 });
 }
 
-/** 落とす（マウスを離す） */
+/**
+ * 落とす（マウスを離す）。離した後、dnd-kit がクリックを止めている間（50ms）が過ぎるまで待ってから戻る
+ * （続けて「元に戻す」などを押すテストのため。AFTER_DROP_WAIT_MS）
+ */
 export async function drop(page: Page): Promise<void> {
   await page.mouse.up();
+  await page.waitForTimeout(AFTER_DROP_WAIT_MS);
 }
 
 /** source をドラッグして target の中ほどに落とす */

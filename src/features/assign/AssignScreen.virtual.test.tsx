@@ -7,7 +7,9 @@
 // - 仮想スクロール：大きさを測れるとき（src/test/virtual-layout.ts の simulateTrayLayout で大きさを返させる）は、
 //   600 隻でも見える範囲の分の艦カードだけを描き、スクロールすると描く艦カードが入れ替わる。
 //   区切りの見出しは、スクロールでその位置を過ぎても描いたまま（上に固定）で、押すと折りたためる。
-//   折りたたんだ区切りの艦は描かず、後ろの区切りが詰めて描かれる
+//   折りたたんだ区切りの艦は描かず、後ろの区切りが詰めて描かれる。
+//   フォーカスした艦カード（キーボードで Tab して来たカードなど）は、スクロールで見える範囲の外に出ても描き続け、フォーカスを失わない
+//   （PR-06 のレビュー P2）
 // - 大きさを測れないとき（jsdom の既定）は、控えの行をすべて描く（今の画面テストはこの前提で通っている）
 // - ドラッグの部品を付けても、艦カードを包む要素（li）はボタンにも Tab で止まる所にもならない（キーボードでのドラッグは作らない。
 //   クリックの「ここに置く」が代わり）。ドラッグしていなければ、落とす先の強調・「ここに移動」・「⇄ 入れ替え」を出さない。
@@ -21,7 +23,7 @@
 // - それ以外：モックの所持艦 31 隻（summer2026Ships）と一覧の割り当て（AssignScreen.test.tsx と同じ）
 //
 // 部品の探し方（role・名前・属性）は src/test/assign-screen.ts の冒頭にまとめてある。
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createShipMaster } from "@/domain/master";
@@ -170,6 +172,25 @@ describe("割り振り画面の控えの仮想スクロール（PR-06）", () =>
       // 実行・検証：もう一度押すと開き、艦カードを（見える範囲の分だけ）描く
       await user.click(getGroupHeader("名前順"));
       expect(getGroupHeader("名前順")).toHaveAttribute("aria-expanded", "true");
+      expectVirtualized();
+    });
+
+    it("フォーカスした控えの艦カードは、スクロールで見える範囲の外に出ても描いたままで、フォーカスを失わない（PR-06 のレビュー P2）", async () => {
+      // 準備：並び順「名前」（「名前順」の 1 区切り・568 隻）で、一覧の先頭の艦カードにフォーカスする（Tab で来たときと同じ）
+      renderAssignScreen({ ships: BULK_SHIPS, assignments: {}, trayInit: { sort: "name" } });
+      const firstCard = renderedTrayCards()[0];
+      const firstUid = firstCard.dataset.shipUid;
+      act(() => firstCard.focus());
+      expect(firstCard, "前提：先頭の艦カードにフォーカスがあること").toHaveFocus();
+
+      // 実行：一覧の中ほど（6000px）までスクロールする（先頭の艦カードは見える範囲の外）
+      await scrollTrayList(getTrayList(), 6000);
+
+      // 検証：フォーカスした艦カードは描いたまま（同じ要素）で、フォーカスもそのまま。ほかの行は見える範囲の分だけ
+      expect(renderedTrayUids(), `フォーカスした艦（${firstUid}）を描いたままにすること`).toContain(firstUid);
+      expect(firstCard.isConnected, "フォーカスした艦カードの要素を外さないこと").toBe(true);
+      expect(firstCard).toHaveFocus();
+      expect(document.activeElement).not.toBe(document.body);
       expectVirtualized();
     });
 

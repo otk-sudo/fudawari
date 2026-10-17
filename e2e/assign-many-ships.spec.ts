@@ -5,10 +5,13 @@ import {
   ASSIGN_PATH,
   cardIn,
   columnOf,
+  dragAndDrop,
   dragOver,
+  dragOverPoint,
   drop,
   routeLatestData,
   seedPlan,
+  shipCountPattern,
   startDrag,
   trayCountPattern,
   trayOf,
@@ -30,6 +33,8 @@ import { createBulkShips, summer2026Definition, summer2026MasterEntries } from "
 // 時間は Playwright を動かしている側の時計で、操作の直前から、画面の変化を requestAnimationFrame ごとに調べて見つけるまでを測る
 // （Playwright の操作の往復の時間も含む）。測った値は、テストの出力（console）とテストの注記（annotation「計測」）に出す。
 // あわせて、仮想スクロールにしても崩れないこと（区切りの見出しの固定・開いたカードの高さ）を確かめる。
+// また、控えをスクロールした途中で固定した区切りの見出しの上に落とすと、見出しの下に隠れた艦カードではなく控えに落ちること
+// （PR-06 のレビュー M1・Codex の指摘 dnd.ts:89）を確かめる。
 //
 // 艦名と区切りはテスト用データのもの（routeLatestData で公開定義と艦船マスタを差し替える）。初めは「特効のある艦だけ」なので
 // 「568 / 600隻」、「リセット」で「600 / 600隻」になる。テストごとにブラウザのコンテキストが分かれるため、保存は毎回空から始まる
@@ -280,10 +285,10 @@ test.describe(`割り振り画面を ${TOTAL} 隻で使う（計測）`, () => {
     await dragOver(page, rengo.getByRole("heading", { name: "連合艦隊", exact: true }));
     await expect(rengo, "前提：ドラッグが始まっていること").toHaveAttribute("data-drop-highlight", "true");
 
-    // 実行
+    // 実行（drop は離した後に dnd-kit がクリックを止める 50ms を待つので、計測にはマウスを離すだけの操作を使う）
     const elapsed = await measure(
       page,
-      () => drop(page),
+      () => page.mouse.up(),
       (shipUid) => {
         const column = [...document.querySelectorAll("section")].find(
           (section) => section.querySelector("h2")?.textContent === "連合艦隊",
@@ -367,5 +372,90 @@ test.describe(`割り振り画面を ${TOTAL} 隻で使う（仮想スクロー�
         { timeout: 5_000 },
       )
       .toBe("重なっていない");
+  });
+});
+
+test.describe(`割り振り画面を ${TOTAL} 隻で使う（固定した区切りの見出しの上で落とす。PR-06 のレビュー M1）`, () => {
+  /** 画面上の点と、その点で固定した区切りの見出しの下に隠れている艦カードの個体 ID */
+  interface PointOverHiddenCard {
+    x: number;
+    y: number;
+    hiddenUid: string;
+  }
+
+  /**
+   * 控えの一覧の一番上に固定した区切りの見出しの中で、いちばん上に見えているのは見出しだが、その下に艦カード（の li）が
+   * 隠れている点を探す（見つからなければ null）
+   */
+  async function findPointOverHiddenCard(page: Page): Promise<PointOverHiddenCard | null> {
+    return trayOf(page).evaluate((tray) => {
+      const list = tray.querySelector<HTMLElement>('[role="tabpanel"]');
+      if (list === null) return null;
+      const listTop = list.getBoundingClientRect().top;
+      const header = [...list.querySelectorAll<HTMLElement>("button[aria-expanded]:not([aria-pressed])")].find(
+        (element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.height > 0 && Math.abs(rect.top - listTop) <= 4;
+        },
+      );
+      if (header === undefined) return null;
+      const rect = header.getBoundingClientRect();
+      const x = Math.round(rect.left + rect.width / 2);
+      for (let y = Math.ceil(rect.top) + 2; y <= rect.bottom - 2; y += 1) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit === null || !header.contains(hit)) continue;
+        const hidden = [...list.querySelectorAll<HTMLElement>("li")].find((item) => {
+          const itemRect = item.getBoundingClientRect();
+          return (
+            item.querySelector("[data-ship-uid]") !== null &&
+            itemRect.left <= x &&
+            x <= itemRect.right &&
+            itemRect.top <= y &&
+            y <= itemRect.bottom
+          );
+        });
+        const hiddenUid = hidden?.querySelector<HTMLElement>("[data-ship-uid]")?.dataset.shipUid;
+        if (hiddenUid !== undefined) return { x, y, hiddenUid };
+      }
+      return null;
+    });
+  }
+
+  test("控えをスクロールした途中で、札の艦を固定した区切りの見出しの上で落とすと控えに戻り、見出しの下に隠れた艦と入れ替わらない", async ({
+    page,
+  }) => {
+    // 準備：控えの先頭の艦を連合艦隊へ移す
+    await openAssignScreen(page);
+    const rengo = columnOf(page, "連合艦隊");
+    const first = trayCards(page).first();
+    const uid = await first.getAttribute("data-ship-uid");
+    if (uid === null) throw new Error("艦カードに data-ship-uid がない");
+    await dragAndDrop(page, first, rengo.getByRole("heading", { name: "連合艦隊", exact: true }));
+    await expect(cardIn(rengo, uid)).toBeVisible();
+    await expect(rengo).toContainText(shipCountPattern(1));
+
+    // 準備：並び順「名前」（「名前順」の 1 区切り）で、控えを中ほどまでスクロールする
+    await trayOf(page).getByRole("combobox", { name: "並び順" }).selectOption({ label: "名前" });
+    await expect(groupHeaderOf(page, "名前順")).toBeVisible();
+    await scrollTrayTo(page, 0.45);
+    const point = await findPointOverHiddenCard(page);
+    if (point === null) throw new Error("前提：固定した区切りの見出しの下に、艦カードが隠れている点があること");
+
+    // 実行：連合艦隊の艦をドラッグし、固定した見出しの上（下に艦カードが隠れている点）へ動かす
+    await startDrag(page, cardIn(rengo, uid));
+    await dragOverPoint(page, point);
+
+    // 検証：控えの上として扱う（控えを強調し、隠れた艦カードに「⇄ 入れ替え」を出さない）
+    await expect(trayOf(page)).toHaveAttribute("data-drop-highlight", "true");
+    await expect(page.getByText("⇄ 入れ替え", { exact: true })).toHaveCount(0);
+
+    // 実行：落とす
+    await drop(page);
+
+    // 検証：ドラッグした艦は控えに戻り、連合艦隊は空のまま（隠れていた艦が入らない）
+    await expect(cardIn(rengo, uid)).toHaveCount(0);
+    await expect(cardIn(rengo, point.hiddenUid)).toHaveCount(0);
+    await expect(rengo.locator("[data-ship-uid]")).toHaveCount(0);
+    await expect(rengo).toContainText(shipCountPattern(0));
   });
 });
