@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Noto_Sans_JP } from "next/font/google";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { SettingsDialog } from "@/components/SettingsDialog";
@@ -11,6 +12,18 @@ import {
 import { APP_NAME } from "@/lib/app-name";
 import "@/styles/theme.css";
 import "@/styles/globals.css";
+
+/**
+ * 日本語フォント（Noto Sans JP）。ビルド時に Google Fonts から取得して自前で配信する（next/font）。
+ * 文字の範囲ごとにファイルが分かれていて、ブラウザは画面に出た文字の分だけ読み込む。
+ * 画面全体の文字（theme.css の --font-family）と、画像で保存の画像に使う。
+ * 変数名は src/features/export-image/png.ts の FONT_VARIABLE と同じにする（画像を描く前にこのフォントの読み込みを待つ）
+ */
+const notoSansJp = Noto_Sans_JP({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-noto-sans-jp",
+});
 
 export const metadata: Metadata = {
   // 各画面は metadata.title に画面名だけを書く（例「札割り一覧 | 札割りプランナー」になる）
@@ -28,7 +41,7 @@ export default function RootLayout({
   // （そのため <html> の属性は書き出した値と違うことがあり、ハイドレーションの食い違いの警告を出さない）。
   // 切り替えたあとは ThemeSync・SettingsSync が書き換える
   return (
-    <html lang="ja" data-theme={themeAttributeFor(DEFAULT_THEME_MODE)} suppressHydrationWarning>
+    <html lang="ja" data-theme={themeAttributeFor(DEFAULT_THEME_MODE)} className={notoSansJp.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: DISPLAY_BOOT_SCRIPT }} />
       </head>

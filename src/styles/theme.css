@@ -12,9 +12,12 @@
 
 /* 色以外（テーマで変わらない値） */
 :root {
-  /* 文字。本文の大きさは rem で書き、設定の「文字の大きさ」（下の data-font-size）に合わせて変わるようにする（標準で 13px） */
-  --font-family: "Noto Sans JP", "Hiragino Sans", "Meiryo", system-ui, sans-serif;
-  --font-size-base: 0.8125rem;
+  /*
+   * 文字。--font-noto-sans-jp は src/app/layout.tsx の next/font（Noto Sans JP）が <html> に入れる。
+   * ないとき（読み込む前・テスト）は、端末に入っている Noto Sans JP などを使う
+   */
+  --font-family: var(--font-noto-sans-jp, "Noto Sans JP"), "Hiragino Sans", "Meiryo", system-ui, sans-serif;
+  --font-size-base: 13px;
 
   /* 角丸：基本は 2〜4px。ウィンドウなど一部だけ大きめ */
   --radius-sm: 2px;
