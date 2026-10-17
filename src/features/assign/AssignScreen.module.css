@@ -213,3 +213,16 @@
   gap: 10px;
   max-width: 340px;
 }
+
+/* ---- ドラッグ中にポインターにつける艦カードの写し ---- */
+
+/* 写しを入れる箱（DragOverlay。ポインターの下に来るので、つかんでいる形のカーソルにする） */
+.dragOverlay {
+  cursor: grabbing;
+}
+
+.dragPreview {
+  border-radius: 5px;
+  box-shadow: var(--shadow-dialog);
+  opacity: 0.8;
+}

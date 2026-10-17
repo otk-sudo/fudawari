@@ -9,13 +9,16 @@
 //
 // 絞り込み・並び順・表示の条件と、絞り込みの開閉・区切りの折りたたみはこの部品の中で持つ（画面を移ると初めに戻る）。
 // 控えの組み立て（絞り込み・並べ替え・区切り）は buildTray（tray.ts）が行う。
-// 控えへのドロップ（PR-06）は、この部品の <section> に dnd-kit の useDroppable を付ける想定。
+// 艦の一覧（role="tabpanel"）は仮想スクロールのスクロールする要素で、TrayGroupList に渡す。
+// <section> は控えへのドロップの落とす先（dnd-kit の useDroppable。roadmap T2-8）。強調するかは画面（dropHighlight）が決める。
+import { useDroppable } from "@dnd-kit/core";
 import { type KeyboardEvent, type ReactNode, type Ref, useId, useMemo, useState } from "react";
 import type { PublicDefinition } from "@/domain/definition/types";
 import type { RemodelStage, ShipMaster } from "@/domain/master/types";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip } from "@/domain/ship/types";
 import type { TraySort, TrayView } from "@/lib/storage";
+import { TRAY_DROP_ID } from "./dnd";
 import {
   buildTray,
   countActiveFilters,
@@ -70,6 +73,8 @@ export interface TrayPanelProps {
   renderCard: (entry: TrayEntry, dense: boolean) => ReactNode;
   /** 検索欄の ref（フォーカスを移したいカードが描かれていないときに、画面が代わりにフォーカスを移す先） */
   searchRef?: Ref<HTMLInputElement>;
+  /** 落とす先として強調するか（札に置いた艦をドラッグして、控えの上にあるとき） */
+  dropHighlight: boolean;
 }
 
 /** 控え */
@@ -83,10 +88,14 @@ export function TrayPanel({
   onCloseAll,
   renderCard,
   searchRef,
+  dropHighlight,
 }: TrayPanelProps): ReactNode {
   const [options, setOptions] = useState<TrayOptions>(() => createInitialTrayOptions(trayInit));
   const [filterOpen, setFilterOpen] = useState(false);
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  // 艦の一覧（仮想スクロールのスクロールする要素）。描いた後に TrayGroupList へ渡す
+  const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
+  const { setNodeRef: setDropNodeRef } = useDroppable({ id: TRAY_DROP_ID });
   const tabIdPrefix = useId();
   const listId = useId();
   const filterId = useId();
@@ -138,7 +147,12 @@ export function TrayPanel({
   };
 
   return (
-    <section aria-label="控えの艦" className={styles.tray}>
+    <section
+      ref={setDropNodeRef}
+      aria-label="控えの艦"
+      className={styles.tray}
+      data-drop-highlight={dropHighlight ? "true" : undefined}
+    >
       <div className={styles.controls}>
         <div className={styles.titleRow}>
           <h2 className={styles.title}>控え</h2>
@@ -305,13 +319,20 @@ export function TrayPanel({
         </div>
       )}
 
-      <div id={listId} role="tabpanel" aria-labelledby={tabIdOf(options.tab)} className={styles.list}>
+      <div
+        ref={setListElement}
+        id={listId}
+        role="tabpanel"
+        aria-labelledby={tabIdOf(options.tab)}
+        className={styles.list}
+      >
         <TrayGroupList
           groups={tray.groups}
           folded={folded}
           onToggleGroup={toggleGroup}
           dense={dense}
           renderCard={(entry) => renderCard(entry, dense)}
+          scrollElement={listElement}
         />
         {tray.shownCount === 0 && <p className={styles.empty}>条件に合う艦はいません</p>}
       </div>

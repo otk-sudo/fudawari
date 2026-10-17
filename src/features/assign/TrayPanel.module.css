@@ -14,6 +14,12 @@
   border-radius: 6px;
 }
 
+/* ドラッグ中の落とす先の強調（札に置いた艦を控えの上へ動かしているとき） */
+.tray[data-drop-highlight="true"] {
+  border-color: var(--assign-highlight);
+  box-shadow: 0 0 0 2px var(--assign-highlight-ring);
+}
+
 .controls {
   display: flex;
   flex-direction: column;
@@ -286,12 +292,15 @@
   cursor: pointer;
 }
 
-/* 艦の一覧。この部分だけをスクロールさせる */
+/*
+ * 艦の一覧。この部分だけをスクロールさせる（仮想スクロールのスクロールする要素）。
+ * 上の余白は内側（padding）ではなく外側（margin）に取る：固定した区切りの見出しを一覧の上端ちょうどに留め、
+ * スクロールしていないときと位置をそろえるため。下の余白は TrayGroupList が最後の行の下に足す
+ */
 .list {
-  display: flex;
-  flex-direction: column;
   max-height: 760px;
-  padding: 4px 8px 8px;
+  margin-top: 10px;
+  padding: 0 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }

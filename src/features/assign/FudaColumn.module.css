@@ -15,6 +15,12 @@
   opacity: 0.55;
 }
 
+/* ドラッグ中の落とす先の強調 */
+.column[data-drop-highlight="true"] {
+  border-color: var(--assign-highlight);
+  box-shadow: 0 0 0 2px var(--assign-highlight-ring);
+}
+
 .head {
   display: flex;
   flex-direction: column;
@@ -80,4 +86,15 @@
   margin: 0;
   padding: 8px;
   list-style: none;
+}
+
+/* ドラッグ中に列の最後に出す「ここに移動」 */
+.moveHint {
+  padding: 12px;
+  border: 2px dashed var(--assign-highlight);
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--assign-band-text);
+  text-align: center;
+  pointer-events: none;
 }
