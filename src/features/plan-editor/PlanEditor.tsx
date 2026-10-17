@@ -4,7 +4,9 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { DefinitionEditor } from "./DefinitionEditor";
 import { EditorHeader } from "./EditorHeader";
 import { errorMessage } from "./editor-model";
+import type { PresenceConnector } from "./presence/types";
 import { isSessionExpiredError } from "./repository-errors";
+import type { SaveLogLoader } from "./save-log/types";
 import type { DefinitionRepository, PlanEditorData } from "./types";
 import styles from "./PlanEditor.module.css";
 
@@ -21,6 +23,13 @@ export type PlanEditorProps = {
    * 関数が変わっても読み込み直さない（読み込みが失敗したときの最新の関数を呼ぶ）
    */
   onSessionExpired?: () => void;
+  /** 保存の記録を読む（PR-12。「保存の記録を見る」のウィンドウで使う。省略なら「保存の記録を見る」を出さない） */
+  loadSaveLogs?: SaveLogLoader;
+  /**
+   * 編集中の表示のチャンネルにつなぐ（PR-12。「（名前）も編集中（E3 を表示中）」に使う。省略なら出さない）。
+   * 同じ関数を渡し続けること（変わるとつなぎ直す）
+   */
+  connectPresence?: PresenceConnector;
 };
 
 /** 保管庫の読み込みの状態（loaded の key は読み込みごとに変わる番号。編集画面をその読み込みの内容で作り直すために使う） */
@@ -40,7 +49,13 @@ const LOADING: LoadState = { status: "loading" };
  * - 読み込めたら：本文（DefinitionEditor）
  * - 保管庫が変わったら：読み込み中に戻し、新しい保管庫の内容で編集画面を作り直す（前の保管庫の内容・編集・版を持ち越さない）
  */
-export function PlanEditor({ repository, knownShipNames, onSessionExpired }: PlanEditorProps): ReactNode {
+export function PlanEditor({
+  repository,
+  knownShipNames,
+  onSessionExpired,
+  loadSaveLogs,
+  connectPresence,
+}: PlanEditorProps): ReactNode {
   // 状態は、それを読んだ保管庫と組で持つ（保管庫が変わったら、新しい読み込みが済むまで読み込み中として描く）
   const [state, setState] = useState<{ readonly repository: DefinitionRepository; readonly load: LoadState }>(() => ({
     repository,
@@ -96,7 +111,14 @@ export function PlanEditor({ repository, knownShipNames, onSessionExpired }: Pla
         </div>
       )}
       {view.status === "loaded" && (
-        <DefinitionEditor key={view.key} data={view.data} repository={repository} knownShipNames={knownShipNames} />
+        <DefinitionEditor
+          key={view.key}
+          data={view.data}
+          repository={repository}
+          knownShipNames={knownShipNames}
+          loadSaveLogs={loadSaveLogs}
+          connectPresence={connectPresence}
+        />
       )}
     </div>
   );

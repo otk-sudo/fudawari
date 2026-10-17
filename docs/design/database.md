@@ -151,6 +151,8 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 ## 5. リアルタイム（編集中の表示）
 
 - 表は使わず、Supabase Realtime の Presence で「イベント ID ごとのチャンネル」に、表示名と表示中の海域を載せる（T3-9）。
+- チャンネル名は `plan-editor:（イベント ID）`。画面は **private** のチャンネル（`config: { private: true }`）で参加し、Presence の読み取り・送信は realtime.messages の RLS（`editor_presence_select`・`editor_presence_insert`。マイグレーション `20261017120000_editor_presence.sql`）で管理者・協力者だけに許す。判定は `can_use_editor_presence(topic)`（authenticated だけが実行できる）。
+- 公開のチャンネルは RLS を通らず誰でも参加できるため、本番では Realtime の設定「Allow public access」を切る（ユーザーのアカウント操作。plan-v1 6.5 の ⑨）。テストは `supabase/tests/database/08_editor_presence.test.sql`。
 
 ## 6. 公開から一般の画面への反映（U7）
 

@@ -13,7 +13,8 @@
 //
 // createClient（偽物）は、設定が auth.persistSession: false なら issuing（保存しない別のクライアント）を、
 // それ以外なら main（ふだんのクライアント）を返す。2 つのクライアントは同じ「サーバー」（Auth のアカウントと表）を共有する。
-// 表は profiles・events・app_state・drafts・published_definitions の読み取りをまねる（行は server に直接入れる。eventRow などの補助を使う）。
+// 表は profiles・events・app_state・drafts・published_definitions・save_logs の読み取りをまねる（行は server に直接入れる。eventRow などの補助を使う）。
+// Realtime のチャンネル（channel・removeChannel）は Presence だけをまねる（FakeRealtimeChannel。他の人の出入りは putPeer・removePeer で起こす）。
 // RPC は register_collaborator・remove_collaborator だけをまねる。ほかの RPC（save_draft など）は、テストで
 // `fake.main.rpc.mockResolvedValueOnce(rpcSuccess(…))`・`rpcFailure("FD002")` のように返し方を決める。
 // エラーの形は supabase-js と同じにする（Auth は AuthApiError など、表と RPC は PostgrestError と code）。
@@ -121,6 +122,18 @@ export type FakePublishedDefinitionRow = {
   published_at: string;
 };
 
+/** save_logs 表の 1 行（DB と同じ列名。id は bigint の連番〔PostgREST は数で返す〕、created_at は PostgREST が返す形の文字列） */
+export type FakeSaveLogRow = {
+  id: number;
+  event_id: string;
+  user_id: string | null;
+  user_name: string;
+  kind: "save" | "publish";
+  map_label: string | null;
+  summary: string;
+  created_at: string;
+};
+
 /**
  * 偽物のサーバーの中身（Auth のアカウントと表）。テストから直接書き換えてよい。
  * 表の読み取り（from(表)）は、ここの行を返す（RLS はまねない。権限ごとの絞り込みは呼び出し側の責任）
@@ -136,7 +149,142 @@ export type FakeSupabaseServer = {
   drafts: FakeDraftRow[];
   /** published_definitions 表 */
   publishedDefinitions: FakePublishedDefinitionRow[];
+  /** save_logs 表 */
+  saveLogs: FakeSaveLogRow[];
 };
+
+/** Presence の 1 件（track で送った値に presence_ref が付いたもの。presenceState() の値の要素） */
+export type FakePresenceMeta = { readonly presence_ref: string; readonly [key: string]: unknown };
+
+type PresenceListenEvent = "sync" | "join" | "leave" | "*";
+type PresenceListener = { event: PresenceListenEvent; callback: (payload?: unknown) => void };
+
+/** Presence の自分の key（channel の設定に config.presence.key がなければこの値） */
+export const FAKE_PRESENCE_SELF_KEY_FALLBACK = "fake-self-presence-ref";
+
+function presenceKeyOf(options: unknown): string | null {
+  if (!isRecord(options) || !isRecord(options.config) || !isRecord(options.config.presence)) return null;
+  const key = options.config.presence.key;
+  return typeof key === "string" && key !== "" ? key : null;
+}
+
+/**
+ * Realtime のチャンネルの偽物（Presence だけ。supabase-js 2.118 の RealtimeChannel の使うところをまねる）。
+ * - subscribe(callback)：次のマイクロタスクで参加し、callback("SUBSCRIBED") を呼び、Presence の sync を起こす（参加した時点の状態の受け取り）
+ * - track(payload)：自分の値を置き換え、参加中なら join・sync を起こす。参加の前に呼んでもよい（参加したら有効になる。supabase-js も送るのを待つ）
+ * - untrack()：自分の値を消し、参加中なら leave・sync を起こす
+ * - unsubscribe()：抜ける（以後、どの出来事も起こさない）
+ * - presenceState()：key ごとの値の一覧（自分の値も含む。自分の key は channel の設定の config.presence.key）
+ * - テストから：putPeer(key, ...payloads) で他の人が入る（タブを 2 つ開いていれば payload を 2 つ）、removePeer(key) で抜ける
+ */
+export class FakeRealtimeChannel {
+  /** channel(name, options) に渡された名前 */
+  readonly name: string;
+  /** channel(name, options) に渡された設定 */
+  readonly options: unknown;
+  /** idle：作っただけ、joined：参加中、closed：抜けた */
+  state: "idle" | "joined" | "closed" = "idle";
+  private readonly listeners: PresenceListener[] = [];
+  private readonly peers = new Map<string, FakePresenceMeta[]>();
+  private selfMeta: FakePresenceMeta | null = null;
+  private refCount = 0;
+
+  constructor(name: string, options: unknown) {
+    this.name = name;
+    this.options = options;
+  }
+
+  /** 自分の key（設定の config.presence.key。なければ FAKE_PRESENCE_SELF_KEY_FALLBACK） */
+  get selfKey(): string {
+    return presenceKeyOf(this.options) ?? FAKE_PRESENCE_SELF_KEY_FALLBACK;
+  }
+
+  readonly on = vi.fn<(type: string, filter: { event?: string }, callback: (payload?: unknown) => void) => FakeRealtimeChannel>(
+    (type, filter, callback) => {
+      const event = filter.event;
+      if (type === "presence" && (event === "sync" || event === "join" || event === "leave" || event === "*")) {
+        this.listeners.push({ event, callback });
+      }
+      return this;
+    },
+  );
+
+  readonly subscribe = vi.fn<(callback?: (status: string, err?: Error) => void) => FakeRealtimeChannel>((callback) => {
+    if (this.state !== "idle") return this;
+    void Promise.resolve().then(() => {
+      if (this.state !== "idle") return;
+      this.state = "joined";
+      callback?.("SUBSCRIBED");
+      this.emit("sync");
+    });
+    return this;
+  });
+
+  readonly track = vi.fn<(payload: Record<string, unknown>, opts?: unknown) => Promise<string>>(async (payload) => {
+    if (this.state === "closed") return "error";
+    this.selfMeta = { ...payload, presence_ref: this.nextRef() };
+    if (this.state === "joined") {
+      this.emit("join", { key: this.selfKey, newPresences: [this.selfMeta], currentPresences: [] });
+      this.emit("sync");
+    }
+    return "ok";
+  });
+
+  readonly untrack = vi.fn<(opts?: unknown) => Promise<string>>(async () => {
+    const left = this.selfMeta;
+    this.selfMeta = null;
+    if (this.state === "joined" && left !== null) {
+      this.emit("leave", { key: this.selfKey, leftPresences: [left], currentPresences: [] });
+      this.emit("sync");
+    }
+    return "ok";
+  });
+
+  readonly unsubscribe = vi.fn<(timeout?: number) => Promise<string>>(async () => {
+    this.state = "closed";
+    return "ok";
+  });
+
+  readonly presenceState = vi.fn<() => Record<string, FakePresenceMeta[]>>(() => {
+    const state: Record<string, FakePresenceMeta[]> = {};
+    for (const [key, metas] of this.peers) state[key] = metas.map((meta) => ({ ...meta }));
+    if (this.selfMeta !== null) state[this.selfKey] = [...(state[this.selfKey] ?? []), { ...this.selfMeta }];
+    return state;
+  });
+
+  /** 自分が track で送った値（送った順） */
+  trackedPayloads(): Record<string, unknown>[] {
+    return this.track.mock.calls.map(([payload]) => payload);
+  }
+
+  /** テストから：他の人（key）が入る・値を変える（タブを複数開いていれば payload を複数渡す） */
+  putPeer(key: string, ...payloads: Record<string, unknown>[]): void {
+    const metas = payloads.map((payload) => ({ ...payload, presence_ref: this.nextRef() }));
+    this.peers.set(key, metas);
+    this.emit("join", { key, newPresences: metas, currentPresences: [] });
+    this.emit("sync");
+  }
+
+  /** テストから：他の人（key）が抜ける */
+  removePeer(key: string): void {
+    const metas = this.peers.get(key) ?? [];
+    this.peers.delete(key);
+    this.emit("leave", { key, leftPresences: metas, currentPresences: [] });
+    this.emit("sync");
+  }
+
+  private nextRef(): string {
+    this.refCount += 1;
+    return `fake-ref-${this.refCount}`;
+  }
+
+  private emit(event: "sync" | "join" | "leave", payload?: unknown): void {
+    if (this.state !== "joined") return;
+    for (const listener of [...this.listeners]) {
+      if (listener.event === event || listener.event === "*") listener.callback(event === "sync" ? undefined : { event, ...(payload as object) });
+    }
+  }
+}
 
 type Credentials = { email: string; password: string; options?: unknown };
 
@@ -160,6 +308,12 @@ export type FakeSupabaseClient = {
   };
   from: Mock<(table: string) => FakeQuery>;
   rpc: Mock<(fn: string, args?: Record<string, unknown>) => Promise<FakeQueryResult>>;
+  /** Realtime のチャンネルを作る（作ったものは channels に作った順に入る） */
+  channel: Mock<(name: string, options?: unknown) => FakeRealtimeChannel>;
+  /** チャンネルを外す（そのチャンネルの unsubscribe を呼ぶ） */
+  removeChannel: Mock<(channel: unknown) => Promise<string>>;
+  /** このクライアントで作った Realtime のチャンネル（作った順） */
+  channels: FakeRealtimeChannel[];
 };
 
 /** installFakeSupabase の戻り値 */
@@ -260,6 +414,8 @@ function compareValues(a: unknown, b: unknown): number {
   // null は後ろ（PostgREST の昇順の既定と同じ）
   if (a === null || a === undefined) return 1;
   if (b === null || b === undefined) return -1;
+  // 数の列（save_logs.id など）は数として比べる
+  if (typeof a === "number" && typeof b === "number") return a < b ? -1 : 1;
   return String(a) < String(b) ? -1 : 1;
 }
 
@@ -385,6 +541,8 @@ function tableRows(server: FakeSupabaseServer, table: string): readonly object[]
       return server.drafts;
     case "published_definitions":
       return server.publishedDefinitions;
+    case "save_logs":
+      return server.saveLogs;
     default:
       return [];
   }
@@ -445,6 +603,8 @@ function runRpc(server: FakeSupabaseServer, fn: string, args: Record<string, unk
 function createFakeClient(server: FakeSupabaseServer, counter: { users: number }): FakeSupabaseClient {
   // このクライアントのセッション（ログインしている人）
   let session: FakeSession | null = null;
+  // このクライアントで作った Realtime のチャンネル
+  const channels: FakeRealtimeChannel[] = [];
   const sessionFor = (account: FakeAccount): FakeSession => ({
     access_token: `fake-access-token-${account.userId}`,
     refresh_token: `fake-refresh-token-${account.userId}`,
@@ -497,6 +657,16 @@ function createFakeClient(server: FakeSupabaseServer, counter: { users: number }
     rpc: vi.fn<(fn: string, args?: Record<string, unknown>) => Promise<FakeQueryResult>>(
       async (fn, args) => runRpc(server, fn, args ?? {}),
     ),
+    channel: vi.fn<(name: string, options?: unknown) => FakeRealtimeChannel>((name, options) => {
+      const created = new FakeRealtimeChannel(name, options);
+      channels.push(created);
+      return created;
+    }),
+    removeChannel: vi.fn<(channel: unknown) => Promise<string>>(async (target) => {
+      if (target instanceof FakeRealtimeChannel) await target.unsubscribe();
+      return "ok";
+    }),
+    channels,
   };
 }
 
@@ -518,6 +688,7 @@ export function installFakeSupabase(): FakeSupabase {
     appState: [{ id: true, latest_event_id: null }],
     drafts: [],
     publishedDefinitions: [],
+    saveLogs: [],
   };
   const counter = { users: 0 };
   const main = createFakeClient(server, counter);
@@ -573,6 +744,18 @@ export function publishedDefinitionRow(
   };
 }
 
+/** save_logs 表の行を作る（指定しない列はテスト用の値：協力者の下書き保存、海域なし） */
+export function saveLogRow(
+  row: Pick<FakeSaveLogRow, "id" | "event_id" | "user_name" | "summary" | "created_at"> & Partial<FakeSaveLogRow>,
+): FakeSaveLogRow {
+  return {
+    user_id: null,
+    kind: "save",
+    map_label: null,
+    ...row,
+  };
+}
+
 /** app_state の最新のイベント（latest_event_id）を変える */
 export function setLatestEvent(fake: FakeSupabase, eventId: string | null): void {
   fake.server.appState.splice(0, fake.server.appState.length, { id: true, latest_event_id: eventId });
@@ -615,6 +798,8 @@ function clientMocks(client: FakeSupabaseClient): Array<[string, RecordedMock]> 
     ["auth.onAuthStateChange", client.auth.onAuthStateChange],
     ["from", client.from],
     ["rpc", client.rpc],
+    ["channel", client.channel],
+    ["removeChannel", client.removeChannel],
   ];
 }
 
