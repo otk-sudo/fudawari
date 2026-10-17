@@ -4,7 +4,9 @@
 // - 保存した人の名前は、保存した時点の表示名を複写した user_name を使う（profiles とは突き合わせない。外された人の記録も名前が残る）。
 //   「誰が」の絞り込みで同じ表示名の人を見分けるため、user_id（null もある）も返す
 // - v1 では、開いたイベントの記録を新しい順にすべて読み、絞り込み・8 件ずつの表示は画面側（view.ts）で行う。
-//   PostgREST は 1 回に返す行数に上限（max_rows。既定 1000）があるため、1000 件ずつ range で読み、返った件数が 1000 未満になるまでくり返す。
+//   PostgREST は 1 回に返す行数に上限（max_rows。既定 1000）があるため、1000 件ずつ（limit）読み、0 件が返るまでくり返す。
+//   続きは読む位置（offset）ではなく、前に読んだ最後の行（created_at・id）より古いものを or で選んで読む（PR-14）。
+//   max_rows が 1000 より小さくても、読んでいる間に新しい記録が足されても、抜けも重なりも出ない。
 //   途中で失敗したら、途中までの記録は返さずに全体を失敗にする
 // - 失敗の理由の文は定義の保管庫（supabase-repository.ts）と同じ。この部品は supabase-js を読み込むので、画面は lazy.ts から遅延読み込みする
 import { asInteger, asRows, asString, invalidResponse, requireClient, run, toJstIso } from "../supabase-repository";
@@ -36,28 +38,39 @@ function toEntry(row: Record<string, unknown>): SaveLogEntry {
   };
 }
 
+/** 続きを読むときの目印（前に読んだ最後の行の、サーバーが返したままの created_at と id） */
+interface PageCursor {
+  readonly createdAt: string;
+  readonly id: number;
+}
+
+/**
+ * 目印より古い記録（created_at が古い、または同じ時刻で id が小さい）だけを選ぶ or の条件。
+ * 時刻は「+」「:」「.」を含むので二重引用符で囲む
+ */
+function olderThan(cursor: PageCursor): string {
+  const createdAt = `"${cursor.createdAt}"`;
+  return `created_at.lt.${createdAt},and(created_at.eq.${createdAt},id.lt.${String(cursor.id)})`;
+}
+
 /** イベントの保存の記録を新しい順（created_at の新しい順、同じなら id の大きい順）にすべて読む（SaveLogLoader の Supabase の実装） */
 export async function loadSaveLogs(eventId: string): Promise<SaveLogEntry[]> {
   const client = requireClient();
   const entries: SaveLogEntry[] = [];
-  // 読んでいる間に新しい記録が足されると、次のページに同じ記録がずれて入ることがあるので、id で 1 つにする
-  const seen = new Set<number>();
-  for (let from = 0; ; from += PAGE_ROWS) {
-    const data = await run(
-      client
-        .from("save_logs")
-        .select(SAVE_LOG_COLUMNS)
-        .eq("event_id", eventId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(from, from + PAGE_ROWS - 1),
-    );
-    const rows = asRows(data);
-    for (const entry of rows.map(toEntry)) {
-      if (seen.has(entry.id)) continue;
-      seen.add(entry.id);
-      entries.push(entry);
-    }
-    if (rows.length < PAGE_ROWS) return entries;
+  let cursor: PageCursor | null = null;
+  for (;;) {
+    let query = client
+      .from("save_logs")
+      .select(SAVE_LOG_COLUMNS)
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(PAGE_ROWS);
+    if (cursor !== null) query = query.or(olderThan(cursor));
+    const rows = asRows(await run(query));
+    const last = rows.at(-1);
+    if (last === undefined) return entries;
+    entries.push(...rows.map(toEntry));
+    cursor = { createdAt: asString(last.created_at), id: asInteger(last.id) };
   }
 }

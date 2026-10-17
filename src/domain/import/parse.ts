@@ -2,9 +2,9 @@
 //
 // 形式の仕様は docs/research/import-and-master.md と要件 3.4（U8・U9）。
 // 実装で決めたこと（仕様にない、壊れた入力への備え）
-// - 個体 ID（svdata の api_id、新しい短縮形式の id）が読めない要素は、同じ個体と判定できないため飛ばす。
+// - 個体 ID（svdata・api_ship の配列の api_id、新しい短縮形式の id）が読めない要素は、同じ個体と判定できないため飛ばす。
 // - 同じ個体 ID の要素が複数あるときは、先の要素だけを取り込む（個体 ID が重ならないようにする）。
-// - 短縮形式で、艦を表すオブジェクト（id か ship_id を持つ）が 1 つもない配列（空の配列も含む）は
+// - JSON 配列で、艦を表すオブジェクト（api_ship_id・id・ship_id のどれかを持つ）が 1 つもない配列（空の配列も含む）は
 //   「想定外の形」（unexpectedShape）として失敗にする（関係のない JSON 配列を貼り付けたと分かるようにする）。
 // - 形式としては読めたが、取り込む範囲で絞り込んだ後に 1 隻も残らないとき（svdata の api_ship が空の配列、
 //   読める要素が 1 つもないときも含む）は「取り込む艦がない」（noShips）として失敗にする
@@ -172,8 +172,8 @@ function toSuccess(
   parsed: readonly ParsedShip[],
   master: ShipMaster,
   filter: ImportFilter,
+  hasLockInfo: boolean = format === "svdata",
 ): ImportParseResult {
-  const hasLockInfo = format === "svdata";
   const filterByLock = filter.lockedOnly && hasLockInfo;
 
   const ships: OwnedShip[] = [];
@@ -213,9 +213,20 @@ function parseSvdata(body: string, master: ShipMaster, filter: ImportFilter): Im
   return toSuccess("svdata", parsed, master, filter);
 }
 
-/** 短縮形式の JSON 配列を解析する（ship_id を持つ要素が 1 つでもあれば新しい形式、なければ古い形式） */
+/**
+ * JSON 配列を解析する。
+ * - api_ship_id を持つ要素が 1 つでもあれば、api_ship の配列（svdata 形式の要素を並べたもの）として読む
+ * - ship_id を持つ要素が 1 つでもあれば新しい短縮形式、なければ古い短縮形式
+ */
 function parseCompact(elements: readonly unknown[], master: ShipMaster, filter: ImportFilter): ImportParseResult {
   const records = elements.filter(isRecord);
+  if (records.some((r) => Object.hasOwn(r, "api_ship_id"))) {
+    const parsed = readShipsWithUid(elements, (value) => readSvdataShip(value, master));
+    // ロックの情報は、読めた艦のすべてに api_locked があるときだけ使う（一部だけなら、分からない艦を「ロックなし」として外さない）
+    const accepted = records.filter((r) => readSvdataShip(r, master) !== null);
+    const hasLockInfo = accepted.length > 0 && accepted.every((r) => Object.hasOwn(r, "api_locked"));
+    return toSuccess("apiShipArray", parsed, master, filter, hasLockInfo);
+  }
   if (!records.some((r) => Object.hasOwn(r, "id") || Object.hasOwn(r, "ship_id"))) {
     return failure("unexpectedShape");
   }
@@ -229,7 +240,7 @@ function parseCompact(elements: readonly unknown[], master: ShipMaster, filter: 
 
 /**
  * 貼り付けられた文字列を解析し、取り込む艦の個体の一覧と件数を返す（要件 3.4、U8・U9）。
- * - `svdata=` で始まる文字列と、短縮形式の JSON 配列（新しい形式・古い形式）を受け付ける
+ * - `svdata=` で始まる文字列、api_ship の配列、短縮形式の JSON 配列（新しい形式・古い形式）を受け付ける
  * - 艦の ID が 0・欠けている要素、オブジェクトでない要素は飛ばす
  * - 空・壊れた JSON・想定外の形・取り込む艦が 0 隻でも例外を投げず、{ ok: false, reason } を返す
  */

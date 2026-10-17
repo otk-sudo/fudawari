@@ -11,6 +11,8 @@
 //    読み込み中は「読み込み中」、失敗は警告
 // 4. すべて読めたら中身（AssignScreen）を出す。割り当ての変更は共有の札割りのデータ（setAssignments）を通して
 //    ブラウザ内に保存する（同じページの別の部品・一覧などにも新しい割り当てが届く）。
+//    共有の割り当てが外（設定の札割りの読み込みなど）で置き換えられたら、中身に渡して表示を替え、「元に戻す」の履歴を捨てさせる
+//    （sharedAssignments。PR-14）。
 //    控えに戻した割り当ての件数（U17）は、最初に描いたときの件数を出し続け、出した後に共有の件数を 0 に戻す（知らせは一度だけ）
 //
 // 通信するのは公開定義と艦船マスタの静的ファイルだけ。取り込んだ艦や割り当てはサーバーに送らない（要件 5 章）。
@@ -101,6 +103,7 @@ function AssignWithMaster({
       master={masterState.master}
       ships={plan.ships}
       initialAssignments={plan.assignments}
+      sharedAssignments={plan.assignments}
       save={save}
       returnedCount={returnedCount}
       trayInit={trayInit}

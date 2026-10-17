@@ -560,6 +560,8 @@ export function DefinitionEditor({
 
   const switchMode = (next: EditMode): void => {
     if (next === mode) return;
+    // 保存・公開の途中は切り替えない（radio のほか、終了の案内の「新しいイベントを作成」など、どの経路からでも。PR-14）
+    if (busy !== null) return;
     // 確認のウィンドウが出ている間は切り替えない（衝突したワークスペースから離れると、確認が解けなくなるため）
     if (dialogOpen) return;
     if (next === "update" && state.workspaces.update === null) return;
@@ -1109,7 +1111,12 @@ export function DefinitionEditor({
             {perms.canCreate ? "次のイベントは「新規作成」から作ってください。" : "次のイベントは管理者が作成するまでお待ちください。"}
           </span>
           {perms.canCreate && (
-            <button type="button" className={controls.primaryButton} onClick={() => switchMode("create")}>
+            <button
+              type="button"
+              className={controls.primaryButton}
+              disabled={busy !== null}
+              onClick={() => switchMode("create")}
+            >
               新しいイベントを作成
             </button>
           )}
