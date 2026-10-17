@@ -8,6 +8,8 @@
 // - ドラッグ＆ドロップ：札の列へ落とすと移動、別の艦に重ねると入れ替え（相手が控えなら自分が控えへ）、控えへ落とすと割り当てを外す。
 //   自分に落としても変わらない。ドラッグを始めると選択が外れる。
 // - 元に戻す：割り当ての変更だけが対象（選択・開閉は対象外）。20 手まで。
+// - 外からの置き換え：画面の外（設定の札割りの読み込みなど）で割り当てが変わったら、新しい割り当てに替えて履歴を捨てる
+//   （replaceAssignments。保存はしない。保存先はもう新しい割り当てになっている。PR-14）
 // - 保存：割り当てが変わるたびに、外から渡した保存の関数（src/lib/storage の saveAssignments と同じ形）を呼ぶ。
 //   保存の結果は待たずに画面の操作を続け、失敗したら saveError に理由を入れる（次の保存が成功したら null に戻す）。
 //
@@ -67,6 +69,8 @@ export interface AssignState {
   dropOnTray(uid: ShipUid): void;
   /** 「元に戻す」：直前の割り当ての変更を戻す。戻すものがなければ何もしない */
   undo(): void;
+  /** 外で変わった割り当てに置き換え、「元に戻す」の履歴を捨てる（保存はしない） */
+  replaceAssignments(assignments: AssignmentMap): void;
 }
 
 /** 割り振りのストア（zustand の vanilla ストア） */
@@ -180,6 +184,10 @@ export function createAssignStore(options: AssignStoreOptions): AssignStore {
         ]);
       },
       dropOnTray: (uid) => reassign([[uid, undefined]]),
+      replaceAssignments: (assignments) => {
+        past = [];
+        set({ assignments, canUndo: false });
+      },
       undo: () => {
         const previous = past.at(-1);
         if (previous === undefined) return;

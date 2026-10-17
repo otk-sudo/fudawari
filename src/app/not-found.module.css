@@ -1,0 +1,32 @@
+/* 存在しない URL の画面（ヘッダー帯の下の本文）。色は theme.css の変数を使う（ダーク／ライトに従う） */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 14px;
+}
+
+.text {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}

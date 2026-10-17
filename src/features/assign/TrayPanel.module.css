@@ -3,12 +3,14 @@
  * 色は theme.css の変数と、割り振り画面の変数（AssignScreen.module.css の .screen で決める --assign-*）を使う
  */
 
+/* 高さは本文（画面の高さからヘッダー帯などを除いた分）までに収め、艦の一覧の中だけをスクロールさせる */
 .tray {
   display: flex;
   flex: 1 1 280px;
   flex-direction: column;
   min-width: 0;
   max-width: 300px;
+  max-height: 100%;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -295,10 +297,12 @@
 /*
  * 艦の一覧。この部分だけをスクロールさせる（仮想スクロールのスクロールする要素）。
  * 上の余白は内側（padding）ではなく外側（margin）に取る：固定した区切りの見出しを一覧の上端ちょうどに留め、
- * スクロールしていないときと位置をそろえるため。下の余白は TrayGroupList が最後の行の下に足す
+ * スクロールしていないときと位置をそろえるため。下の余白は TrayGroupList が最後の行の下に足す。
+ * 高さは控えの残り（画面の高さに合わせる）。画面がとても低いときも数行は見えるよう、最小の高さを持つ
  */
 .list {
-  max-height: 760px;
+  flex: 1 1 auto;
+  min-height: 160px;
   margin-top: 10px;
   padding: 0 8px;
   overflow-y: auto;

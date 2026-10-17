@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- 札割りプランナーのアイコン：「札」の 1 文字。濃い下地にモックの強調の金（#E8B04B）で、明るいタブでも暗いタブでも見える -->
+  <rect x="2" y="2" width="60" height="60" rx="12" fill="#1F2126" stroke="#E8B04B" stroke-width="3"/>
+  <text x="32" y="46" text-anchor="middle" font-family="'Noto Sans JP', 'Hiragino Sans', 'Meiryo', sans-serif" font-size="40" font-weight="700" fill="#E8B04B">札</text>
+</svg>
