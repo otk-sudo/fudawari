@@ -25,6 +25,9 @@ export interface FieldTexts {
   readonly endAt: string | null;
 }
 
+/** 「元にするイベント」の選択欄で、イベントを作成した後に出す値（作成した後は選び直せないので、作成済みと出す） */
+const CREATED_VALUE = "__created__";
+
 const MODE_CHOICES: ReadonlyArray<readonly [EditMode, string]> = [
   ["update", "既存を更新"],
   ["create", "新規作成"],
@@ -223,10 +226,17 @@ export function EventPanel(props: EventPanelProps): ReactNode {
               <select
                 id={baseSelectId}
                 className={controls.input}
-                value={workspace.loadingBaseEventId ?? workspace.baseEventId}
+                value={
+                  workspace.eventId !== null ? CREATED_VALUE : (workspace.loadingBaseEventId ?? workspace.baseEventId)
+                }
                 disabled={!props.canChooseBase}
                 onChange={(event) => props.onChooseBase(event.currentTarget.value)}
               >
+                {workspace.eventId !== null && (
+                  <option value={CREATED_VALUE}>
+                    {baseName === undefined ? "作成済み（変えられません）" : `作成済み（${baseName}を元に作成）`}
+                  </option>
+                )}
                 <option value="">使わない（空から作る）</option>
                 {props.baseEventOptions.map((option) => (
                   <option key={option.id} value={option.id}>
