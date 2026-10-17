@@ -71,7 +71,7 @@ function networkError(): Error {
   return new Error(MSG_NETWORK);
 }
 
-function invalidResponse(): Error {
+export function invalidResponse(): Error {
   return new Error(MSG_INVALID_RESPONSE);
 }
 
@@ -95,7 +95,7 @@ function postgrestError(error: PostgrestError, status: number): Error {
 type QueryResponse = { data: unknown; error: PostgrestError | null; status: number };
 
 /** 読み取り・RPC を待ち、成功なら data を返す。失敗・例外は理由の文の Error にする */
-async function run(query: PromiseLike<QueryResponse>): Promise<unknown> {
+export async function run(query: PromiseLike<QueryResponse>): Promise<unknown> {
   let response: QueryResponse;
   try {
     response = await query;
@@ -107,7 +107,7 @@ async function run(query: PromiseLike<QueryResponse>): Promise<unknown> {
 }
 
 /** ふだんのクライアント。設定がなければ「設定がありません」で失敗する */
-function requireClient(): SupabaseClient {
+export function requireClient(): SupabaseClient {
   const client = getSupabaseClient();
   if (client === null) throw new Error(MSG_NO_CONFIG);
   return client;
@@ -148,17 +148,17 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value;
 }
 
-function asRows(value: unknown): Record<string, unknown>[] {
+export function asRows(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) throw invalidResponse();
   return value.map(asRecord);
 }
 
-function asString(value: unknown): string {
+export function asString(value: unknown): string {
   if (typeof value !== "string") throw invalidResponse();
   return value;
 }
 
-function asInteger(value: unknown): number {
+export function asInteger(value: unknown): number {
   if (typeof value !== "number" || !Number.isInteger(value)) throw invalidResponse();
   return value;
 }
@@ -202,7 +202,7 @@ function pad2(value: number): string {
 }
 
 /** 日時の文字列を、同じ時刻の日本時間の「秒の小数のない時差つき」にする（例 "2026-10-15T22:40:00+09:00"） */
-function toJstIso(value: unknown): string {
+export function toJstIso(value: unknown): string {
   const jst = new Date(timestampMs(value) + JST_OFFSET_MS);
   const date = `${jst.getUTCFullYear()}-${pad2(jst.getUTCMonth() + 1)}-${pad2(jst.getUTCDate())}`;
   const time = `${pad2(jst.getUTCHours())}:${pad2(jst.getUTCMinutes())}:${pad2(jst.getUTCSeconds())}`;

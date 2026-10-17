@@ -23,14 +23,11 @@ export type PlanEditorProps = {
    * 同じ関数を渡し続けること（変わると読み込み直す）
    */
   onSessionExpired?: () => void;
-  /**
-   * 保存の記録を読む（PR-12。「保存の記録を見る」のウィンドウで使う）。
-   * 【PR-12 の先行テスト用に型だけを置いた。画面への差し込みは実装担当が作る】
-   */
+  /** 保存の記録を読む（PR-12。「保存の記録を見る」のウィンドウで使う。省略なら「保存の記録を見る」を出さない） */
   loadSaveLogs?: SaveLogLoader;
   /**
-   * 編集中の表示のチャンネルにつなぐ（PR-12。「（名前）も編集中（E3 を表示中）」に使う）。
-   * 【PR-12 の先行テスト用に型だけを置いた。画面への差し込みは実装担当が作る】
+   * 編集中の表示のチャンネルにつなぐ（PR-12。「（名前）も編集中（E3 を表示中）」に使う。省略なら出さない）。
+   * 同じ関数を渡し続けること（変わるとつなぎ直す）
    */
   connectPresence?: PresenceConnector;
 };
@@ -52,7 +49,13 @@ const LOADING: LoadState = { status: "loading" };
  * - 読み込めたら：本文（DefinitionEditor）
  * - 保管庫が変わったら：読み込み中に戻し、新しい保管庫の内容で編集画面を作り直す（前の保管庫の内容・編集・版を持ち越さない）
  */
-export function PlanEditor({ repository, knownShipNames, onSessionExpired }: PlanEditorProps): ReactNode {
+export function PlanEditor({
+  repository,
+  knownShipNames,
+  onSessionExpired,
+  loadSaveLogs,
+  connectPresence,
+}: PlanEditorProps): ReactNode {
   // 状態は、それを読んだ保管庫と組で持つ（保管庫が変わったら、新しい読み込みが済むまで読み込み中として描く）
   const [state, setState] = useState<{ readonly repository: DefinitionRepository; readonly load: LoadState }>(() => ({
     repository,
@@ -103,7 +106,14 @@ export function PlanEditor({ repository, knownShipNames, onSessionExpired }: Pla
         </div>
       )}
       {view.status === "loaded" && (
-        <DefinitionEditor key={view.key} data={view.data} repository={repository} knownShipNames={knownShipNames} />
+        <DefinitionEditor
+          key={view.key}
+          data={view.data}
+          repository={repository}
+          knownShipNames={knownShipNames}
+          loadSaveLogs={loadSaveLogs}
+          connectPresence={connectPresence}
+        />
       )}
     </div>
   );

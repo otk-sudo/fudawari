@@ -1,0 +1,318 @@
+/*
+ * 「保存の記録を見る」と、共有の下書きの記録のウィンドウ（モック PlanEditor.dc.html）。
+ * ウィンドウは画面の外（Portal）に描くため、定義画面の変数（--pe-*）が届かない。そこにない色はこの部品の変数（--sl-*）として
+ * 背景（.overlay）と開くボタンに置く。ダークはモックの値、ライトはモックにないため同じ役割で読みやすい値（仮）。
+ * ライトの値は theme.css と同じく「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる
+ */
+
+.overlay,
+.openButton {
+  --sl-link: #6aa8ff; /* リンクの文字（「保存の記録を見る」「さらに古い記録を表示」） */
+  --sl-link-border: #34507a; /* 「さらに古い記録を表示」の枠 */
+  --sl-filter-bg: #1a1c20; /* 絞り込みの欄の下地 */
+  --sl-row-border: #22252b; /* 記録の行の区切り */
+  --sl-summary: #d7dadf; /* 記録の内容の文字 */
+  --sl-save-bg: #22304a; /* 「下書き保存」のバッジ */
+  --sl-save-text: #cfe0ff;
+  --sl-publish-bg: #e8b04b; /* 「公開」のバッジ */
+  --sl-publish-text: #101114;
+  --sl-danger: #ff8a80; /* 読み込みの失敗の文字 */
+  --sl-danger-border: #7a3a36;
+  --sl-danger-bg: #2a1c1c;
+  --sl-scrollbar: #4a4f58;
+  --sl-focus: #6aa8ff; /* フォーカスの枠 */
+}
+
+:global(:root[data-theme="light"]) .overlay,
+:global(:root[data-theme="light"]) .openButton {
+  --sl-link: #2f5fc4; /* 仮 */
+  --sl-link-border: #9fb6e3; /* 仮 */
+  --sl-filter-bg: #f3f4f6; /* 仮 */
+  --sl-row-border: #e3e5e9; /* 仮 */
+  --sl-summary: #2b2f36; /* 仮 */
+  --sl-save-bg: #d6e2f7; /* 仮 */
+  --sl-save-text: #1d3766; /* 仮 */
+  --sl-publish-bg: #9a6700; /* 仮（白地で読めるよう暗めにした） */
+  --sl-publish-text: #ffffff; /* 仮 */
+  --sl-danger: #b3261e; /* 仮 */
+  --sl-danger-border: #e3a7a2; /* 仮 */
+  --sl-danger-bg: #fdecea; /* 仮 */
+  --sl-scrollbar: #b9bec7; /* 仮 */
+  --sl-focus: #2f5fc4; /* 仮 */
+}
+
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .overlay,
+  :global(:root:not([data-theme])) .openButton {
+    --sl-link: #2f5fc4; /* 仮 */
+    --sl-link-border: #9fb6e3; /* 仮 */
+    --sl-filter-bg: #f3f4f6; /* 仮 */
+    --sl-row-border: #e3e5e9; /* 仮 */
+    --sl-summary: #2b2f36; /* 仮 */
+    --sl-save-bg: #d6e2f7; /* 仮 */
+    --sl-save-text: #1d3766; /* 仮 */
+    --sl-publish-bg: #9a6700; /* 仮 */
+    --sl-publish-text: #ffffff; /* 仮 */
+    --sl-danger: #b3261e; /* 仮 */
+    --sl-danger-border: #e3a7a2; /* 仮 */
+    --sl-danger-bg: #fdecea; /* 仮 */
+    --sl-scrollbar: #b9bec7; /* 仮 */
+    --sl-focus: #2f5fc4; /* 仮 */
+  }
+}
+
+/* 「共有の下書き：…」の横の「保存の記録を見る」（文字のリンクの見た目のボタン） */
+.openButton {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--sl-link);
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.openButton:focus-visible,
+.cross:focus-visible,
+.closeButton:focus-visible,
+.moreButton:focus-visible,
+.select:focus-visible,
+.list:focus-visible {
+  outline: 2px solid var(--sl-focus);
+  outline-offset: 2px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  box-sizing: border-box;
+  background: var(--color-overlay);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 860px;
+  max-height: calc(100vh - 80px);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.eventName {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.cross {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 絞り込みの欄（一覧をスクロールしても上に残る） */
+.filters {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 16px;
+  background: var(--sl-filter-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.select {
+  min-height: 32px;
+  padding: 0 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.select:disabled {
+  opacity: 0.6;
+}
+
+.count {
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.message {
+  margin: 0;
+  padding: 24px 16px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.error {
+  margin: 16px;
+  padding: 10px 12px;
+  background: var(--sl-danger-bg);
+  border: 1px solid var(--sl-danger-border);
+  border-radius: var(--radius-md);
+  color: var(--sl-danger);
+  font-size: 12px;
+}
+
+.error p {
+  margin: 0;
+}
+
+.errorTitle {
+  font-weight: 700;
+}
+
+/* 一覧（この部分だけをスクロールする） */
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(420px, calc(100vh - 240px));
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  scrollbar-color: var(--sl-scrollbar) var(--color-bg);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--sl-row-border);
+  font-size: 12px;
+}
+
+.at {
+  flex: 0 0 84px;
+  color: var(--color-text-muted);
+  font-family: Consolas, monospace;
+}
+
+.who {
+  flex: 0 0 80px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.badgeSave,
+.badgePublish {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.badgeSave {
+  background: var(--sl-save-bg);
+  color: var(--sl-save-text);
+}
+
+.badgePublish {
+  background: var(--sl-publish-bg);
+  color: var(--sl-publish-text);
+}
+
+.summary {
+  flex: 1 1 260px;
+  color: var(--sl-summary);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  padding: 24px 16px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.moreRow {
+  padding: 10px 16px;
+  text-align: center;
+}
+
+.moreButton {
+  min-height: 32px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--sl-link);
+  border: 1px solid var(--sl-link-border);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.footer {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.closeButton {
+  min-height: 36px;
+  padding: 0 18px;
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
