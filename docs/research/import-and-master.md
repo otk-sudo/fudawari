@@ -47,4 +47,4 @@
 
 ## 追記（2026-10-17、本番での取り込みの失敗から）
 - 実際の利用者の貼り付けに、`svdata=` も `api_data` もなく、`api_ship` の要素（`api_id`・`api_ship_id`・`api_lv`・`api_kyouka`・`api_sally_area` など）をそのまま並べた JSON 配列があった。`api_locked` はないことが多い
-- この形も受け付ける（形式名 `apiShipArray`。個体 ID は `api_id`。ロックの情報は `api_locked` がある要素があるときだけ使い、ないときは「ロック済みだけ」を効かせずに知らせる）
+- この形も受け付ける（形式名 `apiShipArray`。個体 ID は `api_id`。ロックの情報は読めた艦のすべてに `api_locked` があるときだけ使い、ないときは「ロック済みだけ」を効かせずに知らせる）
