@@ -1,0 +1,340 @@
+/*
+ * 画像で保存で出力する画像（1600×900。モック ExportImage.dc.html）。
+ *
+ * X などに貼って人に見せる画像なので、画面モード（ダーク／ライト）によらず、モックのダークの見た目で固定する。
+ * 色は .image に CSS 変数（--export-image-*）として置く。札の色は定義の値なので、部品の style で入れる。
+ * 高さに関わる値（上部・下部・攻略の流れの余白と間・列の見出し・艦の行）は、列に入る艦の数の計算
+ * （image-layout.ts）と同じ値にする。変えるときは両方そろえる。
+ */
+
+.image {
+  --export-image-bg: #121317; /* 下地 */
+  --export-image-surface: #1b1d22; /* 上部・札の列の下地 */
+  --export-image-row-alt: #202329; /* 艦の行の縞 */
+  --export-image-text: #eceef2; /* 文字 */
+  --export-image-muted: #9aa0aa; /* 補助の文字（「n / m」・隻数） */
+  --export-image-stats: #a9aeb8; /* 「Lv 運」 */
+  --export-image-footer: #8a909a; /* 下部の文字 */
+  --export-image-none: #555a63; /* 特効なしの「－」 */
+  --export-image-accent: #e8b04b; /* 強調の金（上部の線・「札割り」・特効の印・ロゴ） */
+  --export-image-on-accent: #121317; /* 強調の金の上の文字 */
+  --export-image-logo-ring: #3a3e46; /* ロゴの枠 */
+  --export-image-ink-dark: #101114; /* 札の色の上の暗い文字 */
+  --export-image-ink-light: #ffffff; /* 札の色の上の白い文字 */
+
+  display: flex;
+  flex-direction: column;
+  width: 1600px;
+  height: 900px;
+  overflow: hidden;
+  background: var(--export-image-bg);
+  color: var(--export-image-text);
+  font-family: var(--font-family);
+  line-height: 1.3;
+}
+
+.inkDark {
+  color: var(--export-image-ink-dark);
+}
+
+.inkLight {
+  color: var(--export-image-ink-light);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/* ---- 上部（高さ 96px。image-layout.ts の HEADER_HEIGHT） ---- */
+
+.header {
+  display: flex;
+  flex: 0 0 96px;
+  align-items: center;
+  gap: 18px;
+  padding: 0 44px;
+  background: var(--export-image-surface);
+  border-bottom: 4px solid var(--export-image-accent);
+}
+
+/* イベント名が長いときは、ここだけを縮めて省略記号で切る（「札割り」と「n / m」をはみ出させない） */
+.eventName {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  flex: 0 0 auto;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--export-image-accent);
+  white-space: nowrap;
+}
+
+.pageLabel {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-family: Consolas, var(--font-family); /* 数字・英字は Consolas、「運」などは日本語フォント */
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--export-image-muted);
+}
+
+/* ---- 攻略の流れ（上の余白 18px・行の間 6px。行の高さは style で入れる） ---- */
+
+.timeline {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 44px 0;
+}
+
+.timeline:empty {
+  padding: 0;
+}
+
+.areaRow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.areaName {
+  display: flex;
+  flex: 0 0 52px;
+  align-items: center;
+  font-family: Consolas, var(--font-family); /* 数字・英字は Consolas、「運」などは日本語フォント */
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.steps {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  background: var(--export-image-logo-ring);
+  border-radius: 6px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.stepFuda {
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.stepStage {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+/*
+ * 海域が多くて行が低いとき（image-layout.ts の isCompactTimeline）：
+ * 札名と段階名を 1 行に並べて小さくし、海域名も小さくする（2 行のままだと文字が切れるため）
+ */
+.compact .areaName {
+  font-size: 18px;
+}
+
+.compact .step {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.compact .stepFuda {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.compact .stepStage {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+}
+
+/* ---- 札の列（上の余白 18px。列の数は style で入れる） ---- */
+
+.columns {
+  display: grid;
+  flex: 1 1 auto;
+  align-items: start;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px 44px 0;
+  overflow: hidden;
+}
+
+/* 上端の札の色の帯（8px。色は style で入れる） */
+.column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--export-image-surface);
+  border-top: 8px solid var(--export-image-logo-ring);
+  border-radius: 10px;
+}
+
+/* 列の見出し（高さ 54px。image-layout.ts の COLUMN_HEAD_HEIGHT） */
+.columnHead {
+  display: flex;
+  flex: 0 0 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 54px;
+  padding: 0 14px;
+}
+
+.columnName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 24px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.columnCount {
+  flex: 0 0 auto;
+  font-size: 16px;
+  color: var(--export-image-muted);
+}
+
+.shipList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 艦の行（高さ 42px。image-layout.ts の SHIP_ROW_HEIGHT） */
+.ship {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 46px;
+  column-gap: 10px;
+  align-items: center;
+  height: 42px;
+  padding: 0 14px;
+  background: var(--export-image-row-alt);
+}
+
+.ship:nth-child(even) {
+  background: var(--export-image-surface);
+}
+
+.shipName {
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shipStats {
+  display: flex;
+  flex-direction: column;
+  font-family: Consolas, var(--font-family); /* 数字・英字は Consolas、「運」などは日本語フォント */
+  font-size: 14px;
+  line-height: 1.15;
+  color: var(--export-image-stats);
+  text-align: right;
+}
+
+/* 特効の印（凡例と同じ） */
+.markOn {
+  justify-self: end;
+  padding: 2px 6px;
+  background: var(--export-image-accent);
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--export-image-on-accent);
+}
+
+.markOff {
+  justify-self: end;
+  padding-right: 14px;
+  font-size: 16px;
+  color: var(--export-image-none);
+}
+
+/* 列に入らない艦の数（艦の行と同じ高さ） */
+.more {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  margin: 0;
+  padding: 0 14px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--export-image-muted);
+}
+
+/* ---- 下部（高さ 48px。image-layout.ts の FOOTER_HEIGHT） ---- */
+
+.footer {
+  display: flex;
+  flex: 0 0 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 44px;
+  font-size: 16px;
+  color: var(--export-image-footer);
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px var(--export-image-logo-ring);
+  font-weight: 800;
+  color: var(--export-image-accent);
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend .markOn {
+  padding: 1px 8px;
+}
+
+.legendNone {
+  margin-left: 12px;
+  color: var(--export-image-none);
+}
