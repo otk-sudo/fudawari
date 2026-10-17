@@ -20,8 +20,11 @@ import {
   clearSupabaseCalls,
   draftRow,
   eventRow,
+  failedQuery,
+  type FakeQuery,
   type FakeSupabase,
   installFakeSupabase,
+  postgrestFailure,
   publishedDefinitionRow,
   setLatestEvent,
   stubSupabaseEnv,
@@ -271,5 +274,29 @@ describe("イベント定義のページ（/definition）", () => {
     expect(tables).not.toContain("events");
     expect(tables).not.toContain("drafts");
     expect(screen.queryByRole("region", { name: "攻略の流れ" })).not.toBeInTheDocument();
+  });
+
+  it("読み込みが 42501（権限がない）で断られても、ログアウトせず（保存した権限は管理者のまま）、読み込めなかった理由を出す（PR-11c：M2-7）", async () => {
+    // 準備：管理者でログインしているが、events の読み取りが 42501 で断られる
+    await signInAs(ADMIRAL);
+    const original = fake.main.from.getMockImplementation();
+    if (original === undefined) throw new Error("偽物の from に返し方がありません");
+    fake.main.from.mockImplementation((table: string): FakeQuery =>
+      table === "events" ? failedQuery(postgrestFailure("42501", 403, "permission denied")) : original(table),
+    );
+    const { result: role } = renderHook(() => useRole());
+    expect(role.current).toBe("admin");
+
+    // 実行
+    render(<DefinitionPage />);
+
+    // 検証：読み込めなかった理由（権限がない）を出す
+    expect(await screen.findByText(/イベント定義を読み込めませんでした/)).toBeInTheDocument();
+    expect(screen.getByText(/権限がありません/)).toBeInTheDocument();
+    await act(async () => {});
+    // 検証：ログアウトしない（auth.signOut を呼ばず、保存した権限も管理者のまま）
+    expect(fake.main.auth.signOut).not.toHaveBeenCalled();
+    expect(role.current).toBe("admin");
+    expect(screen.queryAllByRole("link").some((link) => link.getAttribute("href") === "/login")).toBe(false);
   });
 });

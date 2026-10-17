@@ -140,9 +140,11 @@ interface MergeContext {
   readonly eventId: string;
   /** 保存を押したときの編集中の文書（保存した後、その後に編集した分を、保存した文書に重ねる元） */
   readonly editedFrom: DefinitionDoc;
+  /** 「変更を公開する」から始めたか（合わせて保存した後に、もう一度公開してもらう文を出す） */
+  readonly fromPublish: boolean;
   /** これまでに自動で合わせた所 */
   readonly mergedItems: readonly MergedItem[];
-  /** これまでに変更を合わせた相手の名前（重複なし） */
+  /** これまでに変更が実際に残った相手の名前（自動で合わせた所があるか、「相手の内容」を選んだ相手。重複なし） */
   readonly names: readonly string[];
 }
 
@@ -166,22 +168,37 @@ function alignEvent(doc: DefinitionDoc, event: DefinitionDoc["event"]): Definiti
   return doc.event === event ? doc : { ...doc, event };
 }
 
-/** 合わせた結果の、自動で合わせた所（相手だけが変えた所） */
-function mergedItemsOf(merge: MergeResult, name: string): MergedItem[] {
-  return merge.autoMerged.map((change) => ({ label: change.label, change: change.change, name, stageId: change.stageId }));
+/** 自動で合わせた所のうち、doc にない段階（削除された段階）は「場所を見る」を出さない（stageId を null にする） */
+function placesIn(items: readonly MergedItem[], doc: DefinitionDoc): MergedItem[] {
+  return items.map((item) =>
+    item.stageId !== null && !doc.stages.some((stage) => stage.id === item.stageId) ? { ...item, stageId: null } : item,
+  );
 }
 
-/** この衝突の自動で合わせた所と相手の名前を、文脈に足す */
-function withMerged(context: MergeContext, merge: MergeResult, name: string): MergeContext {
+/** 合わせた結果の、自動で合わせた所（相手だけが変えた所）。合わせた文書にない段階には「場所を見る」を出さない */
+function mergedItemsOf(merge: MergeResult, name: string): MergedItem[] {
+  return placesIn(
+    merge.autoMerged.map((change) => ({ label: change.label, change: change.change, name, stageId: change.stageId })),
+    merge.merged,
+  );
+}
+
+/**
+ * この衝突の自動で合わせた所と相手の名前を、文脈に足す。
+ * 名前は、相手の変更が実際に残ったとき（自動で合わせた所がある、または「相手の内容」を選んだ）だけ足す
+ */
+function withMerged(context: MergeContext, merge: MergeResult, name: string, choseTheirs = false): MergeContext {
+  const kept = merge.autoMerged.length > 0 || choseTheirs;
   return {
     ...context,
     mergedItems: [...context.mergedItems, ...mergedItemsOf(merge, name)],
-    names: context.names.includes(name) ? context.names : [...context.names, name],
+    names: !kept || context.names.includes(name) ? context.names : [...context.names, name],
   };
 }
 
-/** 相手の変更を合わせて保存したときの文（要件 3.7） */
+/** 相手の変更を合わせて保存したときの文（要件 3.7）。変更が残った相手がいなければ、ふだんの保存の文 */
 function savedWithTheirsText(names: readonly string[]): string {
+  if (names.length === 0) return MSG_SAVED;
   return `下書きを保存しました。${names.join("・")}の変更も含めた内容が、管理者・協力者全員の定義画面に反映されます`;
 }
 
@@ -339,6 +356,11 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
     if (!dialogOpen && dialogWasOpenRef.current) returnFocusRef.current?.focus();
     dialogWasOpenRef.current = dialogOpen;
   }, [dialogOpen]);
+  // 今のモード（保存の途中に切り替えた後で衝突が返ったとき、衝突したワークスペースのモードに戻すかを見る）
+  const modeRef = useRef(state.mode);
+  useEffect(() => {
+    modeRef.current = state.mode;
+  });
 
   const { mode } = state;
   const ws = state.workspaces[mode];
@@ -524,6 +546,8 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
 
   const switchMode = (next: EditMode): void => {
     if (next === mode) return;
+    // 確認のウィンドウが出ている間は切り替えない（衝突したワークスペースから離れると、確認が解けなくなるため）
+    if (dialogOpen) return;
     if (next === "update" && state.workspaces.update === null) return;
     // 新規作成に初めて切り替えたとき：未公開の新規イベントがあればその続き、なければ E1 だけの空の状態
     const fresh =
@@ -716,7 +740,8 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
       eventId: context.eventId,
       version: result.version,
       content: doc,
-      mergedWith: { names: context.names, items: context.mergedItems },
+      // 保存した文書にない段階（相手が削除した段階など）には「場所を見る」を出さない
+      mergedWith: { names: context.names, items: placesIn(context.mergedItems, doc) },
     };
   };
 
@@ -741,10 +766,19 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
     const theirs: TheirsDraft = { ...theirsDraft, content: input.theirs };
     const merge = mergeDefinitions(input);
     if (merge.conflicts.length > 0) {
+      // 保存の途中にモードを切り替えていたら、衝突したワークスペースのモードに戻す（確認のウィンドウが見えて解けるように）
+      if (modeRef.current !== context.target) {
+        modeRef.current = context.target;
+        setState((prev) => ({ ...prev, mode: context.target }));
+        setTexts(EMPTY_TEXTS);
+        setTriedSubmit(false);
+      }
       setConflict({ context, input, merge, theirs, choices: {} });
       return null;
     }
     if (merge.issues.length > 0) {
+      // 確認のウィンドウから保存し直して 3 人目と合わせた結果なら、古い版のウィンドウは残さない（閉じて理由を出す）
+      setConflict(null);
       const reasons = merge.issues.map((issue) => issueMessage(merge.merged, issue)).join("／");
       setNotice({
         tone: "error",
@@ -755,8 +789,16 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
     return saveMerged(withMerged(context, merge, theirs.name), merge.merged, theirs);
   };
 
-  /** 下書きを保存する（まだイベントを作っていなければ作成する）。保存できなければ理由を出して null */
-  const saveDraftCore = async (target: EditMode, current: Workspace, prepared: Prepared): Promise<SaveOutcome | null> => {
+  /**
+   * 下書きを保存する（まだイベントを作っていなければ作成する）。保存できなければ理由を出して null。
+   * fromPublish は「変更を公開する」から呼んだか（衝突して合わせて保存した後の知らせに使う）
+   */
+  const saveDraftCore = async (
+    target: EditMode,
+    current: Workspace,
+    prepared: Prepared,
+    fromPublish: boolean,
+  ): Promise<SaveOutcome | null> => {
     const { content, meta } = prepared;
     if (!checkDraft(content)) return null;
     const draftNote = { updatedByName: user.displayName, updatedAt: nowIso() };
@@ -790,6 +832,7 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
         target,
         eventId: current.eventId,
         editedFrom: current.doc,
+        fromPublish,
         mergedItems: [],
         names: [],
       };
@@ -827,7 +870,7 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
     setBusy({ kind: "save", target });
     try {
       const ready = await settleMeta(current.eventId, prepared);
-      const saved = await saveDraftCore(target, current, ready);
+      const saved = await saveDraftCore(target, current, ready, false);
       if (saved !== null) {
         setNotice(saved.mergedWith === null ? { tone: "success", text: MSG_SAVED } : noticeMerged(saved.mergedWith));
       }
@@ -855,7 +898,7 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
           ? { eventId: current.eventId, version: current.baseVersion, content: current.savedDoc, mergedWith: null }
           : null;
       if (saved === null) {
-        saved = await saveDraftCore(target, current, ready);
+        saved = await saveDraftCore(target, current, ready, true);
         // 保存できなかった・確認のウィンドウを出した：公開しない（選んで保存した後に公開し直すのは利用者）
         if (saved === null) return;
         // 相手の変更を合わせて保存した：合わせた内容を確かめてもらうため、公開しない
@@ -916,14 +959,16 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
     const resolved = resolveMerge(conflict.input, conflict.choices);
     if (!resolved.ok) return;
     const { context, merge, theirs } = conflict;
+    const choseTheirs = Object.values(conflict.choices).includes("theirs");
     setBusy({ kind: "save", target: context.target });
     setNotice(null);
     try {
-      const saved = await saveMerged(withMerged(context, merge, theirs.name), resolved.doc, theirs);
+      const saved = await saveMerged(withMerged(context, merge, theirs.name, choseTheirs), resolved.doc, theirs);
       // null なら、また別の人が先に保存していて確認のウィンドウを入れ替えたか、保存できない理由を出した
       if (saved !== null && saved.mergedWith !== null) {
         setConflict(null);
-        setNotice(noticeMerged(saved.mergedWith));
+        // 「変更を公開する」から始めたときは公開していないので、もう一度公開してもらう
+        setNotice(noticeMerged(saved.mergedWith, context.fromPublish ? `。${MSG_PUBLISH_AFTER_MERGE}` : ""));
       }
     } catch (error: unknown) {
       setNotice({ tone: "error", text: `下書きを保存できませんでした：${errorMessage(error)}` });
@@ -954,7 +999,10 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   const pendingMergedItems =
     shownConflict === null
       ? []
-      : [...shownConflict.context.mergedItems, ...mergedItemsOf(shownConflict.merge, shownConflict.theirs.name)];
+      : placesIn(
+          [...shownConflict.context.mergedItems, ...mergedItemsOf(shownConflict.merge, shownConflict.theirs.name)],
+          shownConflict.merge.merged,
+        );
   // 攻略の流れの段階の印：自動で合わせた段階（保存した後も残す）に、確認の間は相手だけが変えた段階・衝突した段階を重ねる
   const stageMarks = new Map<string, StageMark>();
   for (const [stageId, name] of ws.mergedStages) stageMarks.set(stageId, { kind: "merged", name });
@@ -993,6 +1041,7 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
         onCommitText={commitField}
         onClearEnd={clearEnd}
         metaLocked={metaLocked}
+        modeLocked={dialogOpen}
         baseEventOptions={data.baseEventOptions}
         canChooseBase={canChooseBase}
         onChooseBase={chooseBase}

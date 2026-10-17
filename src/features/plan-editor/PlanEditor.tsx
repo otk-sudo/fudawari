@@ -18,7 +18,7 @@ export type PlanEditorProps = {
   knownShipNames?: ReadonlySet<string>;
   /**
    * 読み込みが「セッションがない・期限切れ」（SessionExpiredError）で失敗したときに呼ぶ（省略なら、ほかの失敗と同じく理由を出す）。
-   * 同じ関数を渡し続けること（変わると読み込み直す）
+   * 関数が変わっても読み込み直さない（読み込みが失敗したときの最新の関数を呼ぶ）
    */
   onSessionExpired?: () => void;
 };
@@ -48,6 +48,11 @@ export function PlanEditor({ repository, knownShipNames, onSessionExpired }: Pla
   }));
   // 読み込みの通し番号（編集画面の key）
   const loadCountRef = useRef(0);
+  // セッション切れのときに呼ぶ関数（最新のものを持つ。読み込みの効果の依存に入れず、関数が変わっても読み込み直さない）
+  const onSessionExpiredRef = useRef(onSessionExpired);
+  useEffect(() => {
+    onSessionExpiredRef.current = onSessionExpired;
+  });
 
   useEffect(() => {
     // 画面を離れた後（または保管庫が替わった後）に届いた結果は捨てる
@@ -61,13 +66,13 @@ export function PlanEditor({ repository, knownShipNames, onSessionExpired }: Pla
       (error: unknown) => {
         if (!current) return;
         setState({ repository, load: { status: "error", message: errorMessage(error) } });
-        if (onSessionExpired !== undefined && isSessionExpiredError(error)) onSessionExpired();
+        if (isSessionExpiredError(error)) onSessionExpiredRef.current?.();
       },
     );
     return () => {
       current = false;
     };
-  }, [repository, onSessionExpired]);
+  }, [repository]);
 
   const view = state.repository === repository ? state.load : LOADING;
 

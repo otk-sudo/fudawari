@@ -1,9 +1,11 @@
+import { AuthApiError, type AuthError, AuthSessionMissingError } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DefinitionDoc } from "@/domain/definition-edit";
 import { parseDateTime } from "@/domain/definition-edit/datetime";
 import { resetSupabaseClient } from "@/lib/supabase";
 import { summer2026Definition } from "@/test/fixtures";
 import {
+  authNetworkError,
   clearSupabaseCalls,
   draftRow,
   eventRow,
@@ -22,6 +24,7 @@ import {
   stubSupabaseEnv,
   stubSupabaseEnvWithout,
 } from "@/test/supabase-fake";
+import { isSessionExpiredError } from "./repository-errors";
 import { createSupabaseDefinitionRepository } from "./supabase-repository";
 import { autumn2025Definition, makeDoc } from "./test-helpers";
 import type {
@@ -47,7 +50,7 @@ vi.mock("@supabase/supabase-js", async (importOriginal) => ({
 //     （版の日付は version_label「YYYY/MM/DD 版」から "YYYY-MM-DD"）。下書きを保存した人の表示名は profiles から（いなければ「不明」）
 //   - 未公開の新規イベント：管理者のときだけ。published_definitions に行がない events（最新以外）のうち最後に作ったもの
 //   - 編集できる人：profiles の全行（管理者を先に、追加した順。協力者画面の表と同じ並び）
-//   - 元にするイベントの候補：最新以外のイベント（新しい順）
+//   - 元にするイベントの候補：最新のイベントを含む既存のイベントすべて（新しい順。PR-11c で親が決定）
 // - 書き込みは RPC と 1 対 1：save_draft・publish_definition・create_event・update_event_meta
 // - 例外のコード（FD001〜FD011・42501 など）と通信の失敗は、画面に出す理由の文（日本語）を message に持つ Error にする
 //
@@ -60,7 +63,7 @@ vi.mock("@supabase/supabase-js", async (importOriginal) => ({
 //   （FD001「権限がありません」、FD003「最新のイベントでは…」、FD004「版が違…」、FD005「入力…」、FD009「見つかりません」、
 //   42501・PGRST301・状態コード 401「ログインし直してください」、状態コード 0・5xx・例外「通信に失敗しました」、
 //   セッションがない「ログインし直してください」、接続先の設定がない「設定がありません」）
-// - 元にするイベントの候補に最新のイベントを含めるかは、ここでは確かめない（親の指示は「最新以外」、モックは最新を含む。親が決める）
+// - 元にするイベントの候補は、最新のイベントも含める（新規作成から見ると最新のイベントも過去のイベント。PR-11c で親が決定）
 
 // ---- 人 ----
 
@@ -431,15 +434,16 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
       ]);
     });
 
-    it("元にするイベントの候補に、最新以外の過去のイベントを新しい順に（ID と名前）並べる", async () => {
+    it("元にするイベントの候補に、最新のイベントを含む既存のイベントすべてを新しい順に（ID と名前）並べる", async () => {
       // 準備
       const repository = createSupabaseDefinitionRepository();
 
       // 実行
       const data = await loadData(repository);
 
-      // 検証：最新のイベントを含めるかは親が決める（ここでは見ない）
-      expect(data.baseEventOptions.filter((option) => option.id !== SUMMER_ID)).toEqual([
+      // 検証：最新のイベント（2026夏イベ）も候補に含める（PR-11c で親が決定）
+      expect(data.baseEventOptions).toEqual([
+        { id: SUMMER_ID, name: "2026夏イベ" },
         { id: AUTUMN25_ID, name: "2025秋イベ" },
         { id: SPRING25_ID, name: "2025春イベ" },
       ]);
@@ -467,6 +471,40 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
       // 最新のイベントは変わらない
       expect(data.latestEvent?.id).toBe(SUMMER_ID);
     });
+
+    it.each<[string, readonly string[]]>([
+      ["先に作った方を先に入れた", [AUTUMN26_ID, WINTER26_ID]],
+      ["後に作った方を先に入れた", [WINTER26_ID, AUTUMN26_ID]],
+    ])(
+      "まだ公開していないイベントが同じ秒に 2 つ作られていても、作った日時の秒の小数で新しい方（2026冬イベ）を返す（%s。Codex 4301057828）",
+      async (_label, order) => {
+        // 準備：2026秋イベは 13:00:00.2、2026冬イベは 13:00:00.7 に作った（秒までは同じ）
+        seedServer(installFakeSupabaseAgain(), { unpublished: true });
+        const createdAt: Readonly<Record<string, string>> = {
+          [AUTUMN26_ID]: "2026-10-16T13:00:00.2+00:00",
+          [WINTER26_ID]: "2026-10-16T13:00:00.7+00:00",
+        };
+        const unpublishedRows = fake.server.events.filter((row) => Object.hasOwn(createdAt, row.id));
+        fake.server.events = [
+          ...fake.server.events.filter((row) => !Object.hasOwn(createdAt, row.id)),
+          ...order.map((id) => {
+            const row = unpublishedRows.find((r) => r.id === id);
+            if (row === undefined) throw new Error(`テスト用のイベント ${id} がありません`);
+            return { ...row, created_at: createdAt[id] ?? row.created_at };
+          }),
+        ];
+        await signInAs(fake, ADMIRAL);
+        const repository = createSupabaseDefinitionRepository();
+
+        // 実行
+        const data = await loadData(repository);
+
+        // 検証：日時の表示は秒の小数なしのまま
+        expect(data.unpublishedEvent?.id).toBe(WINTER26_ID);
+        expectInstant(data.unpublishedEvent?.startAt, "2027-01-15T11:00:00+09:00");
+        expectInstant(data.unpublishedEvent?.draft.updatedAt, "2026-10-16T23:00:00+09:00");
+      },
+    );
 
     it("協力者には、まだ公開していないイベントがあっても返さない（null。U18：未公開の新規イベントは管理者だけが編集する）", async () => {
       // 準備
@@ -565,6 +603,127 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
 
       // 実行・検証
       await expect(repository.load()).rejects.toThrow(/ログインし直してください/);
+    });
+  });
+
+  describe("セッション切れ（SessionExpiredError）の見分け方（PR-11c：P4・M2-7・M2-8）", () => {
+    /** load の失敗（成功したら検証の失敗にする） */
+    async function loadFailure(repository: DefinitionRepository): Promise<unknown> {
+      const outcome = await repository.load().then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      expect(outcome.ok, "load が失敗すること").toBe(false);
+      return outcome.ok ? undefined : outcome.error;
+    }
+
+    /** auth.getUser が error を返すようにする */
+    function failGetUser(error: AuthError): void {
+      fake.main.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error });
+    }
+
+    it.each<[string, () => AuthError]>([
+      ["AuthApiError 401", () => new AuthApiError("Unauthorized", 401, undefined)],
+      ["AuthApiError 403（bad_jwt）", () => new AuthApiError("invalid JWT", 403, "bad_jwt")],
+      ["AuthApiError 403（session_not_found）", () => new AuthApiError("Session not found", 403, "session_not_found")],
+      ["セッションがない（AuthSessionMissingError）", () => new AuthSessionMissingError()],
+    ])("auth.getUser が %s を返したら、SessionExpiredError で失敗し、イベントを読まない", async (_label, error) => {
+      // 準備
+      failGetUser(error());
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(isSessionExpiredError(failure)).toBe(true);
+      expect(readTables(fake)).not.toContain("events");
+    });
+
+    it.each<[string, () => AuthError]>([
+      ["届かなかった（AuthRetryableFetchError）", authNetworkError],
+      ["Auth のサーバーの障害（AuthApiError 500）", () => new AuthApiError("Internal Server Error", 500, "unexpected_failure")],
+      ["Auth のサーバーの障害（AuthApiError 503）", () => new AuthApiError("Service Unavailable", 503, undefined)],
+    ])("auth.getUser が %s を返したら、SessionExpiredError にせず「通信に失敗しました」で失敗する", async (_label, error) => {
+      // 準備
+      failGetUser(error());
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(isSessionExpiredError(failure)).toBe(false);
+      expect(String(failure)).toMatch(/通信に失敗しました/);
+    });
+
+    it("auth.getUser が回数の上限（AuthApiError 429）を返したら、SessionExpiredError にせず「しばらくしてから」やり直す失敗にする", async () => {
+      // 準備
+      failGetUser(new AuthApiError("Request rate limit reached", 429, "over_request_rate_limit"));
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(isSessionExpiredError(failure)).toBe(false);
+      expect(failure).toBeInstanceOf(Error);
+      expect(String(failure)).toMatch(/しばらくしてから/);
+    });
+
+    it("auth.getUser が例外を投げたら（fetch の失敗など）、SessionExpiredError にせず「通信に失敗しました」で失敗する", async () => {
+      // 準備
+      fake.main.auth.getUser.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(isSessionExpiredError(failure)).toBe(false);
+      expect(String(failure)).toMatch(/通信に失敗しました/);
+    });
+
+    it("表の読み取りが 42501（権限がない）で断られたら、SessionExpiredError にせず「権限がありません」で失敗する", async () => {
+      // 準備
+      failTable(fake, "events", postgrestFailure("42501", 403, "permission denied"));
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(isSessionExpiredError(failure)).toBe(false);
+      expect(String(failure)).toMatch(/権限がありません/);
+    });
+
+    it("下書きの保存が 42501（権限がない）で断られても、SessionExpiredError にしない", async () => {
+      // 準備
+      fake.main.rpc.mockResolvedValueOnce(postgrestFailure("42501", 403, "permission denied"));
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await repository.saveDraft(SAVE_INPUT).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      // 検証
+      expect(failure).toBeInstanceOf(Error);
+      expect(isSessionExpiredError(failure)).toBe(false);
+      expect(String(failure)).toMatch(/権限がありません/);
+    });
+
+    it.each<[string, () => FakeQueryResult]>([
+      ["PGRST301（JWT の期限切れ）", () => postgrestFailure("PGRST301", 401, "JWT expired")],
+      ["状態コード 401", () => postgrestFailure("", 401, "Unauthorized")],
+    ])("表の読み取りが %s で断られたら、SessionExpiredError で失敗する", async (_label, failure) => {
+      // 準備
+      failTable(fake, "events", failure());
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行・検証
+      expect(isSessionExpiredError(await loadFailure(repository))).toBe(true);
     });
   });
 

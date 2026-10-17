@@ -1,5 +1,5 @@
 // まだ DB（Supabase）に接続していない定義の保管庫（PR-11a の仮）。
-// どの関数も「まだ DB に接続していません」という理由で失敗する。PR-11b で Supabase の RPC を使う保管庫に差し替える。
+// どの関数も「まだ DB に接続していません」という理由で失敗する。PR-11b で画面は Supabase の保管庫（lazy-repository.ts）に替えたため、いまはどこからも使っていない。
 import type { DefinitionRepository } from "./types";
 
 const NOT_CONNECTED = "まだ DB に接続していません";
