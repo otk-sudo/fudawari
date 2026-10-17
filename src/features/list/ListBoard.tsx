@@ -116,8 +116,8 @@ function Timeline({ areas }: { areas: readonly TimelineArea[] }): ReactNode {
                   >
                     <span className={styles.stepStage}>{stage.name}</span>
                     <span className={styles.stepFuda}>{fuda?.name ?? stage.fudaId}</span>
-                    {/* 特効グループのない段階（数える特効がない）には出さない */}
-                    {stage.boosts.length > 0 && <span className={styles.stepBoost}>特効 {boostedCount}隻</span>}
+                    {/* 全段階に出す（特効グループのない段階や、特効のある艦がいない段階は「特効 0隻」） */}
+                    <span className={styles.stepBoost}>特効 {boostedCount}隻</span>
                     {stage.importance === "hard" && <span className={styles.hard}>難所</span>}
                   </li>
                 );

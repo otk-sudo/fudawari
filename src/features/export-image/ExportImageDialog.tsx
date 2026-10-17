@@ -18,7 +18,15 @@ import type { OwnedShip } from "@/domain/ship/types";
 import { ExportImage } from "./ExportImage";
 import { IMAGE_WIDTH } from "./image-layout";
 import { exportImageFileName, splitIntoImagePages } from "./pages";
-import { canCopyImage, copyPng, downloadPng, reasonOf, renderPng, waitForImageFonts } from "./png";
+import {
+  canCopyImage,
+  copyPng,
+  downloadPng,
+  ExportCancelledError,
+  reasonOf,
+  renderPng,
+  waitForImageFonts,
+} from "./png";
 import styles from "./ExportImageDialog.module.css";
 
 /** 画像で保存のウィンドウ（ExportImageDialog）に渡すもの */
@@ -192,12 +200,20 @@ function ExportImageBody({
     setError(null);
   };
 
-  /** 何枚目か（0 から）の画像を PNG にする（フォントの読み込みを待ってから） */
+  /**
+   * 何枚目か（0 から）の画像を PNG にする（フォントの読み込みを待ってから）。
+   * 途中でウィンドウを閉じたら ExportCancelledError で打ち切る（保存・コピーに渡さない）
+   */
   const makePng = async (index: number): Promise<Blob> => {
     const node = captureRefs.current[index];
     if (node === null || node === undefined) throw new Error("画像の元が見つかりません");
     await waitForImageFonts(node.textContent ?? "");
-    return renderPng(node);
+    // フォントを待っている間に閉じていたら、作らずにやめる
+    if (!aliveRef.current) throw new ExportCancelledError();
+    const blob = await renderPng(node);
+    // 作っている間に閉じていたら渡さない（コピーでは ClipboardItem に渡した Promise が失敗になり、書き込まれない）
+    if (!aliveRef.current) throw new ExportCancelledError();
+    return blob;
   };
 
   const save = async (): Promise<void> => {
@@ -217,30 +233,34 @@ function ExportImageBody({
     }
   };
 
-  const copy = async (): Promise<void> => {
+  /**
+   * 選んだ画像をコピーする。Safari はクリックの処理の中で同期的に write を呼ばないとコピーを断るため、
+   * PNG のできあがりを待たずに write を呼び、PNG は ClipboardItem に Promise で渡す（フォントを待ってから作る順は同じ）。
+   * 知らせ（コピーした・失敗した）は、write と PNG の作成の両方が終わってから出す
+   */
+  const copy = (): void => {
     if (busy !== null || nothingChosen || !canCopy) return;
     const index = selectedCopyIndex;
     setBusy("copy");
     resetNotice();
-    let blob: Blob;
+    const png = makePng(index);
+    let writing: Promise<void>;
     try {
-      blob = await makePng(index);
+      writing = copyPng(png);
     } catch (cause) {
-      if (aliveRef.current) {
-        setError(`画像を作れませんでした（${reasonOf(cause)}）`);
-        setBusy(null);
+      writing = Promise.reject(cause);
+    }
+    void Promise.allSettled([png, writing]).then(([made, written]) => {
+      if (!aliveRef.current) return;
+      if (made.status === "rejected") {
+        setError(`画像を作れませんでした（${reasonOf(made.reason)}）`);
+      } else if (written.status === "rejected") {
+        setError(`コピーできませんでした（${reasonOf(written.reason)}）`);
+      } else {
+        setCopiedIndex(index);
       }
-      return;
-    }
-    if (!aliveRef.current) return;
-    try {
-      await copyPng(blob);
-      if (aliveRef.current) setCopiedIndex(index);
-    } catch (cause) {
-      if (aliveRef.current) setError(`コピーできませんでした（${reasonOf(cause)}）`);
-    } finally {
-      if (aliveRef.current) setBusy(null);
-    }
+      setBusy(null);
+    });
   };
 
   const status =
@@ -407,7 +427,7 @@ function ExportImageBody({
               type="button"
               className={styles.copy}
               disabled={nothingChosen || controlsDisabled}
-              onClick={() => void copy()}
+              onClick={copy}
             >
               {copiedIndex !== null ? "コピーしました ✓" : "画像をコピー"}
             </button>

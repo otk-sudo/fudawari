@@ -389,4 +389,131 @@ describe("一覧の画面（/list）", () => {
       expect(node.textContent).toContain("時雨改二");
     });
   });
+
+  describe("「画像で保存」を押せるとき（読み込み中・未取り込み・失敗のときは押せない）", () => {
+    /** ヘッダーの「画像で保存」 */
+    function exportButton(): HTMLElement {
+      return within(getHeader()).getByRole("button", { name: "画像で保存" });
+    }
+
+    it("公開定義の読み込み中は押せない", async () => {
+      // 準備：公開定義の応答を待たせる
+      await seedPlan(storage);
+      const held = holdStaticFile();
+      respondToPaths(fetchMock, { ...listFileResponders(), [LATEST_DEFINITION_PATH]: held.responder });
+
+      // 実行
+      renderListPage();
+      await waitFor(() => expect(requestedPaths(fetchMock)).toContain(LATEST_DEFINITION_PATH));
+
+      // 検証
+      expect(exportButton()).toBeDisabled();
+    });
+
+    it("札割りのデータの読み込み中は押せない", async () => {
+      // 準備
+      await seedPlan(storage);
+      const held = holdPlanLoading(storage);
+      resetPlanDataCache({ storage: held.storage });
+
+      // 実行
+      renderListPage();
+      await waitFor(() => expect(held.wasRequested()).toBe(true));
+
+      // 検証
+      expect(exportButton()).toBeDisabled();
+    });
+
+    it("艦船マスタの読み込み中は押せない", async () => {
+      // 準備
+      await seedPlan(storage);
+      const held = holdStaticFile();
+      respondToPaths(fetchMock, { ...listFileResponders(), [SHIP_MASTER_PATH]: held.responder });
+
+      // 実行
+      renderListPage();
+      await waitFor(() => expect(requestedPaths(fetchMock)).toContain(SHIP_MASTER_PATH));
+
+      // 検証
+      expect(exportButton()).toBeDisabled();
+    });
+
+    it("艦娘を取り込んでいなければ押せない", async () => {
+      // 準備・実行
+      renderListPage();
+      await screen.findByText(NOT_IMPORTED);
+
+      // 検証
+      expect(exportButton()).toBeDisabled();
+    });
+
+    it.each<[string, () => Promise<void>]>([
+      [
+        "公開定義",
+        async () => {
+          await seedPlan(storage);
+          respondToPaths(fetchMock, { [SHIP_MASTER_PATH]: listFileResponders()[SHIP_MASTER_PATH] });
+        },
+      ],
+      [
+        "艦船マスタ",
+        async () => {
+          await seedPlan(storage);
+          respondToPaths(fetchMock, { [LATEST_DEFINITION_PATH]: listFileResponders()[LATEST_DEFINITION_PATH] });
+        },
+      ],
+      [
+        "ブラウザ内の保存",
+        async () => {
+          resetPlanDataCache({ storage: failingStorage() });
+        },
+      ],
+    ])("%s を読み込めなければ押せない", async (_label, arrange) => {
+      // 準備
+      await arrange();
+
+      // 実行
+      renderListPage();
+      await screen.findByRole("alert");
+
+      // 検証
+      expect(exportButton()).toBeDisabled();
+    });
+
+    it("すべて読めたら押せる", async () => {
+      // 準備
+      await seedPlan(storage);
+
+      // 実行
+      renderListPage();
+      await waitForBoard();
+
+      // 検証
+      expect(exportButton()).toBeEnabled();
+    });
+  });
+
+  describe("ヘッダーの「最終取り込み」（割り当ての更新日時の代わり）", () => {
+    it("最後に取り込んだ日時を「最終取り込み M/D HH:mm」で出す", async () => {
+      // 準備：時差のない日時（端末の時刻帯の 10/15 21:40）で取り込んでおく
+      await storage.saveImport(importInput(summer2026Ships, { importedAt: "2026-10-15T21:40:00" }));
+      await storage.saveAssignments(EVENT_ID, summer2026Assignments);
+
+      // 実行
+      renderListPage();
+      await waitForBoard();
+
+      // 検証
+      expect(within(getHeader()).getByText(/^最終取り込み/)).toHaveTextContent(/^最終取り込み 10\/15 21:40$/);
+    });
+
+    it("取り込んでいなければ「最終取り込み」を出さない", async () => {
+      // 準備・実行
+      renderListPage();
+      await screen.findByText(NOT_IMPORTED);
+
+      // 検証
+      expect(within(getHeader()).queryByText(/^最終取り込み/)).not.toBeInTheDocument();
+    });
+  });
 });

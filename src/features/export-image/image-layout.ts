@@ -31,11 +31,22 @@ const COLUMN_HEAD_HEIGHT = 54;
 /** 艦 1 隻の行の高さ（.ship・.more） */
 export const SHIP_ROW_HEIGHT = 42;
 
+/**
+ * 段階を 2 行（札名 17px・段階名 12px。行の高さ 1.15）で書くのに要る海域の行の高さ。
+ * これより低いとき（海域が 7 つ以上）は、札名と段階名を 1 行に並べて小さくする（.compact）
+ */
+const TWO_LINE_STEP_MIN_HEIGHT = 34;
+
 /** 海域の行の高さ（海域が多いときは低くして、札の列の高さを残す） */
 export function areaRowHeight(areaCount: number): number {
   if (areaCount <= 0) return AREA_ROW_MAX_HEIGHT;
   const fitted = Math.floor((AREA_ROWS_MAX_TOTAL - AREA_ROW_GAP * (areaCount - 1)) / areaCount);
   return Math.max(AREA_ROW_MIN_HEIGHT, Math.min(AREA_ROW_MAX_HEIGHT, fitted));
+}
+
+/** 攻略の流れを詰めて書くか（海域の行が低くて、段階を 2 行で書けないとき） */
+export function isCompactTimeline(areaCount: number): boolean {
+  return areaRowHeight(areaCount) < TWO_LINE_STEP_MIN_HEIGHT;
 }
 
 /** 攻略の流れ全体の高さ（上の余白を含む。海域がなければ 0） */

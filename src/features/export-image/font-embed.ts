@@ -147,7 +147,9 @@ function fontDataUrl(url: string): Promise<string> {
 
 /**
  * 画像に埋め込むフォントの CSS（families の名前の @font-face のうち、text の文字を含む範囲のものだけ。
- * フォントのファイルは data URL にする）。当てはまる @font-face がなければ null（modern-screenshot の既定の埋め込みに任せる）
+ * フォントのファイルは data URL にする）。
+ * - 当てはまる @font-face がなければ null（modern-screenshot の既定の埋め込みに任せる）
+ * - 取得できなかったファイルの分は入れない（取得できた分だけで描く）。1 つも取得できなければ空の文字列
  */
 export async function embeddedFontCss(families: readonly string[], text: string): Promise<string | null> {
   const wanted = new Set(families);
@@ -160,12 +162,14 @@ export async function embeddedFontCss(families: readonly string[], text: string)
   });
   if (rules.length === 0) return null;
 
-  const blocks = await Promise.all(
+  const results = await Promise.allSettled(
     rules.map(async (rule) => {
       const rawUrl = firstUrlOf(rule.style.getPropertyValue("src")) ?? "";
       const absoluteUrl = new URL(rawUrl, rule.parentStyleSheet?.href ?? document.baseURI).href;
       return fontFaceCss(rule, await fontDataUrl(absoluteUrl));
     }),
   );
-  return blocks.join("\n");
+  return results
+    .flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
+    .join("\n");
 }

@@ -7,7 +7,7 @@ import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip } from "@/domain/ship/types";
 import { buildFudaViews, buildTimeline, type FudaView, inkOn } from "@/features/list/list-view";
 import { APP_NAME } from "@/lib/app-name";
-import { areaRowHeight, fitShipsInColumn, shipRowCapacity } from "./image-layout";
+import { areaRowHeight, fitShipsInColumn, isCompactTimeline, shipRowCapacity } from "./image-layout";
 import styles from "./ExportImage.module.css";
 
 /** 出力する画像 1 枚（ExportImage）に渡すもの */
@@ -72,6 +72,8 @@ export function ExportImage({
     return view === undefined ? [] : [view];
   });
   const rowHeight = areaRowHeight(definition.areas.length);
+  // 海域が多くて行が低いときは、段階の札名と段階名を 1 行に並べて小さくする（文字が切れないように）
+  const compact = isCompactTimeline(definition.areas.length);
   const capacity = shipRowCapacity(definition.areas.length);
 
   return (
@@ -87,7 +89,7 @@ export function ExportImage({
         )}
       </div>
 
-      <div className={styles.timeline}>
+      <div className={compact ? `${styles.timeline} ${styles.compact}` : styles.timeline}>
         {timeline.map(({ area, steps }, areaIndex) => {
           const labelId = `${baseId}-area-${areaIndex}`;
           return (

@@ -480,9 +480,8 @@ describe("画像で保存のウィンドウ（ExportImageDialog）", () => {
       await user.click(await within(dialog).findByRole("button", { name: "画像をコピー" }));
       await settle();
 
-      // 検証
+      // 検証（write はクリックの中で呼んでよい：Safari はユーザー操作の中で同期的に write を呼ぶ必要があるため）
       expect(domToBlobMock).not.toHaveBeenCalled();
-      expect(clipboard.write).not.toHaveBeenCalled();
 
       // 実行・検証
       fonts.resolveReady();
@@ -582,6 +581,181 @@ describe("画像で保存のウィンドウ（ExportImageDialog）", () => {
       // 実行・検証：閉じると戻る
       await user.click(within(dialog).getByRole("button", { name: "やめる" }));
       expect(screen.getByRole("button", { name: "後ろの画面のボタン" })).toBeInTheDocument();
+    });
+  });
+
+  describe("Safari でもコピーできる形（クリックの中で write を呼ぶ）", () => {
+    it("クリックの処理の中で write を呼び、ClipboardItem に PNG の Promise を渡す（PNG はフォントを待ってから作る。知らせは PNG ができてから）", async () => {
+      // 準備：document.fonts.ready を終わらせない
+      fonts = installDocumentFonts({ holdReady: true });
+      const { user, clipboard, dialog } = renderDialog();
+
+      // 実行
+      await user.click(await within(dialog).findByRole("button", { name: "画像をコピー" }));
+
+      // 検証：write はもう呼んでいるが、PNG はまだ作っていない。知らせもまだ出さない
+      expect(clipboard.write).toHaveBeenCalledTimes(1);
+      const item = clipboard.write.mock.calls[0][0][0] as FakeClipboardItem;
+      expect(item.types).toEqual(["image/png"]);
+      await settle();
+      expect(domToBlobMock).not.toHaveBeenCalled();
+      expect(within(dialog).queryByRole("button", { name: "コピーしました ✓" })).not.toBeInTheDocument();
+
+      // 実行・検証：フォントを読み終えると PNG を作り、ClipboardItem の Promise がその PNG になる
+      fonts.resolveReady();
+      expect(await item.items["image/png"]).toBe(captures[0].blob);
+      expect(await within(dialog).findByRole("button", { name: "コピーしました ✓" })).toBeInTheDocument();
+    });
+  });
+
+  describe("フォントの読み込みの失敗（画像の作成は止めない）", () => {
+    afterEach(() => {
+      document.documentElement.style.removeProperty("--font-noto-sans-jp");
+    });
+
+    it("フォントの CSS 変数に代わりのフォント（Noto Sans JP Fallback）があり、その読み込みが失敗する端末でも保存できる（読み込むのは先頭の Noto Sans JP だけ）", async () => {
+      // 準備：next/font の CSS 変数と同じ形。代わりのフォント（src: local(Arial)）は Arial のない端末では必ず失敗する
+      document.documentElement.style.setProperty("--font-noto-sans-jp", "'Noto Sans JP', 'Noto Sans JP Fallback'");
+      fonts.load.mockImplementation(async (font: string) => {
+        if (font.includes("Fallback")) throw new DOMException("A network error occurred.", "NetworkError");
+        return [];
+      });
+      const { user, dialog } = renderDialog();
+
+      // 実行
+      await user.click(saveButton(dialog));
+
+      // 検証
+      await waitFor(() => expect(recorder.downloads).toHaveLength(1));
+      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+      expect(loadedTextFor(fonts, "Noto Sans JP")).not.toBe("");
+      expect(fonts.load.mock.calls.some(([font]) => font.includes("Fallback"))).toBe(false);
+    });
+
+    it("Noto Sans JP の読み込みが失敗しても、警告を出さずに保存する（読み込めたフォントと端末のフォントで描く）", async () => {
+      // 準備
+      fonts.load.mockRejectedValue(new DOMException("A network error occurred.", "NetworkError"));
+      const { user, dialog } = renderDialog();
+
+      // 実行
+      await user.click(saveButton(dialog));
+
+      // 検証
+      await waitFor(() => expect(recorder.downloads).toHaveLength(1));
+      expect(domToBlobMock).toHaveBeenCalledTimes(1);
+      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("PNG の作成・コピーの失敗", () => {
+    it("保存で PNG を作れなければ、警告に「画像を作れませんでした」と理由を出し、保存しない（ボタンはまた押せる）", async () => {
+      // 準備
+      domToBlobMock.mockRejectedValueOnce(new Error("描画に失敗しました"));
+      const { user, dialog } = renderDialog();
+
+      // 実行
+      await user.click(saveButton(dialog));
+
+      // 検証
+      const alert = await within(dialog).findByRole("alert");
+      expect(alert).toHaveTextContent("画像を作れませんでした");
+      expect(alert).toHaveTextContent("描画に失敗しました");
+      expect(recorder.downloads).toHaveLength(0);
+      expect(saveButton(dialog)).toBeEnabled();
+    });
+
+    it("コピーで PNG を作れなければ、警告に「画像を作れませんでした」と理由を出し、「コピーしました」と知らせない", async () => {
+      // 準備
+      domToBlobMock.mockRejectedValueOnce(new Error("描画に失敗しました"));
+      const { user, dialog } = renderDialog();
+
+      // 実行
+      await user.click(await within(dialog).findByRole("button", { name: "画像をコピー" }));
+
+      // 検証
+      const alert = await within(dialog).findByRole("alert");
+      expect(alert).toHaveTextContent("画像を作れませんでした");
+      expect(alert).toHaveTextContent("描画に失敗しました");
+      expect(within(dialog).queryByRole("button", { name: "コピーしました ✓" })).not.toBeInTheDocument();
+      expect(within(dialog).getAllByRole("status").some((status) => status.textContent?.includes(COPIED_MESSAGE))).toBe(
+        false,
+      );
+    });
+
+    it("クリップボードに書き込めなければ、警告に「コピーできませんでした」と理由を出す", async () => {
+      // 準備
+      const { user, clipboard, dialog } = renderDialog();
+      clipboard.write.mockRejectedValueOnce(new DOMException("書き込みが拒否されました", "NotAllowedError"));
+
+      // 実行
+      await user.click(await within(dialog).findByRole("button", { name: "画像をコピー" }));
+
+      // 検証
+      const alert = await within(dialog).findByRole("alert");
+      expect(alert).toHaveTextContent("コピーできませんでした");
+      expect(alert).toHaveTextContent("書き込みが拒否されました");
+      expect(within(dialog).queryByRole("button", { name: "コピーしました ✓" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("作っている途中", () => {
+    it("PNG を作っている間は「画像を作っています…」と知らせ、保存とコピーを押せない。できたら戻る", async () => {
+      // 準備
+      fonts = installDocumentFonts({ holdReady: true });
+      const { user, dialog } = renderDialog();
+      const copy = await within(dialog).findByRole("button", { name: "画像をコピー" });
+
+      // 実行
+      await user.click(saveButton(dialog));
+
+      // 検証
+      expect(within(dialog).getAllByRole("status").some((status) => status.textContent?.includes("画像を作っています…"))).toBe(
+        true,
+      );
+      expect(saveButton(dialog)).toBeDisabled();
+      expect(copy).toBeDisabled();
+
+      // 実行・検証：できたら押せるようになる
+      fonts.resolveReady();
+      await waitFor(() => expect(recorder.downloads).toHaveLength(1));
+      await waitFor(() => expect(saveButton(dialog)).toBeEnabled());
+      expect(copy).toBeEnabled();
+      expect(within(dialog).getAllByRole("status").some((status) => status.textContent?.includes("画像を作っています…"))).toBe(
+        false,
+      );
+    });
+
+    it("保存の途中でウィンドウを閉じたら、PNG を作らず保存もしない", async () => {
+      // 準備
+      fonts = installDocumentFonts({ holdReady: true });
+      const { user, dialog } = renderDialog();
+      await user.click(saveButton(dialog));
+
+      // 実行：フォントを待っている間に閉じ、その後で読み込みが終わる
+      await user.click(within(dialog).getByRole("button", { name: "やめる" }));
+      fonts.resolveReady();
+      await settle();
+
+      // 検証
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(domToBlobMock).not.toHaveBeenCalled();
+      expect(recorder.downloads).toHaveLength(0);
+    });
+
+    it("コピーの途中でウィンドウを閉じたら、ClipboardItem に渡した PNG の Promise を失敗にして書き込ませない（PNG も作らない）", async () => {
+      // 準備
+      fonts = installDocumentFonts({ holdReady: true });
+      const { user, clipboard, dialog } = renderDialog();
+      await user.click(await within(dialog).findByRole("button", { name: "画像をコピー" }));
+      const item = clipboard.write.mock.calls[0][0][0] as FakeClipboardItem;
+
+      // 実行：フォントを待っている間に閉じ、その後で読み込みが終わる
+      await user.click(within(dialog).getByRole("button", { name: "やめる" }));
+      fonts.resolveReady();
+
+      // 検証
+      await expect(item.getType("image/png")).rejects.toThrow();
+      expect(domToBlobMock).not.toHaveBeenCalled();
     });
   });
 });

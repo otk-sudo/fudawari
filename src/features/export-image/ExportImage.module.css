@@ -57,14 +57,20 @@
   border-bottom: 4px solid var(--export-image-accent);
 }
 
+/* イベント名が長いときは、ここだけを縮めて省略記号で切る（「札割り」と「n / m」をはみ出させない） */
 .eventName {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-size: 44px;
   font-weight: 800;
   letter-spacing: 0.02em;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .title {
+  flex: 0 0 auto;
   font-size: 26px;
   font-weight: 700;
   color: var(--export-image-accent);
@@ -72,7 +78,9 @@
 }
 
 .pageLabel {
-  font-family: Consolas, monospace;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-family: Consolas, var(--font-family); /* 数字・英字は Consolas、「運」などは日本語フォント */
   font-size: 26px;
   font-weight: 700;
   color: var(--export-image-muted);
@@ -102,7 +110,7 @@
   display: flex;
   flex: 0 0 52px;
   align-items: center;
-  font-family: Consolas, monospace;
+  font-family: Consolas, var(--font-family); /* 数字・英字は Consolas、「運」などは日本語フォント */
   font-size: 24px;
   font-weight: 800;
 }
@@ -144,6 +152,34 @@
   font-weight: 500;
   text-overflow: ellipsis;
   opacity: 0.8;
+}
+
+/*
+ * 海域が多くて行が低いとき（image-layout.ts の isCompactTimeline）：
+ * 札名と段階名を 1 行に並べて小さくし、海域名も小さくする（2 行のままだと文字が切れるため）
+ */
+.compact .areaName {
+  font-size: 18px;
+}
+
+.compact .step {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.compact .stepFuda {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.compact .stepStage {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
 }
 
 /* ---- 札の列（上の余白 18px。列の数は style で入れる） ---- */
@@ -227,7 +263,7 @@
 .shipStats {
   display: flex;
   flex-direction: column;
-  font-family: Consolas, monospace;
+  font-family: Consolas, var(--font-family); /* 数字・英字は Consolas、「運」などは日本語フォント */
   font-size: 14px;
   line-height: 1.15;
   color: var(--export-image-stats);

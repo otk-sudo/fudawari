@@ -121,6 +121,13 @@ test.describe("一覧と画像で保存", () => {
 
     // 検証：一般の画面なので Supabase には通信しない
     expect(requestedUrls.filter((url) => new URL(url).hostname.includes("supabase"))).toEqual([]);
+
+    // 検証：同じオリジン以外には通信しない（日本語フォントも自前で配信し、画像に埋め込むフォントも同じオリジンから取る。
+    // Google Fonts〔fonts.googleapis.com・fonts.gstatic.com〕にも通信しない）。data: と blob: の URL は通信ではないので見ない
+    const appOrigin = new URL(page.url()).origin;
+    const httpUrls = requestedUrls.filter((url) => /^https?:$/.test(new URL(url).protocol));
+    expect(httpUrls.filter((url) => new URL(url).origin !== appOrigin)).toEqual([]);
+    expect(requestedUrls.filter((url) => /fonts\.(googleapis|gstatic)\.com/.test(url))).toEqual([]);
   });
 
   test("Clipboard API に対応したブラウザ（Chromium）では、画像で保存のウィンドウに「画像をコピー」を出す", async ({ page }) => {
