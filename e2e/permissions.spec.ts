@@ -16,6 +16,7 @@ import {
   SUMMER_ENDED_AT,
   SUMMER_EVENT_ID,
   SUMMER_EVENT_NAME,
+  summerDoc,
 } from "../src/test/permissions-e2e";
 import type { PublicDefinition } from "../src/domain/definition/types";
 import { summer2026Definition } from "../src/test/fixtures";
@@ -306,10 +307,14 @@ async function editFudaStageImportanceAndBoost(page: Page): Promise<void> {
   await expect(group.getByRole("list", { name: "艦名" })).toContainText(NEW_SHIP);
 }
 
-/** 送った文書に、editFudaStageImportanceAndBoost の編集がそのまま入り、元の札・段階は変わっていないことを確かめる */
+/**
+ * 送った文書に、editFudaStageImportanceAndBoost の編集がそのまま入り、元の札・段階は変わっていないことを確かめる。
+ * 札・段階以外（schemaVersion・event・areas）は、開いたときの下書き（開催中の 2026夏イベ）から変わっていない
+ */
 function expectEditedContent(content: unknown): void {
   const doc = content as PublicDefinition;
-  const original = JSON.parse(JSON.stringify(summer2026Definition)) as PublicDefinition;
+  const original = summerDoc(null);
+  expect({ ...doc, fudas: original.fudas, stages: original.stages }).toEqual(original);
   const fuda = doc.fudas.find((f) => f.name === NEW_FUDA);
   expect(fuda).toBeDefined();
   expect(doc.fudas.filter((f) => f.name !== NEW_FUDA)).toEqual(original.fudas);
@@ -511,6 +516,27 @@ test.describe("協力者（ログイン済み）", () => {
     expect(fake.unexpected).toEqual([]);
   });
 
+  test("【定義画面から一般の画面へ（要件 2.2）】定義画面から左メニューで一覧へ移り、開き直しても管理メニュー（定義）が残る", async ({
+    page,
+  }) => {
+    // 準備
+    const fake = await prepareSignedIn(page, COLLAB);
+    await openDefinition(page, COLLAB);
+    await expectSideNav(page, ["定義"]);
+
+    // 実行
+    await sideNav(page).getByRole("link", { name: "一覧", exact: true }).click();
+
+    // 検証：一般の画面に移っても管理メニューを出し続け、開き直しても残る
+    await expect(page).toHaveURL("/list");
+    await expectGeneralScreen(page, "札割り一覧");
+    await expectSideNav(page, ["定義"]);
+    await page.reload();
+    await expectGeneralScreen(page, "札割り一覧");
+    await expectSideNav(page, ["定義"]);
+    expect(fake.unexpected).toEqual([]);
+  });
+
   test("【札・段階・大事さ・特効を編集し、下書きを保存する：○】札・段階・大事さ・特効を編集して「下書きを保存」すると、その内容で save_draft を開いたときの版で呼ぶ", async ({
     page,
   }) => {
@@ -679,6 +705,8 @@ test.describe("協力者（ログイン済み）", () => {
     await expect(page.getByRole("table")).toHaveCount(0);
     await page.waitForLoadState("networkidle");
     expect(fake.requests).toEqual([]);
+    expect(fake.realtimeConnections).toEqual([]);
+    expect(fake.unexpected).toEqual([]);
   });
 });
 
@@ -750,6 +778,27 @@ test.describe("管理者（ログイン済み）", () => {
     expect(fake.rpcCallsNamed("publish_definition").map((call) => call.args)).toEqual([
       { p_event_id: SUMMER_EVENT_ID, p_base_version: SUMMER_DRAFT_VERSION + 1, p_make_latest: false },
     ]);
+    expect(fake.unexpected).toEqual([]);
+  });
+
+  test("【定義画面から一般の画面へ（要件 2.2）】定義画面から左メニューで一覧へ移り、開き直しても管理メニュー（定義・協力者）が残る", async ({
+    page,
+  }) => {
+    // 準備
+    const fake = await prepareSignedIn(page, ADMIN);
+    await openDefinition(page, ADMIN);
+    await expectSideNav(page, ["定義", "協力者"]);
+
+    // 実行
+    await sideNav(page).getByRole("link", { name: "一覧", exact: true }).click();
+
+    // 検証：一般の画面に移っても管理メニューを出し続け、開き直しても残る
+    await expect(page).toHaveURL("/list");
+    await expectGeneralScreen(page, "札割り一覧");
+    await expectSideNav(page, ["定義", "協力者"]);
+    await page.reload();
+    await expectGeneralScreen(page, "札割り一覧");
+    await expectSideNav(page, ["定義", "協力者"]);
     expect(fake.unexpected).toEqual([]);
   });
 

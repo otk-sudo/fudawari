@@ -88,8 +88,8 @@ function cloneDoc(doc: PublicDefinition): PublicDefinition {
   return JSON.parse(JSON.stringify(doc)) as PublicDefinition;
 }
 
-/** 2026夏イベの文書（下書き・公開版の content） */
-function summerDoc(endsAtJst: string | null): PublicDefinition {
+/** 2026夏イベの文書（下書き・公開版の content。終了日時は日本時間の時差つき、未定は null） */
+export function summerDoc(endsAtJst: string | null): PublicDefinition {
   const doc = cloneDoc(summer2026Definition);
   return { ...doc, event: { ...doc.event, id: SUMMER_EVENT_ID, endAt: endsAtJst } };
 }
@@ -137,6 +137,7 @@ export const SAVE_LOGS = [
     id: 1,
     event_id: SPRING_EVENT_ID,
     created_at: "2026-04-28T03:00:00+00:00",
+    user_id: ADMIN.userId,
     user_name: ADMIN.displayName,
     kind: "publish",
     map_label: null,
@@ -146,6 +147,7 @@ export const SAVE_LOGS = [
     id: 2,
     event_id: SUMMER_EVENT_ID,
     created_at: "2026-08-03T12:00:00+00:00",
+    user_id: ADMIN.userId,
     user_name: ADMIN.displayName,
     kind: "save",
     map_label: "E1",
@@ -155,6 +157,7 @@ export const SAVE_LOGS = [
     id: 3,
     event_id: SUMMER_EVENT_ID,
     created_at: "2026-08-04T03:00:00+00:00",
+    user_id: ADMIN.userId,
     user_name: ADMIN.displayName,
     kind: "publish",
     map_label: null,
@@ -164,6 +167,7 @@ export const SAVE_LOGS = [
     id: 4,
     event_id: SUMMER_EVENT_ID,
     created_at: "2026-10-15T13:40:00+00:00",
+    user_id: COLLAB.userId,
     user_name: COLLAB.displayName,
     kind: "save",
     map_label: "E2",
@@ -243,8 +247,19 @@ function initialTables(options: FakeSupabaseOptions): Record<string, Row[]> {
   };
 }
 
-/** PostgREST の問い合わせ文字列のうち、絞り込みでないもの（offset は答え方を作っていないので含めない＝知らない絞り込みとして失敗させる） */
-const NON_FILTER_PARAMS = new Set(["select", "order", "limit"]);
+/** PostgREST の問い合わせ文字列のうち、絞り込みでないもの（これ以外は絞り込みとして読み、eq.・in.() 以外は失敗させる） */
+const NON_FILTER_PARAMS = new Set(["select", "order", "limit", "offset"]);
+
+/** 件数の指定（offset・limit）を 0 以上の整数として読む。なければ null、読めなければ失敗させる */
+function countParam(params: URLSearchParams, name: "offset" | "limit"): number | null {
+  const text = params.get(name);
+  if (text === null) return null;
+  const value = Number(text);
+  if (!/^[0-9]+$/.test(text) || !Number.isSafeInteger(value)) {
+    throw new Error(`偽物の PostgREST が読めない件数の指定です：${name}=${text}`);
+  }
+  return value;
+}
 
 /** 絞り込み（eq.・in.()）を 1 つ当てる */
 function matchesFilter(row: Row, column: string, expression: string): boolean {
@@ -290,11 +305,17 @@ function selectRows(rows: readonly Row[], params: URLSearchParams): Row[] {
       return 0;
     });
   }
-  const limit = params.get("limit");
-  if (limit !== null) result = result.slice(0, Number(limit));
+  // range(from, to) は offset=from&limit=(to-from+1) になる。先に offset 件を飛ばしてから limit 件で切る
+  const offset = countParam(params, "offset");
+  if (offset !== null) result = result.slice(offset);
+  const limit = countParam(params, "limit");
+  if (limit !== null) result = result.slice(0, limit);
   if (select !== null && select !== "*") {
     const columns = select.split(",").map((column) => column.trim());
-    result = result.map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? null])));
+    // 表にない列を頼まれたら、黙って null を返さず失敗させる（画面が読む列が増えたことに気づけるように）
+    const missing = columns.filter((column) => result.some((row) => !Object.hasOwn(row, column)));
+    if (missing.length > 0) throw new Error(`偽物の PostgREST の表にない列です：${missing.join(", ")}`);
+    result = result.map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])));
   }
   return result;
 }
