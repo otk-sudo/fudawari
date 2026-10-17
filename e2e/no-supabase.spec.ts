@@ -1,30 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
+import { isSupabaseUrl } from "../src/test/supabase-request-e2e";
 
 // 一般の画面は Supabase に通信しない（CLAUDE.md、roadmap T3-4 の受入条件）
 // ログインしていない状態で一般の画面を開き、左メニューで移り、設定を開いても、Supabase の API への通信（HTTP・WebSocket）がないことを確かめる。
-// 接続先の URL はビルドのときの環境変数（NEXT_PUBLIC_SUPABASE_URL）で決まり、入っていないこともあるため、
-// 次のどれかに当たる通信を「Supabase への通信」とみなす
-// - 環境変数 NEXT_PUBLIC_SUPABASE_URL（あれば）で始まる
-// - ホスト名が supabase.co・supabase.in・supabase.net で終わる
-// - パスが Supabase の API（/auth/v1/・/rest/v1/・/realtime/v1/・/storage/v1/・/functions/v1/）で始まる
-
-const SUPABASE_API_PATHS = ["/auth/v1/", "/rest/v1/", "/realtime/v1/", "/storage/v1/", "/functions/v1/"];
-const SUPABASE_HOST_SUFFIXES = [".supabase.co", ".supabase.in", ".supabase.net"];
-
-function isSupabaseUrl(url: string): boolean {
-  const configured = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (configured !== undefined && configured !== "" && url.startsWith(configured)) return true;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  return (
-    SUPABASE_HOST_SUFFIXES.some((suffix) => parsed.hostname.endsWith(suffix)) ||
-    SUPABASE_API_PATHS.some((path) => parsed.pathname.startsWith(path))
-  );
-}
+// 「Supabase への通信」の判定は src/test/supabase-request-e2e.ts（e2e/permissions.spec.ts と共通）
 
 /** ページが出した通信（HTTP と WebSocket）の URL を記録し始める */
 function recordRequests(page: Page): string[] {
