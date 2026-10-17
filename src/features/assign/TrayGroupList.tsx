@@ -12,6 +12,9 @@
 //   固定した見出しで折りたたむと、その見出しが一覧の一番上に来るまで戻す（折りたたんだ見出しが上へ流れて見えなくならないように）
 // - 行の DOM：見出しの行（div）と、区切りごとの ul（描く艦の li）を並べる。行は外側の箱を基準に position: absolute で縦に置くので、
 //   ul は高さ 0 のまま。固定する見出しの行だけは通常の流れ（箱の一番上）に置き、sticky で一覧の上端に留める
+// - 固定した見出しの行は、艦カードの落とす先の cover として渡す（その下に隠れたカードに当てず、控えの落とす先に任せる）
+// - フォーカスした艦カード（キーボードで Tab して来たカードなど）は、スクロールで見える範囲の外に出ても描き続ける
+//   （外すとフォーカスが document.body に落ちるため）。同じ区切りの艦は 1 つの ul にまとめるので、離れた行でも ul の key は重ならない
 // - 大きさを測れない（一覧の高さが 0。jsdom など）ときは、すべての行を描く（見える範囲の高さを大きな値に置き換える）。
 //   行の高さが 0 と測れたときも見積もりのままにする（全行が同じ位置に重なると、描く範囲を決められないため）
 import {
@@ -23,7 +26,7 @@ import {
   type VirtualItem,
   type Virtualizer,
 } from "@tanstack/react-virtual";
-import { type CSSProperties, type ReactNode, useCallback, useMemo } from "react";
+import { type CSSProperties, type FocusEvent, type ReactNode, useCallback, useMemo, useState } from "react";
 import { DraggableShipItem } from "./DraggableShipItem";
 import type { TrayEntry, TrayGroup } from "./tray";
 import styles from "./TrayGroupList.module.css";
@@ -204,15 +207,26 @@ export function TrayGroupList({
     () => rows.flatMap((row, index) => (row.kind === "header" ? [index] : [])),
     [rows],
   );
-  // 一番上にかかっている区切りの見出しを、描く範囲の外でも描く（その行を sticky にして固定する）
+  // フォーカスしている艦カードの艦と、その行の番号（なければ null）
+  const [focusedUid, setFocusedUid] = useState<string | null>(null);
+  const focusedIndex = useMemo(() => {
+    if (focusedUid === null) return null;
+    const index = rows.findIndex((row) => row.kind === "ship" && row.entry.ship.uid === focusedUid);
+    return index < 0 ? null : index;
+  }, [rows, focusedUid]);
+  // 描く範囲の外でも描く行：一番上にかかっている区切りの見出し（その行を sticky にして固定する）と、フォーカスしている艦カード
   const rangeExtractor = useCallback(
     (range: Range): number[] => {
-      const indexes = defaultRangeExtractor(range);
+      const indexes = new Set(defaultRangeExtractor(range));
       const sticky = lastHeaderAtOrBefore(headerIndexes, range.startIndex);
-      return sticky === null || indexes.includes(sticky) ? indexes : [sticky, ...indexes];
+      if (sticky !== null) indexes.add(sticky);
+      if (focusedIndex !== null && focusedIndex < range.count) indexes.add(focusedIndex);
+      return [...indexes].sort((a, b) => a - b);
     },
-    [headerIndexes],
+    [headerIndexes, focusedIndex],
   );
+  // 固定した見出しの行（艦カードの落とす先の cover）。行が替わるたびに付け替える
+  const [stickyRow, setStickyRow] = useState<HTMLDivElement | null>(null);
 
   // useVirtualizer は描き直しのたびに同じインスタンスの中身を変えて返す（React Compiler はこの部品を自動の memo 化から外すという知らせ。
   // このプロジェクトは React Compiler を使っておらず、戻り値を memo した部品にも渡さないので、知らせを止める）
@@ -229,6 +243,13 @@ export function TrayGroupList({
     observeElementRect: observeListRect,
   });
   const measureRef = virtualizer.measureElement;
+  const stickyRowRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      measureRef(element);
+      setStickyRow(element);
+    },
+    [measureRef],
+  );
   const items = virtualizer.getVirtualItems();
   const range = virtualizer.range;
   const stickyIndex = range === null ? null : lastHeaderAtOrBefore(headerIndexes, range.startIndex);
@@ -242,8 +263,25 @@ export function TrayGroupList({
     onToggleGroup(row.group.key);
   };
 
+  /** 艦カードにフォーカスが来た：その艦を覚える（区切りの見出しなど、艦カードの外なら忘れる） */
+  const handleFocus = (event: FocusEvent<HTMLDivElement>): void => {
+    const card = event.target.closest<HTMLElement>("[data-ship-uid]");
+    setFocusedUid(card?.dataset.shipUid ?? null);
+  };
+
+  /** 一覧の外へフォーカスが出た：覚えた艦を忘れる */
+  const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || !event.currentTarget.contains(next)) setFocusedUid(null);
+  };
+
   return (
-    <div className={dense ? `${styles.rows} ${styles.dense}` : styles.rows} style={{ height: virtualizer.getTotalSize() }}>
+    <div
+      className={dense ? `${styles.rows} ${styles.dense}` : styles.rows}
+      style={{ height: virtualizer.getTotalSize() }}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+    >
       {toBlocks(items, rows).map((block) => {
         if (block.kind === "header") {
           const { row, item } = block;
@@ -251,7 +289,7 @@ export function TrayGroupList({
           return (
             <div
               key={row.key}
-              ref={measureRef}
+              ref={sticky ? stickyRowRef : measureRef}
               data-index={item.index}
               className={joinClasses(styles.row, styles.headerRow, sticky ? styles.stickyRow : undefined, ROW_SPACE_CLASS[row.space])}
               style={rowStyle(item, sticky)}
@@ -273,6 +311,7 @@ export function TrayGroupList({
                 key={row.entry.ship.uid}
                 uid={row.entry.ship.uid}
                 clip={scrollElement}
+                cover={stickyRow}
                 className={joinClasses(styles.row, ROW_SPACE_CLASS[row.space])}
                 style={rowStyle(item, false)}
                 virtualIndex={item.index}

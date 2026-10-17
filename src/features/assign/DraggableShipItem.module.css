@@ -3,8 +3,12 @@
  * 色は割り振り画面の変数（AssignScreen.module.css の .screen で決める --assign-*）を使う
  */
 
+/* 指で長押ししてドラッグを始めるとき、iOS の長押しのメニューや文字の選択が出ないようにする */
 .item {
   position: relative;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ドラッグしている艦（元の場所に薄く残す） */
@@ -28,7 +32,7 @@
   background: var(--assign-highlight);
   color: var(--assign-on-highlight);
   border-radius: 10px;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 700;
   pointer-events: none;
 }

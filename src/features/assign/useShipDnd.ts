@@ -17,7 +17,6 @@ import {
   type DragStartEvent,
   MouseSensor,
   type MouseSensorOptions,
-  type SensorProps,
   TouchSensor,
   type TouchSensorOptions,
   useSensor,
@@ -29,49 +28,12 @@ import type { AssignStore } from "./assign-store";
 import {
   createDragAnnouncements,
   detectDropTarget,
-  DRAG_INSTRUCTIONS,
   type DragLookup,
   type DropTarget,
+  NO_DRAG_INSTRUCTIONS,
   parseDragId,
   parseDropId,
 } from "./dnd";
-
-/** sensor（dnd-kit のセンサー）の、ページ全体に付けたイベントの受け取りを外す。中身が見つからなければ何もしない */
-function releaseDocumentListeners(sensor: object): void {
-  const listeners: unknown = Reflect.get(sensor, "documentListeners");
-  if (typeof listeners === "object" && listeners !== null && "removeAll" in listeners) {
-    const { removeAll } = listeners;
-    if (typeof removeAll === "function") removeAll();
-  }
-}
-
-/**
- * マウスのセンサー（dnd-kit の MouseSensor に、ドラッグを終えた後の後片付けを早める変更を足したもの）。
- *
- * MouseSensor は、離したときに起きるクリック（ドラッグした艦のカードが選ばれてしまう）を捨てるため、ページ全体のクリックを
- * 捕まえて止め、ドラッグを終えてから 50ms たって外す。その間に押した「元に戻す」なども効かなくなるので、
- * 離したときのクリックが済んだ次の番（setTimeout 0。dnd-kit のコメントにある「次のイベントループ」）で外す。
- * 外すのは dnd-kit 6.3 の内部の documentListeners なので、見つからなければ元の動き（50ms 後に外す）のままにする
- */
-class ShipMouseSensor extends MouseSensor {
-  constructor(props: SensorProps<MouseSensorOptions>) {
-    let releaseSoon = (): void => {};
-    super({
-      ...props,
-      onEnd: () => {
-        props.onEnd();
-        releaseSoon();
-      },
-      onCancel: () => {
-        props.onCancel();
-        releaseSoon();
-      },
-    });
-    releaseSoon = () => {
-      setTimeout(() => releaseDocumentListeners(this), 0);
-    };
-  }
-}
 
 /** マウス：押したまま 5px 動かすとドラッグを始める（それより小さい動きはクリック） */
 const MOUSE_SENSOR_OPTIONS: MouseSensorOptions = { activationConstraint: { distance: 5 } };
@@ -105,12 +67,12 @@ export interface ShipDnd extends DragState {
 /** 割り振り画面のドラッグ＆ドロップ */
 export function useShipDnd({ store, lookup }: UseShipDndOptions): ShipDnd {
   const sensors = useSensors(
-    useSensor(ShipMouseSensor, MOUSE_SENSOR_OPTIONS),
+    useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
     useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
   );
   const [drag, setDrag] = useState<DragState>(IDLE);
   const accessibility = useMemo(
-    () => ({ announcements: createDragAnnouncements(lookup), screenReaderInstructions: DRAG_INSTRUCTIONS }),
+    () => ({ announcements: createDragAnnouncements(lookup), screenReaderInstructions: NO_DRAG_INSTRUCTIONS }),
     [lookup],
   );
 

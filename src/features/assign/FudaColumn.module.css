@@ -88,13 +88,18 @@
   list-style: none;
 }
 
-/* ドラッグ中に列の最後に出す「ここに移動」 */
+/* ドラッグ中に列の最後に出す「ここに移動」（ドラッグ中はどの列にも置き、出さない列では見えなくする） */
 .moveHint {
   padding: 12px;
   border: 2px dashed var(--assign-highlight);
   border-radius: 5px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--assign-band-text);
   text-align: center;
   pointer-events: none;
+}
+
+/* 場所だけ取って見えなくする（ドラッグ中に列の大きさを変えないため） */
+.moveHintReserved {
+  visibility: hidden;
 }

@@ -31,8 +31,8 @@ import type { OwnedShip, ShipUid } from "@/domain/ship/types";
 import { ROUTES } from "@/lib/routes";
 import { createAssignStore, type SaveAssignments } from "./assign-store";
 import { type DragLookup, dropFeedbackOf } from "./dnd";
-import { DraggableShipItem } from "./DraggableShipItem";
-import { FudaColumn, type PlaceButtonKind } from "./FudaColumn";
+import { DraggableShipItem, DragLookupContext } from "./DraggableShipItem";
+import { FudaColumn, type MoveHintKind, type PlaceButtonKind } from "./FudaColumn";
 import { SelectedShipPanel } from "./SelectedShipPanel";
 import { ShipCard } from "./ShipCard";
 import {
@@ -186,6 +186,9 @@ export function AssignScreen({
   );
   const { contextProps: dndContextProps, activeUid, over } = useShipDnd({ store, lookup: dragLookup });
   const dropFeedback = dropFeedbackOf(dragLookup, activeUid, over);
+  /** 札の列の「ここに移動」の出し方（ドラッグ中はどの列にも場所を取り、出す列だけ見せる） */
+  const moveHintOf = (fudaId: string): MoveHintKind =>
+    activeUid === null ? null : dropFeedback.moveHintFudaId === fudaId ? "shown" : "reserved";
 
   /** 控えの艦のカード：左端は一番効く札の色、開いたら効く札のスコアの高い順に効く段階をすべて並べる */
   const renderTrayCard = (entry: TrayEntry, dense: boolean): ReactNode => {
@@ -269,99 +272,101 @@ export function AssignScreen({
 
   return (
     <DndContext {...dndContextProps}>
-      <div ref={screenRef} className={styles.screen}>
-        <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
-          <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
-          <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
-          <span className={styles.headerSpacer} />
-          <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
-            元に戻す
-          </button>
-          <Link href={ROUTES.list} className={styles.listLink}>
-            一覧で確認
-          </Link>
-        </ScreenHeader>
+      <DragLookupContext.Provider value={dragLookup}>
+        <div ref={screenRef} className={styles.screen}>
+          <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
+            <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
+            <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
+            <span className={styles.headerSpacer} />
+            <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
+              元に戻す
+            </button>
+            <Link href={ROUTES.list} className={styles.listLink}>
+              一覧で確認
+            </Link>
+          </ScreenHeader>
 
-        {(saveError !== null || returnedCount > 0) && (
-          <div className={styles.notices}>
-            {saveError !== null && (
-              <div role="alert" className={styles.alert}>
-                <p className={styles.alertTitle}>保存できませんでした</p>
-                <p className={styles.alertReason}>{saveError}</p>
-              </div>
-            )}
-            {returnedCount > 0 && (
-              <p role="status" className={styles.notice}>
-                イベントの定義から消えた札に置いていた {returnedCount} 件の割り当てを、控えに戻しました
-              </p>
-            )}
+          {(saveError !== null || returnedCount > 0) && (
+            <div className={styles.notices}>
+              {saveError !== null && (
+                <div role="alert" className={styles.alert}>
+                  <p className={styles.alertTitle}>保存できませんでした</p>
+                  <p className={styles.alertReason}>{saveError}</p>
+                </div>
+              )}
+              {returnedCount > 0 && (
+                <p role="status" className={styles.notice}>
+                  イベントの定義から消えた札に置いていた {returnedCount} 件の割り当てを、控えに戻しました
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className={styles.body}>
+            <TrayPanel
+              definition={definition}
+              master={master}
+              ships={ships}
+              assignments={assignments}
+              trayInit={trayInit}
+              openCount={openUids.length}
+              onCloseAll={closeAll}
+              renderCard={renderTrayCard}
+              searchRef={searchRef}
+              dropHighlight={dropFeedback.trayHighlighted}
+            />
+
+            <div className={styles.columns}>
+              {definition.fudas.map((fuda) => {
+                const members = membersByFuda.get(fuda.id) ?? [];
+                const isHere = selected !== undefined && selectedFudaId === fuda.id;
+                const boosted = selected !== undefined && hasBoostIn(selected, fuda.id);
+                const place: PlaceButtonKind = selected === undefined || isHere ? null : boosted ? "boost" : "no-boost";
+                return (
+                  <FudaColumn
+                    key={fuda.id}
+                    fuda={fuda}
+                    stageLabels={stageLabelsByFuda.get(fuda.id) ?? []}
+                    count={members.length}
+                    place={place}
+                    dimmed={selected !== undefined && !boosted && !isHere}
+                    onPlace={() => placeAndFocus(fuda.id)}
+                    dropHighlight={dropFeedback.highlightedFudaId === fuda.id}
+                    moveHint={moveHintOf(fuda.id)}
+                  >
+                    {members.map((ship) => {
+                      const entry = entries.get(ship.uid);
+                      return entry === undefined ? null : (
+                        <DraggableShipItem key={ship.uid} uid={ship.uid}>
+                          {renderColumnCard(entry, fuda.id, fuda.color)}
+                        </DraggableShipItem>
+                      );
+                    })}
+                  </FudaColumn>
+                );
+              })}
+            </div>
+
+            <div className={styles.side}>
+              {selected !== undefined && (
+                <SelectedShipPanel
+                  definition={definition}
+                  fudas={fudas}
+                  entry={selected}
+                  placedFudaId={selectedFudaId}
+                  onPlace={placeAndFocus}
+                  onClose={clearAndFocus}
+                />
+              )}
+            </div>
           </div>
-        )}
 
-        <div className={styles.body}>
-          <TrayPanel
-            definition={definition}
-            master={master}
-            ships={ships}
-            assignments={assignments}
-            trayInit={trayInit}
-            openCount={openUids.length}
-            onCloseAll={closeAll}
-            renderCard={renderTrayCard}
-            searchRef={searchRef}
-            dropHighlight={dropFeedback.trayHighlighted}
-          />
-
-          <div className={styles.columns}>
-            {definition.fudas.map((fuda) => {
-              const members = membersByFuda.get(fuda.id) ?? [];
-              const isHere = selected !== undefined && selectedFudaId === fuda.id;
-              const boosted = selected !== undefined && hasBoostIn(selected, fuda.id);
-              const place: PlaceButtonKind = selected === undefined || isHere ? null : boosted ? "boost" : "no-boost";
-              return (
-                <FudaColumn
-                  key={fuda.id}
-                  fuda={fuda}
-                  stageLabels={stageLabelsByFuda.get(fuda.id) ?? []}
-                  count={members.length}
-                  place={place}
-                  dimmed={selected !== undefined && !boosted && !isHere}
-                  onPlace={() => placeAndFocus(fuda.id)}
-                  dropHighlight={dropFeedback.highlightedFudaId === fuda.id}
-                  moveHint={dropFeedback.moveHintFudaId === fuda.id}
-                >
-                  {members.map((ship) => {
-                    const entry = entries.get(ship.uid);
-                    return entry === undefined ? null : (
-                      <DraggableShipItem key={ship.uid} uid={ship.uid}>
-                        {renderColumnCard(entry, fuda.id, fuda.color)}
-                      </DraggableShipItem>
-                    );
-                  })}
-                </FudaColumn>
-              );
-            })}
-          </div>
-
-          <div className={styles.side}>
-            {selected !== undefined && (
-              <SelectedShipPanel
-                definition={definition}
-                fudas={fudas}
-                entry={selected}
-                placedFudaId={selectedFudaId}
-                onPlace={placeAndFocus}
-                onClose={clearAndFocus}
-              />
-            )}
-          </div>
+          {/* 落とした後は写しを元の場所へ戻す動きをさせずに消す（落とした先へ移ったカードと二重に見えないように） */}
+          <DragOverlay className={styles.dragOverlay} dropAnimation={null}>
+            {activeUid === null ? null : renderDragPreview(activeUid)}
+          </DragOverlay>
         </div>
-
-        {/* 落とした後は写しを元の場所へ戻す動きをさせずに消す（落とした先へ移ったカードと二重に見えないように） */}
-        <DragOverlay className={styles.dragOverlay} dropAnimation={null}>
-          {activeUid === null ? null : renderDragPreview(activeUid)}
-        </DragOverlay>
-      </div>
+      </DragLookupContext.Provider>
     </DndContext>
   );
 }

@@ -4,9 +4,10 @@
 // - ID：ドラッグする艦は "drag:個体 ID"、落とす先は "ship:個体 ID"（艦カード）・"fuda:札 ID"（札の列）・"tray"（控え）。
 //   艦カードはドラッグするものと落とす先の両方なので、ID を分ける（同じ ID だと、自分の上にあるのか分からなくなる）
 // - 落とす先の判定：ポインターの下にあるものから選び、艦カードを札の列・控えより優先する（カードに重ねると入れ替え）。
-//   控えの一覧は仮想スクロールで前後に少し余分に行を描くので、スクロールで隠れた行のカードには当てない
+//   控えの一覧は仮想スクロールで前後に少し余分に行を描くので、スクロールで隠れた行のカードには当てない。
+//   控えの一覧の一番上に固定した区切りの見出しの上では、その下に隠れたカードに当てず、控えとして扱う
 // - 読み上げ：dnd-kit の既定（英語・ID を読む）の代わりに、艦名・札名で知らせる日本語の文にする。
-//   キーボードでのドラッグは作らない（切り捨て候補 1）ので、キーボードの操作説明は「ここに置く」を案内する
+//   キーボードでのドラッグは作らない（切り捨て候補 1）ので、キーボードの操作説明は置かない
 import type { Announcements, CollisionDetection, ScreenReaderInstructions, UniqueIdentifier } from "@dnd-kit/core";
 import { pointerWithin } from "@dnd-kit/core";
 import type { ShipUid } from "@/domain/ship/types";
@@ -64,6 +65,11 @@ export interface ShipDropData {
    * スクロールで隠れた行のカードが、控えの見出しや下に回り込んだ札の列の上で当たらないようにする
    */
   readonly clip: Element | null;
+  /**
+   * このカードの上に重なって隠す要素（控えの一覧の一番上に固定した区切りの見出しの行）。
+   * ポインターがこの要素の見える範囲の中にあれば、このカードには当てない（控えの落とす先に任せる）。隠す要素がなければ null
+   */
+  readonly cover: Element | null;
 }
 
 /** 点が要素の見える範囲（画面上の矩形）の中にあるか */
@@ -74,17 +80,20 @@ function isPointInside(element: Element, point: { x: number; y: number }): boole
 
 /**
  * 落とす先の判定（DndContext の collisionDetection）。
- * ポインターの下の艦カード（見える範囲の中のもの）があれば、それだけを返す。なければ札の列・控えを返す
+ * ポインターの下の艦カード（見える範囲の中にあり、固定した見出しに隠れていないもの）があれば、それだけを返す。
+ * なければ札の列・控えを返す
  */
 export const detectDropTarget: CollisionDetection = (args) => {
   const { pointerCoordinates, droppableContainers } = args;
   const hits = pointerWithin(args);
   const isShip = (id: UniqueIdentifier): boolean => parseDropId(id)?.kind === "ship";
   const shipHit = hits.find((hit) => {
-    if (!isShip(hit.id)) return false;
-    const container = droppableContainers.find((candidate) => candidate.id === hit.id);
-    const clip: unknown = container?.data.current?.clip;
-    return !(clip instanceof Element) || pointerCoordinates === null || isPointInside(clip, pointerCoordinates);
+    if (!isShip(hit.id) || pointerCoordinates === null) return false;
+    const data = droppableContainers.find((candidate) => candidate.id === hit.id)?.data.current;
+    const clip: unknown = data?.clip;
+    const cover: unknown = data?.cover;
+    if (clip instanceof Element && !isPointInside(clip, pointerCoordinates)) return false;
+    return !(cover instanceof Element && isPointInside(cover, pointerCoordinates));
   });
   if (shipHit !== undefined) return [shipHit];
   return hits.filter((hit) => !isShip(hit.id));
@@ -165,12 +174,12 @@ export function dropFeedbackOf(
 
 // ---- 読み上げ ----
 
-/** 操作の説明（読み上げ用。キーボードでのドラッグは作らないので、代わりの操作を案内する） */
-export const DRAG_INSTRUCTIONS: ScreenReaderInstructions = {
-  draggable:
-    "艦カードは、マウスでドラッグするか、指で長押ししてから動かすと、別の札や控えへ移せます。" +
-    "カードに重ねて離すと入れ替えます。キーボードでは、カードを選んでから「ここに置く」で移せます。",
-};
+/**
+ * 操作の説明（DndContext の accessibility.screenReaderInstructions）。
+ * 説明はどこからも読ませない（li に useDraggable の attributes〔aria-describedby〕を付けない）ので空にする。
+ * 渡さないと、dnd-kit が英語の既定の説明を見えない要素として DOM に置くため、空の文を渡す
+ */
+export const NO_DRAG_INSTRUCTIONS: ScreenReaderInstructions = { draggable: "" };
 
 /** ドラッグの読み上げの文（DndContext の accessibility.announcements） */
 export function createDragAnnouncements(lookup: DragLookup): Announcements {
@@ -190,10 +199,15 @@ export function createDragAnnouncements(lookup: DragLookup): Announcements {
           return `${lookup.fudaName(target.fudaId)}の上にあります`;
         case "tray":
           return "控えの上にあります";
-        case "ship":
-          return target.uid === parseDragId(active.id)
-            ? "元の位置にあります"
-            : `${lookup.shipName(target.uid)}の上にあります。離すと入れ替えます`;
+        case "ship": {
+          const uid = parseDragId(active.id);
+          if (target.uid === uid) return "元の位置にあります";
+          const targetName = lookup.shipName(target.uid);
+          // 入れ替わる相手（違う札の艦、札の艦と控えの艦）の上だけ、入れ替えると知らせる（落とした結果と同じ判定）
+          return uid !== null && dropOutcomeOf(lookup, uid, target).kind === "swap"
+            ? `${targetName}の上にあります。離すと入れ替えます`
+            : `${targetName}の上にあります`;
+        }
       }
     },
     onDragEnd: ({ active, over }) => {
