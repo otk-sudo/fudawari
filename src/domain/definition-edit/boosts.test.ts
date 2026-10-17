@@ -1,5 +1,6 @@
 // 特効グループの編集（roadmap T3-6、U16）と「攻略サイトの艦名リストを貼り付け」のテスト
 import { describe, expect, it } from "vitest";
+import type { BoostNationality } from "@/domain/nationality";
 import { summer2026Definition } from "@/test/fixtures";
 import {
   addBoostGroup,
@@ -7,8 +8,10 @@ import {
   deleteBoostGroup,
   parseShipNameList,
   removeShipName,
+  setGroupNationalities,
   updateBoostGroup,
 } from "./boosts";
+import * as definitionEdit from "./index";
 import { expectEditError, expectOk, groupOf, hasGroup, stageOf } from "./test-helpers";
 
 const def = summer2026Definition;
@@ -197,5 +200,74 @@ describe("parseShipNameList（攻略サイトの艦名リストを貼り付け�
   it("空の文字列・区切りだけなら空の一覧", () => {
     expect(parseShipNameList("")).toEqual([]);
     expect(parseShipNameList(" 、\n／ ")).toEqual([]);
+  });
+});
+
+describe("setGroupNationalities（特効グループの国籍を選び直す。v1.1）", () => {
+  it("国籍を入れる（国籍のなかったグループに）", () => {
+    const doc = expectOk(setGroupNationalities(def, "E2-3-C", ["usa"]));
+
+    expect(groupOf(doc, "E2-3-C")).toEqual({ ...groupOf(def, "E2-3-C"), nationalities: ["usa"] });
+  });
+
+  it("BOOST_NATIONALITIES の順（日本・アメリカ・イギリス・ドイツ…）に並べ直し、重複を除く", () => {
+    const doc = expectOk(setGroupNationalities(def, "E2-3-C", ["thailand", "uk", "usa", "uk", "japan", "germany"]));
+
+    expect(groupOf(doc, "E2-3-C").nationalities).toEqual(["japan", "usa", "uk", "germany", "thailand"]);
+  });
+
+  it("国籍を持つグループの国籍を、渡した国籍だけに置き換える（足すのではない）", () => {
+    const withUsa = expectOk(setGroupNationalities(def, "E2-3-C", ["usa", "uk"]));
+
+    const doc = expectOk(setGroupNationalities(withUsa, "E2-3-C", ["italy"]));
+
+    expect(groupOf(doc, "E2-3-C").nationalities).toEqual(["italy"]);
+  });
+
+  it("空にすると nationalities の項目を消す（キーを持たない）", () => {
+    const withUsa = expectOk(setGroupNationalities(def, "E2-3-C", ["usa"]));
+
+    const doc = expectOk(setGroupNationalities(withUsa, "E2-3-C", []));
+
+    expect(Object.hasOwn(groupOf(doc, "E2-3-C"), "nationalities")).toBe(false);
+    expect(groupOf(doc, "E2-3-C")).toEqual(groupOf(def, "E2-3-C"));
+  });
+
+  it("国籍のないグループを空にしても、項目は作らない", () => {
+    const doc = expectOk(setGroupNationalities(def, "E2-3-C", []));
+
+    expect(Object.hasOwn(groupOf(doc, "E2-3-C"), "nationalities")).toBe(false);
+  });
+
+  it("艦名・倍率・名前と、同じ段階・ほかの段階のグループは変わらない", () => {
+    const doc = expectOk(setGroupNationalities(def, "E2-3-C", ["usa"]));
+
+    expect(groupOf(doc, "E2-3-C")).toMatchObject({
+      name: groupOf(def, "E2-3-C").name,
+      multiplier: groupOf(def, "E2-3-C").multiplier,
+      shipNames: groupOf(def, "E2-3-C").shipNames,
+    });
+    expect(groupOf(doc, "E2-3-B")).toEqual(groupOf(def, "E2-3-B"));
+    expect(doc.stages.filter((s) => s.id !== "E2-3")).toEqual(def.stages.filter((s) => s.id !== "E2-3"));
+  });
+
+  it.each<[string, string]>([
+    ["unknown（国籍ではあるが選べない）", "unknown"],
+    ["知らない国籍", "china"],
+    ["空の文字列", ""],
+  ])("選べない国籍（%s）があれば invalid_value（文書は変えない）", (_label, value) => {
+    expectEditError(
+      setGroupNationalities(def, "E2-3-C", ["usa", value] as unknown as readonly BoostNationality[]),
+      "invalid_value",
+    );
+  });
+
+  it("ないグループは変えられない（not_found）", () => {
+    expectEditError(setGroupNationalities(def, "no-such-group", ["usa"]), "not_found");
+  });
+
+  it("定義の編集の入口（@/domain/definition-edit）からも呼べる（同じ関数）", () => {
+    expect(typeof setGroupNationalities).toBe("function");
+    expect(definitionEdit.setGroupNationalities).toBe(setGroupNationalities);
   });
 });

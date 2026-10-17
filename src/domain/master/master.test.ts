@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { summer2026MasterEntries } from "@/test/fixtures";
-import { baseNameOf, createShipMaster, lookupShip } from "./master";
+import { nationalityMasterEntries, summer2026MasterEntries } from "@/test/fixtures";
+import { baseNameOf, boostTargetOf, createShipMaster, lookupShip } from "./master";
 import type { RemodelStage } from "./types";
 
 describe("艦船マスタの参照", () => {
-  it("艦 ID から艦名・改装段階を問わない艦名・艦種・艦型・改造状態・図鑑番号・運の初期値・読みを引ける", () => {
+  it("艦 ID から艦名・改装段階を問わない艦名・艦種・艦型・国籍・改造状態・図鑑番号・運の初期値・読みを引ける", () => {
     // 準備
     const master = createShipMaster(summer2026MasterEntries);
 
@@ -21,6 +21,7 @@ describe("艦船マスタの参照", () => {
       shipTypeId: 2,
       shipClassId: 23,
       shipClassName: "白露型",
+      nationality: "japan", // v1.1
       remodelStage: "intermediate",
       sortNo: 1003,
       luckBase: 15,
@@ -60,5 +61,27 @@ describe("艦船マスタの参照", () => {
     const master = createShipMaster(summer2026MasterEntries);
 
     expect(baseNameOf(master, id)).toBe(expected);
+  });
+});
+
+describe("boostTargetOf（特効の照合に使う、改装段階を問わない艦名と国籍。v1.1）", () => {
+  const master = createShipMaster([...summer2026MasterEntries, ...nationalityMasterEntries]);
+
+  it.each<[number, string, string]>([
+    [961, "時雨", "japan"], // 時雨改三
+    [419, "初霜", "japan"], // 初霜改二
+    [440, "Iowa", "usa"], // Iowa改
+    [364, "Warspite", "uk"], // Warspite改
+    [1499, "謎の艦", "unknown"], // 国籍の分からない艦（マスタにはある）
+  ])("艦 ID %i は 艦名「%s」・国籍 %s", (id, baseName, nationality) => {
+    expect(boostTargetOf(master, id)).toMatchObject({ baseName, nationality });
+  });
+
+  it("マスタにない艦 ID は null（どこにも効かない）", () => {
+    expect(boostTargetOf(master, 99999)).toBeNull();
+  });
+
+  it("空のマスタでは、どの艦 ID も null", () => {
+    expect(boostTargetOf(createShipMaster([]), 961)).toBeNull();
   });
 });

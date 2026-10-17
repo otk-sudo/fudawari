@@ -17,7 +17,7 @@
 import { describe, expect, it } from "vitest";
 import { fudaBoost, shipBoostSummary } from "@/domain/boost";
 import type { PublicDefinition } from "@/domain/definition/types";
-import { baseNameOf, createShipMaster } from "@/domain/master";
+import { boostTargetOf, createShipMaster } from "@/domain/master";
 import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip } from "@/domain/ship/types";
 import {
@@ -114,7 +114,7 @@ function groupUids(result: TrayResult, title: string): string[] {
 function scoreOf(uid: string, fudaId: string, definition: PublicDefinition = def): number {
   const ship = allShips.find((s) => s.uid === uid);
   if (!ship) throw new Error(`個体 ${uid} がありません`);
-  return fudaBoost(definition, fudaId, baseNameOf(master, ship.shipId)).score;
+  return fudaBoost(definition, fudaId, boostTargetOf(master, ship.shipId)).score;
 }
 
 /** 2026夏イベの定義の「E3 ギミック」（第三十一戦隊・特効なし）に、あきつ丸へ ×1.001 の特効を足した定義（スコアは丸めて 0、でも特効あり） */
@@ -253,6 +253,7 @@ describe("検索（図鑑 ID・名称）", () => {
         shipTypeId: 9,
         shipClassId: 67,
         shipClassName: "Queen Elizabeth級",
+        nationality: "uk",
         remodelStage: "final",
         sortNo: 1100,
         luckBase: 10,
@@ -775,7 +776,7 @@ describe("どの並び順にも共通", () => {
     const entry = result.groups.flatMap((g) => g.entries).find((e) => e.ship.uid === "yukikaze2");
     expect(entry?.ship).toEqual(shipByUid("yukikaze2"));
     expect(entry?.info).toMatchObject({ known: true, name: "雪風改" });
-    expect(entry?.boost).toEqual(shipBoostSummary(def, "雪風"));
+    expect(entry?.boost).toEqual(shipBoostSummary(def, { baseName: "雪風", nationality: "japan" }));
   });
 });
 

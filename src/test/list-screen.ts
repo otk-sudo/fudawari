@@ -52,7 +52,7 @@
 // - コピー：navigator.clipboard.write([new ClipboardItem({ "image/png": blob（または blob を返す Promise） })])
 import { screen, within } from "@testing-library/react";
 import { expect } from "vitest";
-import { summer2026MasterEntries } from "@/test/fixtures";
+import { nationalityMasterEntries, summer2026MasterEntries } from "@/test/fixtures";
 
 /** マスタにない艦の表示名（@/domain/master の lookupShip と同じ） */
 export const UNKNOWN_SHIP_NAME = "名前が分からない艦";
@@ -147,10 +147,17 @@ export function shipItems(scope: HTMLElement): HTMLElement[] {
     .filter((item) => !/ほか\s*\d+\s*隻/.test(item.textContent ?? ""));
 }
 
-/** マスタの艦名（長い順。「時雨改二」と「時雨」のように前が重なる名前は長い方を先に当てる） */
-const SHIP_NAMES: readonly string[] = [...new Set([...summer2026MasterEntries.map((entry) => entry.name), UNKNOWN_SHIP_NAME])].sort(
-  (a, b) => b.length - a.length,
-);
+/**
+ * マスタの艦名（長い順。「時雨改二」と「時雨」のように前が重なる名前は長い方を先に当てる）。
+ * 国籍の特効（v1.1）のテスト用の艦（nationalityMasterEntries）の艦名も含める
+ */
+const SHIP_NAMES: readonly string[] = [
+  ...new Set([
+    ...summer2026MasterEntries.map((entry) => entry.name),
+    ...nationalityMasterEntries.map((entry) => entry.name),
+    UNKNOWN_SHIP_NAME,
+  ]),
+].sort((a, b) => b.length - a.length);
 
 /** 艦の listitem の艦名（マスタの艦名のうち、文字に含まれる最も長いもの。見つからなければテストを失敗させる） */
 export function shipNameOf(item: HTMLElement): string {

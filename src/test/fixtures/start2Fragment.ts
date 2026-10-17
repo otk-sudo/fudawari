@@ -8,6 +8,7 @@
 // - api_id が 1500 以上の行は深海棲艦（味方艦ではない）。実物と同じく api_aftershipid・api_luck などがない。
 // - マスタに使わない項目（耐久・装甲・燃料など）も入れてある。抜き出しで捨てられることを確かめるため。
 import type { ApiMstShipLike } from "@/domain/master/types";
+import type { BoostNationality } from "@/domain/nationality";
 
 /** start2.json の api_mst_ship の 1 行（マスタに使わない項目も持てる） */
 export type MstShipRow = ApiMstShipLike & { [key: string]: unknown };
@@ -100,4 +101,10 @@ export const start2Fragment = {
 export const start2FragmentClassNames: ReadonlyMap<number, string> = new Map([
   [23, "白露型"],
   [9, "最上型"],
+]);
+
+/** start2Fragment に合わせた艦型の国籍の対応表（艦型の番号 → 国籍。v1.1）。時雨系（23）は日本、鈴谷系（9）はテスト用にドイツにした */
+export const start2FragmentClassNationalities: ReadonlyMap<number, BoostNationality> = new Map<number, BoostNationality>([
+  [23, "japan"],
+  [9, "germany"],
 ]);

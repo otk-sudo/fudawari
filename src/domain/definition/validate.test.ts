@@ -398,6 +398,145 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
     });
   });
 
+  describe("特効グループの国籍（v1.1。nationalities）", () => {
+    /** E2 ゲージ3 の最初のグループの国籍に、中身の分からない値を入れた入力 */
+    function withNationalities(value: unknown): unknown {
+      return broken((d) => {
+        (d.stages[E2_3].boosts[0] as unknown as Record<string, unknown>).nationalities = value;
+      });
+    }
+
+    const groupPath = `stages[${E2_3}].boosts[0]`;
+
+    it("国籍を持つグループは通り、検証後の値の国籍は入力の順のまま", () => {
+      // 準備：BOOST_NATIONALITIES の順（アメリカ → イギリス）とは逆の順で入れる
+      const input = withNationalities(["uk", "usa"]);
+
+      // 実行
+      const value = expectOk(validatePublicDefinition(input));
+
+      // 検証
+      expect(value.stages[E2_3].boosts[0].nationalities).toEqual(["uk", "usa"]);
+    });
+
+    it("12 か国（unknown 以外）はどれも選べる", () => {
+      const all = ["japan", "usa", "uk", "germany", "italy", "france", "soviet", "netherlands", "australia", "sweden", "norway", "thailand"];
+
+      const value = expectOk(validatePublicDefinition(withNationalities(all)));
+
+      expect(value.stages[E2_3].boosts[0].nationalities).toEqual(all);
+    });
+
+    it("艦名がなく国籍だけのグループも通る（艦名も国籍もないグループも、今と同じく誤りにしない）", () => {
+      const input = broken((d) => {
+        const group = d.stages[E2_3].boosts[0] as unknown as Record<string, unknown>;
+        group.shipNames = [];
+        group.nationalities = ["usa"];
+        d.stages[E2_3].boosts[1].shipNames = [];
+      });
+
+      const value = expectOk(validatePublicDefinition(input));
+
+      expect(value.stages[E2_3].boosts[0]).toMatchObject({ shipNames: [], nationalities: ["usa"] });
+    });
+
+    it("国籍を省略したグループは通り、検証後の値は nationalities の項目を持たない（キー自体がない）", () => {
+      // 実行：テスト用の定義はどのグループも国籍を持たない
+      const value = expectOk(validatePublicDefinition(cloneSummer2026Definition()));
+
+      // 検証
+      const groups = value.stages.flatMap((s) => s.boosts);
+      expect(groups.length).toBeGreaterThan(0);
+      expect(groups.filter((g) => Object.hasOwn(g, "nationalities")).map((g) => g.id)).toEqual([]);
+    });
+
+    it("国籍が空の配列なら通り、検証後の値は nationalities の項目を持たない（省略と同じ）", () => {
+      const value = expectOk(validatePublicDefinition(withNationalities([])));
+
+      expect(Object.hasOwn(value.stages[E2_3].boosts[0], "nationalities")).toBe(false);
+      expect(value.stages[E2_3].boosts[0]).toEqual(summer2026Definition.stages[E2_3].boosts[0]);
+    });
+
+    it("国籍を持つグループの国籍の配列も深く凍結されている", () => {
+      const value = expectOk(validatePublicDefinition(withNationalities(["usa"])));
+
+      expect(value.stages[E2_3].boosts[0].nationalities).toEqual(["usa"]);
+      expect(Object.isFrozen(value.stages[E2_3].boosts[0].nationalities)).toBe(true);
+      expect(unfrozenPaths(value)).toEqual([]);
+    });
+
+    it.each<[string, unknown]>([
+      ["文字列", "usa"],
+      ["オブジェクト", { usa: true }],
+      ["数", 1],
+      ["null", null],
+    ])("国籍が配列でない（%s）と invalid_type（path はグループの nationalities）になる", (_label, value) => {
+      expectError(validatePublicDefinition(withNationalities(value)), "invalid_type", `${groupPath}.nationalities`);
+    });
+
+    it.each<[string, unknown]>([
+      ["数", 1],
+      ["null", null],
+      ["配列", ["usa"]],
+      ["オブジェクト", { id: "usa" }],
+    ])("国籍の要素が文字列でない（%s）と、その要素の場所で invalid_type になる", (_label, item) => {
+      expectError(
+        validatePublicDefinition(withNationalities(["usa", item])),
+        "invalid_type",
+        `${groupPath}.nationalities[1]`,
+      );
+    });
+
+    it.each<[string, string]>([
+      ["unknown（国籍ではあるが選べない）", "unknown"],
+      ["知らない国籍", "china"],
+      ["表示名（日本語）", "アメリカ"],
+      ["大文字の違い", "USA"],
+      ["空の文字列", ""],
+    ])("国籍の要素が選べる国籍でない（%s）と、その要素の場所で invalid_value になる", (_label, item) => {
+      expectError(
+        validatePublicDefinition(withNationalities(["usa", item])),
+        "invalid_value",
+        `${groupPath}.nationalities[1]`,
+      );
+    });
+
+    it("国籍が重複していると、2 つ目以降の場所で duplicate_value になる（1 つ目の場所は誤りにしない）", () => {
+      // 実行
+      const result = validatePublicDefinition(withNationalities(["usa", "uk", "usa", "usa"]));
+
+      // 検証
+      expectError(result, "duplicate_value", `${groupPath}.nationalities[2]`);
+      expectError(result, "duplicate_value", `${groupPath}.nationalities[3]`);
+      if (!result.ok) {
+        const paths = result.errors.map((e) => e.path);
+        expect(paths).not.toContain(`${groupPath}.nationalities[0]`);
+        expect(paths).not.toContain(`${groupPath}.nationalities[1]`);
+      }
+    });
+
+    it("別のグループどうしで同じ国籍を持つのは重複にしない", () => {
+      const input = broken((d) => {
+        (d.stages[E2_3].boosts[0] as unknown as Record<string, unknown>).nationalities = ["usa"];
+        (d.stages[E2_3].boosts[1] as unknown as Record<string, unknown>).nationalities = ["usa"];
+      });
+
+      expectOk(validatePublicDefinition(input));
+    });
+
+    it("parsePublicDefinition（JSON の文字列）でも、国籍を持つグループは通り、国籍のないグループはキーを持たない", () => {
+      // 準備
+      const input = withNationalities(["usa"]);
+
+      // 実行
+      const value = expectOk(parsePublicDefinition(JSON.stringify(input)));
+
+      // 検証
+      expect(value.stages[E2_3].boosts[0].nationalities).toEqual(["usa"]);
+      expect(Object.hasOwn(value.stages[E2_3].boosts[1], "nationalities")).toBe(false);
+    });
+  });
+
   describe("壊れた入力でも例外を投げず、結果で返す", () => {
     it.each<[string, unknown]>([
       ["null", null],

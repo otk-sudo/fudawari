@@ -17,6 +17,7 @@
 // - 占守改・大鳳改・伊401改：どの特効グループにも入っていない（特効なし）
 import type { PublicDefinition } from "@/domain/definition/types";
 import type { RemodelStage, ShipMasterEntry } from "@/domain/master/types";
+import type { Nationality } from "@/domain/nationality";
 import type { OwnedShip } from "@/domain/ship/types";
 import { deepFreeze } from "./freeze";
 import { summer2026Definition } from "./summer2026Definition";
@@ -45,9 +46,11 @@ function entry(fields: {
   remodelStage: RemodelStage;
   sortNo: number;
   luckBase: number;
+  /** 国籍（省略すると日本。v1.1） */
+  nationality?: Nationality;
 }): ShipMasterEntry {
-  const { shipClass, ...rest } = fields;
-  return { ...rest, ...shipClass };
+  const { shipClass, nationality = "japan", ...rest } = fields;
+  return { ...rest, ...shipClass, nationality };
 }
 
 const entries: ShipMasterEntry[] = [

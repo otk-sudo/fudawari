@@ -1,6 +1,7 @@
 // 保存の記録の文と、未公開の変更の一覧（要件 3.7「保存の記録」、roadmap T3-8・T3-10）のテスト
 // before はテスト用データ（2026夏イベ）、after はそれを複製して直接書き換えて作る。
 import { describe, expect, it } from "vitest";
+import type { DefinitionDoc } from "@/domain/definition-edit/types";
 import {
   editDoc,
   fudaOf,
@@ -304,5 +305,90 @@ describe("summarizeSave（1 回の保存の記録の内容）", () => {
 
   it("変更がなければ「変更なし」", () => {
     expect(summarizeSave(before, before)).toEqual({ text: "変更なし", areaIds: [], changes: [] });
+  });
+});
+
+describe("特効グループの国籍の変更の文（v1.1）", () => {
+  /** E2 ゲージ3 の連合艦隊C の国籍を変えた文書（undefined なら項目を消す） */
+  function withNationalities(from: DefinitionDoc, nationalities: string[] | undefined): DefinitionDoc {
+    return editDoc(from, (d) => {
+      const group = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+      if (nationalities === undefined) {
+        delete group.nationalities;
+      } else {
+        group.nationalities = nationalities;
+      }
+    });
+  }
+
+  it("国籍の追加と削除：「E2 ゲージ3 の特効「連合艦隊C」の国籍を変更（追加：アメリカ／削除：イギリス）」、海域 E2", () => {
+    // 準備
+    const from = withNationalities(before, ["uk"]);
+    const after = withNationalities(before, ["usa"]);
+
+    // 実行
+    const changes = describeChanges(from, after);
+
+    // 検証
+    expect(changes).toEqual([
+      {
+        location: { kind: "boostGroup", stageId: "E2-3", groupId: "E2-3-C", field: "nationalities" },
+        change: "modified",
+        text: "E2 ゲージ3 の特効「連合艦隊C」の国籍を変更（追加：アメリカ／削除：イギリス）",
+        areaIds: ["E2"],
+      },
+    ]);
+  });
+
+  it("国籍を足しただけ：「…の国籍を変更（追加：アメリカ、イギリス）」（国籍のなかったグループに）", () => {
+    const after = withNationalities(before, ["usa", "uk"]);
+
+    const changes = describeChanges(before, after);
+
+    expect(changes.map((c) => c.text)).toEqual(["E2 ゲージ3 の特効「連合艦隊C」の国籍を変更（追加：アメリカ、イギリス）"]);
+  });
+
+  it("国籍を外しただけ：「…の国籍を変更（削除：ドイツ）」（最後の国籍を外して項目がなくなった）", () => {
+    const from = withNationalities(before, ["germany"]);
+    const after = withNationalities(before, undefined);
+
+    const changes = describeChanges(from, after);
+
+    expect(changes.map((c) => c.text)).toEqual(["E2 ゲージ3 の特効「連合艦隊C」の国籍を変更（削除：ドイツ）"]);
+  });
+
+  it("省略と空の配列は同じ（変更なし）", () => {
+    expect(describeChanges(before, withNationalities(before, []))).toEqual([]);
+    expect(describeChanges(withNationalities(before, []), before)).toEqual([]);
+  });
+
+  it("国籍は集合として比べる（並びだけが変わっても変更にしない）", () => {
+    const from = withNationalities(before, ["usa", "uk"]);
+    const after = withNationalities(before, ["uk", "usa"]);
+
+    expect(describeChanges(from, after)).toEqual([]);
+  });
+
+  it("艦名と国籍を両方変えたら、艦名の文と国籍の文の 2 件になる", () => {
+    const after = editDoc(withNationalities(before, ["usa"]), (d) => {
+      groupOf(d, "E2-3-C").shipNames.push("時雨");
+    });
+
+    const changes = describeChanges(before, after);
+
+    expect(changes.map((c) => c.location)).toEqual([
+      { kind: "boostGroup", stageId: "E2-3", groupId: "E2-3-C", field: "shipNames" },
+      { kind: "boostGroup", stageId: "E2-3", groupId: "E2-3-C", field: "nationalities" },
+    ]);
+  });
+
+  it("保存の記録の内容（summarizeSave）にも、国籍の変更の文が入る", () => {
+    const after = withNationalities(before, ["usa"]);
+
+    expect(summarizeSave(before, after)).toEqual({
+      text: "E2 ゲージ3 の特効「連合艦隊C」の国籍を変更（追加：アメリカ）",
+      areaIds: ["E2"],
+      changes: describeChanges(before, after),
+    });
   });
 });

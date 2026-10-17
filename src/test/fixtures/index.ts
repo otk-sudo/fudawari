@@ -11,6 +11,10 @@
 //   （重巡・海防・装甲空母・潜水空母・練巡・艦種 8 の戦艦・伊勢型の戦艦、未使用の札、札番号のない札）。
 //   既存のデータには混ぜていないので、必要なテストだけが足して使う（extras.ts）
 //
+// - nationalityMasterEntries／nationalityShips／summer2026DefinitionWithUsaBoost／USA_BOOST_GROUP_ID：国籍の特効（v1.1）の
+//   テスト用の海外艦・国籍の分からない艦と、E2 ゲージ3 に「米艦」×1.20（国籍 アメリカ）を足した定義（nationality.ts）。
+//   既存のデータには混ぜていない
+//
 // - Mutable<T>：読み取り専用の型を入れ子まで書き換えられる型にする（mutable.ts）。
 //   cloneSummer2026Definition() の戻り値の型で、壊した例を作る補助の引数の型にも使う
 //
@@ -19,6 +23,12 @@ export type { Mutable } from "./mutable";
 export { cloneSummer2026Definition, summer2026Definition } from "./summer2026Definition";
 export { summer2026MasterEntries } from "./shipMaster";
 export { extraMasterEntries, extraShips, summer2026DefinitionWithExtraFudas } from "./extras";
+export {
+  nationalityMasterEntries,
+  nationalityShips,
+  summer2026DefinitionWithUsaBoost,
+  USA_BOOST_GROUP_ID,
+} from "./nationality";
 export {
   createBulkShips,
   shipByUid,
