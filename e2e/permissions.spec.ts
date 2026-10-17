@@ -7,6 +7,7 @@ import {
   type FakeAccount,
   type FakeSupabaseOptions,
   NOW,
+  SAVE_LOGS,
   signInAs,
   SPRING_EVENT_NAME,
   springDoc,
@@ -23,7 +24,8 @@ import { summer2026Definition } from "../src/test/fixtures";
 // - 協力者・管理者：ログイン済みの状態を localStorage に入れ（signInAs）、Supabase の Auth・表・RPC を page.route の偽物で答える
 //   （FakeSupabase。src/test/permissions-e2e.ts）。権限の強制（要件 2.4・RLS）は pgTAP（supabase/tests/database）で確かめ済みなので、
 //   ここでは画面の出し分けと、画面が呼ぶ RPC を確かめる
-// - 「保存の記録を見る」の行は PR-12 の機能で、まだこのブランチにないため確かめない
+// - 「保存の記録を見る」の行（PR-12）は、ウィンドウ「共有の下書きの記録」が開いて記録が出ることを確かめる（終了したイベントでも見られる）
+// - 定義画面の Realtime（編集中の表示）は偽物が受けて閉じる（つながらない）。編集中の表示は出なくてよい
 //
 // 協力者・管理者の画面はビルドのときの接続先（NEXT_PUBLIC_SUPABASE_URL・NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY）が要る。
 // CI の e2e のジョブはダミーの接続先でビルドする。手元で接続先なしにビルドしたときは、協力者・管理者のテストを飛ばす（CI では飛ばさず失敗させる）
@@ -120,6 +122,36 @@ async function expectGeneralScreensOpen(
     const dialog = await openSettings(page);
     await expect(dialog.getByRole("heading", { name: "表示" })).toBeVisible();
   });
+}
+
+// ---- 保存の記録 ----
+
+/** 2026夏イベの保存の記録（画面に出す順＝新しい順） */
+const SUMMER_LOGS = SAVE_LOGS.filter((log) => log.event_id === SUMMER_EVENT_ID).sort((a, b) => b.id - a.id);
+/** ほかのイベント（2026春イベ）の記録（出してはいけない） */
+const OTHER_EVENT_LOGS = SAVE_LOGS.filter((log) => log.event_id !== SUMMER_EVENT_ID);
+
+/** 定義画面の「保存の記録を見る」でウィンドウを開き、2026夏イベの記録だけが新しい順に出ることを確かめる */
+async function expectSaveLogsShown(page: Page, fake: FakeSupabase): Promise<void> {
+  await button(eventPanel(page), "保存の記録を見る").click();
+
+  const dialog = page.getByRole("dialog", { name: "共有の下書きの記録" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(SUMMER_EVENT_NAME);
+  const rows = dialog.getByRole("list", { name: "記録" }).getByRole("listitem");
+  await expect(rows).toHaveCount(SUMMER_LOGS.length);
+  for (const [index, log] of SUMMER_LOGS.entries()) {
+    await expect(rows.nth(index)).toContainText(log.user_name);
+    await expect(rows.nth(index)).toContainText(log.kind === "save" ? "下書き保存" : "公開");
+    await expect(rows.nth(index)).toContainText(log.summary);
+  }
+  await expect(dialog).toContainText(`${SUMMER_LOGS.length} / ${SUMMER_LOGS.length} 件`);
+  for (const log of OTHER_EVENT_LOGS) await expect(dialog).not.toContainText(log.summary);
+  expect(fake.requests.filter((r) => r.path === "/rest/v1/save_logs").length).toBeGreaterThan(0);
+
+  // 閉じられる
+  await button(dialog, "閉じる").filter({ hasText: "閉じる" }).click();
+  await expect(dialog).toBeHidden();
 }
 
 // ---- Supabase への通信 ----
@@ -253,6 +285,23 @@ test.describe("一般利用者（ログインしていない）", () => {
     expect(supabaseRequests).toEqual([]);
   });
 
+  test("【保存の記録を見る：×】定義画面に入れないので「保存の記録を見る」もウィンドウもなく、Supabase に通信しない", async ({
+    page,
+  }) => {
+    // 準備
+    const supabaseRequests = recordSupabaseRequests(page);
+
+    // 実行
+    await page.goto(DEFINITION_PATH);
+
+    // 検証
+    await expect(page.getByText(DEFINITION_DENIED, { exact: true })).toBeVisible();
+    await expect(button(page, "保存の記録を見る")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "共有の下書きの記録" })).toHaveCount(0);
+    await page.waitForLoadState("networkidle");
+    expect(supabaseRequests).toEqual([]);
+  });
+
   test("【協力者画面：×】左メニューに「協力者」がなく、/collaborators を直接開くと「このページは管理者のみ使えます」", async ({
     page,
   }) => {
@@ -332,6 +381,10 @@ test.describe("協力者（ログイン済み）", () => {
     await expect(eventPanel(page)).toContainText(`更新するイベント：${SUMMER_EVENT_NAME}（最新）`);
     await expect(page.getByText(DEFINITION_DENIED)).toHaveCount(0);
     await expect(page.getByText("攻略の流れ", { exact: true })).toBeVisible();
+    // 編集中の表示の Realtime（WebSocket）は偽物が受けて閉じる（本物の接続先にはつながない）。画面は失敗を出さない
+    await expect.poll(() => fake.realtimeConnections.length).toBeGreaterThan(0);
+    expect(fake.realtimeConnections.every((url) => new URL(url).pathname.startsWith("/realtime/v1/"))).toBe(true);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(fake.unexpected).toEqual([]);
   });
 
@@ -466,6 +519,23 @@ test.describe("協力者（ログイン済み）", () => {
     expect(fake.rpcCalls).toEqual([]);
     expect(fake.unexpected).toEqual([]);
   });
+
+  for (const { state, options } of [
+    { state: "開催中", options: RUNNING },
+    { state: "終了した", options: ENDED },
+  ] as const) {
+    test(`【保存の記録を見る：○】${state}イベントで「保存の記録を見る」を押すと、ウィンドウ「共有の下書きの記録」にそのイベントの記録が新しい順に出る`, async ({
+      page,
+    }) => {
+      // 準備
+      const fake = await prepareSignedIn(page, COLLAB, options);
+      await openDefinition(page, COLLAB);
+
+      // 実行・検証
+      await expectSaveLogsShown(page, fake);
+      expect(fake.unexpected).toEqual([]);
+    });
+  }
 
   test("【協力者画面：×】左メニューに「協力者」がなく、/collaborators を直接開くと「このページは管理者のみ使えます」で、一覧を読まない", async ({
     page,
@@ -671,6 +741,23 @@ test.describe("管理者（ログイン済み）", () => {
     expect(fake.rpcCalls).toEqual([]);
     expect(fake.unexpected).toEqual([]);
   });
+
+  for (const { state, options } of [
+    { state: "開催中", options: RUNNING },
+    { state: "終了した", options: ENDED },
+  ] as const) {
+    test(`【保存の記録を見る：○】${state}イベントで「保存の記録を見る」を押すと、ウィンドウ「共有の下書きの記録」にそのイベントの記録が新しい順に出る`, async ({
+      page,
+    }) => {
+      // 準備
+      const fake = await prepareSignedIn(page, ADMIN, options);
+      await openDefinition(page, ADMIN);
+
+      // 実行・検証
+      await expectSaveLogsShown(page, fake);
+      expect(fake.unexpected).toEqual([]);
+    });
+  }
 
   test("【協力者画面（ID とパスワードの発行、協力者を外す）：○】一覧が出て、発行すると register_collaborator、外すと remove_collaborator を呼ぶ", async ({
     page,

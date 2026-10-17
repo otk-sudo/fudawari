@@ -8,6 +8,8 @@
 // - FakeSupabase：接続先（ビルドのときの NEXT_PUBLIC_SUPABASE_URL）への通信を page.route で受け、
 //   Auth（/auth/v1/user・/auth/v1/logout・/auth/v1/signup）・PostgREST の表の読み取り・RPC にメモリ上の値で答える。
 //   受けた通信は記録し、知らない通信は unexpected に入れて 500 を返す（テストで空であることを確かめる）
+// - Realtime（WebSocket。定義画面の「（名前）も編集中」の Presence）は page.routeWebSocket で受け、本物の接続先にはつながずに閉じる。
+//   編集中の表示は出せなくてよい（画面は失敗を出さない）。受けた接続は realtimeConnections に記録し、unexpected には入れない
 //
 // 接続先の URL はビルドに埋め込まれるため、テストを動かす Node も同じ環境変数を持っている必要がある
 // （`npm run test:e2e` はビルドと Playwright を同じ環境変数で動かす。CI の e2e のジョブは https://example.supabase.co を入れている）。
@@ -121,6 +123,49 @@ function utcToJst(value: string): string {
 
 // ---- 表 ----
 
+/**
+ * 保存の記録（save_logs の行）。2026夏イベの 3 件と、別のイベント（2026春イベ）の 1 件。
+ * 画面は開いたイベントの記録だけを、新しい順に出す
+ */
+export const SAVE_LOGS = [
+  {
+    id: 1,
+    event_id: SPRING_EVENT_ID,
+    created_at: "2026-04-28T03:00:00+00:00",
+    user_name: ADMIN.displayName,
+    kind: "publish",
+    map_label: null,
+    summary: "公開（2026/04/28 版）",
+  },
+  {
+    id: 2,
+    event_id: SUMMER_EVENT_ID,
+    created_at: "2026-08-03T12:00:00+00:00",
+    user_name: ADMIN.displayName,
+    kind: "save",
+    map_label: "E1",
+    summary: "E1 ギミック〜ゲージ3 の特効を追加",
+  },
+  {
+    id: 3,
+    event_id: SUMMER_EVENT_ID,
+    created_at: "2026-08-04T03:00:00+00:00",
+    user_name: ADMIN.displayName,
+    kind: "publish",
+    map_label: null,
+    summary: "公開（2026/08/04 版）",
+  },
+  {
+    id: 4,
+    event_id: SUMMER_EVENT_ID,
+    created_at: "2026-10-15T13:40:00+00:00",
+    user_name: COLLAB.displayName,
+    kind: "save",
+    map_label: "E2",
+    summary: "E2 の段階の大事さを「普通」→「重要」",
+  },
+] as const;
+
 type Row = Record<string, unknown>;
 
 export interface FakeSupabaseOptions {
@@ -175,6 +220,7 @@ function initialTables(options: FakeSupabaseOptions): Record<string, Row[]> {
         updated_at: "2026-10-15T13:40:00+00:00",
       },
     ],
+    save_logs: SAVE_LOGS.map((log) => ({ ...log })),
     published_definitions: [
       {
         event_id: SPRING_EVENT_ID,
@@ -218,9 +264,21 @@ function selectRows(rows: readonly Row[], params: URLSearchParams): Row[] {
   }
   const order = params.get("order");
   if (order !== null) {
-    const [column = "", direction] = order.split(".");
-    const sign = direction === "desc" ? -1 : 1;
-    result.sort((a, b) => sign * String(a[column]).localeCompare(String(b[column])));
+    // 例 "created_at.desc,id.desc"（前の列から順に比べる）
+    const keys = order.split(",").map((key) => {
+      const [column = "", direction] = key.split(".");
+      return { column, sign: direction === "desc" ? -1 : 1 };
+    });
+    result.sort((a, b) => {
+      for (const { column, sign } of keys) {
+        const x = a[column];
+        const y = b[column];
+        const compared =
+          typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
+        if (compared !== 0) return sign * compared;
+      }
+      return 0;
+    });
   }
   const limit = params.get("limit");
   if (limit !== null) result = result.slice(0, Number(limit));
@@ -346,6 +404,8 @@ export class FakeSupabase {
   readonly rpcCalls: RpcCall[] = [];
   /** 答え方を知らない通信（テストで空であることを確かめる） */
   readonly unexpected: string[] = [];
+  /** 受けた Realtime（WebSocket）の接続の URL（本物にはつながずに閉じる） */
+  readonly realtimeConnections: string[] = [];
   private readonly tables: Record<string, Row[]>;
   private draftVersion = SUMMER_DRAFT_VERSION;
 
@@ -357,9 +417,19 @@ export class FakeSupabase {
     this.tables = initialTables(options);
   }
 
-  /** ページの接続先への通信を受け始める */
+  /** ページの接続先への通信（HTTP・WebSocket）を受け始める */
   async install(page: Page): Promise<void> {
     await page.route(`${this.supabaseUrl}/**`, (route) => this.handle(route));
+    // Realtime は wss://（接続先のホスト）/realtime/v1/websocket。本物にはつながず（connectToServer を呼ばない）、すぐ閉じる。
+    // supabase-js はあとで接続し直すので、そのたびにここで受けて閉じる（編集中の表示が出ないだけ）
+    const host = new URL(this.supabaseUrl).host;
+    await page.routeWebSocket(
+      (url) => url.host === host,
+      (socket) => {
+        this.realtimeConnections.push(socket.url());
+        void socket.close({ code: 1011, reason: "偽物の Supabase は Realtime に答えません" });
+      },
+    );
   }
 
   /** 名前で RPC の呼び出しを探す */
