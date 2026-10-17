@@ -215,6 +215,7 @@
 | ⑤ | （不要になった。ID とパスワードのログインはリダイレクトを使わない） | ― | ― | ― |
 | ⑥ | Cloudflare の環境変数（Supabase の URL と公開用のキー。Production だけに `FETCH_LATEST_DEFINITION=1`） | 土 14:00 | 5 分 | 変数名 |
 | ⑦ | Cloudflare で Deploy Hook を作り、Supabase の Database Webhook を設定する（U7） | 日 00:00 | 10 分 | 対象のテーブル、手順 |
+| ⑨ | Supabase の Realtime → Settings で「Allow public access」を切る（編集中の表示を管理者・協力者だけにする。private のチャンネルだけを許す） | 日 07:00 | 2 分 | 手順 |
 | ⑧ | 最初の管理者の登録（Supabase の Authentication → Users → Add user で `ID@fudawari.invalid` とパスワードのアカウントを作り、管理者の行を SQL で登録する） | 土 22:00（遅くとも日 07:00） | 10 分 | 登録用の SQL |
 
 ### 6.6 マージと受入確認のタイミング（D3 を許可すれば、マージは親が行い、ここは確認だけになる）

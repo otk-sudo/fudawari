@@ -68,6 +68,10 @@ import {
 import { EventPanel, type EventField, type FieldTexts } from "./EventPanel";
 import { FlowSection, type StageMark } from "./FlowSection";
 import { FudaSection } from "./FudaSection";
+import { EditingPresence } from "./presence/EditingPresence";
+import type { PresenceConnector } from "./presence/types";
+import { SaveLogDialog } from "./save-log/SaveLogDialog";
+import type { SaveLogLoader } from "./save-log/types";
 import { StageDetail } from "./StageDetail";
 import type { DefinitionRepository, EditableEvent, PlanEditorData, SaveDraftResult } from "./types";
 import controls from "./controls.module.css";
@@ -80,6 +84,10 @@ export type DefinitionEditorProps = {
   repository: DefinitionRepository;
   /** 艦船マスタにある改装段階を問わない艦名（なければ知らない艦名を警告しない） */
   knownShipNames: ReadonlySet<string> | undefined;
+  /** 保存の記録を読む（PR-12。なければ「保存の記録を見る」を出さない） */
+  loadSaveLogs?: SaveLogLoader;
+  /** 編集中の表示のチャンネルにつなぐ（PR-12。なければ「（名前）も編集中」を出さない） */
+  connectPresence?: PresenceConnector;
 };
 
 /** 「既存を更新」「新規作成」のワークスペース */
@@ -327,7 +335,13 @@ function eventInfoErrors(mode: EditMode, meta: EventMeta, now: Date): EventInfoE
  *   （合わせた内容を確かめてから公開し直してもらう）
  * - 新規作成の元にするイベントの読み込み中は、本文を操作できなくする（inert）
  */
-export function DefinitionEditor({ data, repository, knownShipNames }: DefinitionEditorProps): ReactNode {
+export function DefinitionEditor({
+  data,
+  repository,
+  knownShipNames,
+  loadSaveLogs,
+  connectPresence,
+}: DefinitionEditorProps): ReactNode {
   const { user } = data;
   const now = useNow();
   const [state, setState] = useState<EditorState>(() => initialState(data));
@@ -1023,6 +1037,33 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
   // 本文を操作できない：終了したイベント、または新規作成の元にするイベントの読み込み中
   const workLocked = !perms.canEditContent || baseLoading;
 
+  // PR-12：既存の更新のときだけ「保存の記録を見る」と「（名前）も編集中」を出す（終了したイベントでも出す）
+  const openedEventId = mode === "update" ? ws.eventId : null;
+  const memberNames = data.members.map((member) => member.displayName);
+  const shownAreaName =
+    selectedStage === null ? null : (ws.doc.areas.find((area) => area.id === selectedStage.areaId)?.name ?? null);
+  const draftLogSlot =
+    loadSaveLogs !== undefined && openedEventId !== null ? (
+      <SaveLogDialog
+        loader={loadSaveLogs}
+        eventId={openedEventId}
+        eventName={ws.meta.name}
+        areaNames={ws.doc.areas.map((area) => area.name)}
+        memberNames={memberNames}
+      />
+    ) : undefined;
+  const presenceSlot =
+    connectPresence !== undefined && openedEventId !== null ? (
+      <EditingPresence
+        key={openedEventId}
+        connect={connectPresence}
+        eventId={openedEventId}
+        displayName={user.displayName}
+        areaName={shownAreaName}
+        memberNames={memberNames}
+      />
+    ) : undefined;
+
   return (
     <div className={styles.body}>
       <EventPanel
@@ -1052,6 +1093,8 @@ export function DefinitionEditor({ data, repository, knownShipNames }: Definitio
         publishLabel={publishLabel}
         onSaveDraft={() => void handleSaveDraft()}
         onPublish={() => void handlePublish()}
+        draftLogSlot={draftLogSlot}
+        presenceSlot={presenceSlot}
       />
 
       {perms.ended && ws.meta.endAt !== null && (

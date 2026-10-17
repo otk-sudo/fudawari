@@ -73,6 +73,10 @@ export type EventPanelProps = {
   publishLabel: string;
   onSaveDraft: () => void;
   onPublish: () => void;
+  /** 「共有の下書き：…」の横に置く部品（PR-12 の「保存の記録を見る」。なければ出さない） */
+  draftLogSlot?: ReactNode;
+  /** 「編集できる人」の上に置く部品（PR-12 の「（名前）も編集中」。なければ出さない） */
+  presenceSlot?: ReactNode;
 };
 
 /** 日時の表示（「2026/08/07 12:00」） */
@@ -335,7 +339,14 @@ export function EventPanel(props: EventPanelProps): ReactNode {
             ? "まだ保存していません"
             : `${dateText(draftNote.updatedAt)} に${draftNote.updatedByName}が保存`}
           （保存すると管理者・協力者全員の定義画面に反映されます。一般の画面には公開するまで出ません）
+          {props.draftLogSlot !== undefined && (
+            <>
+              {"　"}
+              {props.draftLogSlot}
+            </>
+          )}
         </span>
+        {props.presenceSlot}
         <span className={styles.line}>
           編集できる人：{props.members.map((member) => member.displayName).join("・")}
           {isAdmin && (
