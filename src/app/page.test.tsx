@@ -544,6 +544,8 @@ describe("トップ画面", () => {
     const IMPORTED_AT = new Date(2026, 9, 15, 20, 40).toISOString();
     /** 画面に出る最終取り込み */
     const LAST_IMPORT = /最終取り込み\s*10\/15\s+20:40/;
+    /** 最新イベントの ID（"2026-summer"） */
+    const EVENT_ID = cloneSummer2026Definition().event.id;
 
     let storage: FudawariStorage;
 
@@ -632,6 +634,43 @@ describe("トップ画面", () => {
       expect(getHomeHeader()).toHaveTextContent(/開催中：2026夏イベ/);
       expect(getHomeHeader()).not.toHaveTextContent(/最終取り込み/);
       expect(getHomeHeader()).not.toHaveTextContent(/開催中：2026夏イベ\s*／/);
+    });
+
+    // PR-14 のレビュー P3・Codex 4301735604：ホームは共有の札割りのデータ（usePlanData）を使わず、最終取り込みだけを保存先から直接読む
+    // （設定の useStoredLastImport と同じ形）。定義を読めないときも出す。ホームを開いただけでは割り当てを書き換えない
+    it("最新イベントの定義を読み込めなくても、取り込み済みならヘッダーに「最終取り込み 10/15 20:40」を出す（「開催中：」は出さない）", async () => {
+      // 準備：定義は 404。取り込みを保存しておく
+      respondWithStatus(fetchMock, 404);
+      await storage.saveImport(importInput(summer2026Ships, { importedAt: IMPORTED_AT }));
+
+      // 実行
+      render(<HomePage />);
+
+      // 検証
+      await waitFor(() => expect(getHomeHeader()).toHaveTextContent(LAST_IMPORT));
+      expect(getHomeHeader()).not.toHaveTextContent(/開催中：/);
+      expect(screen.getByRole("alert")).toHaveTextContent(LOAD_FAILED);
+    });
+
+    it("ホームを開いただけでは割り当てを書き換えない（定義から消えた札の割り当ても控えに戻さず、保存もしない）", async () => {
+      // 準備：取り込みと、定義にない札（removed-fuda）に置いた割り当てを保存しておく
+      const assignments = { hatsushimo: "s31", tone: "removed-fuda" };
+      await storage.saveImport(importInput(summer2026Ships, { importedAt: IMPORTED_AT }));
+      await storage.saveAssignments(EVENT_ID, assignments);
+      const returnOrphaned = vi.spyOn(storage, "returnOrphanedAssignments");
+      const saveAssignments = vi.spyOn(storage, "saveAssignments");
+
+      // 実行：最終取り込みが出るまで待ち、少し置く
+      render(<HomePage />);
+      await waitFor(() => expect(getHomeHeader()).toHaveTextContent(LAST_IMPORT));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // 検証
+      expect(returnOrphaned).not.toHaveBeenCalled();
+      expect(saveAssignments).not.toHaveBeenCalled();
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(assignments);
     });
 
     it("取り込んだ艦娘データを削除した後（最終取り込みの記録がない）も「最終取り込み」を出さない", async () => {

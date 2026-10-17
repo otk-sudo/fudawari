@@ -26,6 +26,9 @@ import type { SaveDraftResult } from "./types";
 // 場面の作り方：既存を更新で下書きの保存を始め、その結果を待たせている間に、時計が保存済みの終了日時を過ぎる
 // （画面は 30 秒ごとに今の時刻を取り直す〔useNow〕ので、偽の時計を進めて終了の案内を出す）。
 // 終了の案内は管理者だけに「新しいイベントを作成」を出す（PlanEditor.top.test.tsx のとおり）
+//
+// PR-14 のレビュー P5 で足したこと：保存・公開の途中は、終了の案内の「新しいイベントを作成」を disabled にする
+// （押しても何もしないボタンを押せるように見せない）。終わったら押せるように戻す
 
 /** 保存済みの終了日時（今〔NOW：2026-10-17 12:00〕の 5 分後） */
 const END_AT = "2026-10-17T12:05:00+09:00";
@@ -115,5 +118,35 @@ describe("イベント定義の画面（PlanEditor）：PR-12b のレビュー P
     // 検証
     expect(modeRadio("新規作成")).toBeChecked();
     expect(screen.getByRole("button", { name: "公開して最新にする" })).toBeInTheDocument();
+  });
+
+  it("下書きの保存の途中に終了の案内が出たら、「新しいイベントを作成」は押せない（disabled）。保存が終わると押せるように戻る（PR-14：レビュー P5）", async () => {
+    // 準備：終了日時が 5 分後の最新イベントを管理者が開き、変更して保存を始める（保存の結果は待たせる）
+    const data = makeData({ user: ADMIN, latestEvent: makeEvent({ endAt: END_AT }) });
+    const repository = createFakeRepository(data);
+    const pending = createDeferred<SaveDraftResult>();
+    repository.saveDraft.mockImplementationOnce(() => pending.promise);
+    const { user } = await renderEditor(data, { repository });
+    await setImportance(user, "E2", "ゲージ3", "普通");
+    await user.click(saveDraftButton());
+    await savedDraftInput(repository, 1);
+
+    // 実行：保存の途中に、時計が終了日時を過ぎる
+    vi.setSystemTime(new Date(new Date(END_AT).getTime() - 10_000));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NOW_INTERVAL_MS);
+    });
+    expectTextShown("このイベントは終了しました");
+
+    // 検証：保存の途中は押せない
+    expect(screen.getByRole("button", { name: "新しいイベントを作成" })).toBeDisabled();
+
+    // 実行：保存が終わる
+    pending.resolve({ status: "saved", version: DRAFT_VERSION + 1 });
+
+    // 検証：押せるように戻る
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "新しいイベントを作成" })).toBeEnabled();
+    });
   });
 });

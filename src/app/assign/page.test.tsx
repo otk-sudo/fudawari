@@ -43,6 +43,7 @@ import {
   shipCountPattern,
   trayCountPattern,
 } from "@/test/assign-screen";
+import { createDeferred } from "@/test/deferred";
 import { type FetchMock, requestedPaths, stubFetch, textResponse } from "@/test/definition-fetch";
 import { expectInDocumentOrder } from "@/test/dom-order";
 import { summer2026Assignments, summer2026Definition, summer2026Ships } from "@/test/fixtures";
@@ -569,6 +570,64 @@ describe("割り振りの画面（/assign）", () => {
       await waitFor(async () =>
         expect(await storage.loadAssignments(EVENT_ID)).toEqual({ ...REPLACED, tone: "ulithi" }),
       );
+    });
+  });
+
+  // PR-14 のレビュー P2・Codex 4301735603：外から置き換えたら、この画面の古い保存の失敗の知らせを消し、
+  // 置き換えの前に始めた保存が後から失敗しても知らせない（その保存の割り当てはもう画面にない）
+  describe("外から置き換えたときの保存の失敗の知らせ（PR-14：レビュー P2・Codex 4301735603）", () => {
+    it("「保存できませんでした」が出ているときに外から置き換えられたら（置き換えの保存は成功）、知らせを消す", async () => {
+      // 準備：この画面の最初の保存だけ失敗させ、知らせを出しておく
+      await seedPlan(storage);
+      vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+      const user = userEvent.setup();
+      render(
+        <>
+          <AssignPage />
+          <PlanReplacer next={REPLACED} />
+        </>,
+      );
+      await waitForReady();
+      await placeToneOnRengo(user);
+      expect(await screen.findByRole("alert")).toHaveTextContent("保存できませんでした");
+
+      // 実行
+      await user.click(screen.getByRole("button", { name: PROBE_REPLACE }));
+
+      // 検証：置き換えた割り当てを表示し、知らせは消える
+      await expectReplacedShown();
+      await waitFor(async () => expect(await storage.loadAssignments(EVENT_ID)).toEqual(REPLACED));
+      await waitFor(() => expect(screen.queryAllByText(/保存できませんでした/)).toHaveLength(0));
+    });
+
+    it("置き換えの前に始めた保存が、置き換えの後に失敗しても「保存できませんでした」を出さない", async () => {
+      // 準備：この画面の最初の保存（利根改二を置いた分）を待たせておく
+      await seedPlan(storage);
+      const held = createDeferred<void>();
+      vi.spyOn(storage, "saveAssignments").mockImplementationOnce(() => held.promise);
+      const user = userEvent.setup();
+      render(
+        <>
+          <AssignPage />
+          <PlanReplacer next={REPLACED} />
+        </>,
+      );
+      await waitForReady();
+      await placeToneOnRengo(user);
+
+      // 実行：保存の途中に外から置き換え、その後で待たせていた保存が失敗する
+      await user.click(screen.getByRole("button", { name: PROBE_REPLACE }));
+      await expectReplacedShown();
+      held.reject(new Error("QuotaExceededError"));
+
+      // 検証：置き換えた割り当てが保存され、知らせは出ない
+      await waitFor(async () => expect(await storage.loadAssignments(EVENT_ID)).toEqual(REPLACED));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(screen.queryAllByText(/保存できませんでした/)).toHaveLength(0);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      await expectReplacedShown();
     });
   });
 

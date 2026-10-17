@@ -145,7 +145,7 @@ describe("一覧の本文（ListBoard）", () => {
       // 検証
       const step = getStep(getTimeline(), "E3", "ギミック", "第三十一戦隊");
       expect(step).toHaveTextContent(boostCountPattern(0));
-      expect(step).not.toHaveTextContent(/特効s*[1-9]d*s*隻/);
+      expect(step).not.toHaveTextContent(/特効\s*[1-9]\d*\s*隻/);
     });
 
     it("割り当てがなければ、全段階に「特効 0隻」を出す（1 隻以上は出さない。割り当てから数える）", () => {
