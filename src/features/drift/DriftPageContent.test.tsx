@@ -164,6 +164,11 @@ async function seed(options: SeedOptions = {}): Promise<void> {
 const PROBE = "確認用：";
 /** 確認用の部品の、割り当てを外から変えるボタン（北上改二〔kitakami〕をウルシー攻撃部隊へ） */
 const PROBE_MOVE_KITAKAMI = "確認用：kitakami を ulithi へ";
+/**
+ * 確認用の部品の、対応が必要な 4 件のうち 3 件（長波改二・北上改二・浜波改）を外から実際の札に合わせるボタン
+ * （モックに近い場面で押すと、対応が必要なものはあきつ丸改の 1 件だけになる）
+ */
+const PROBE_RESOLVE_THREE = "確認用：3 件を実際に合わせる";
 
 /**
  * 確認用：同じ画面の別の部品が使う札割りのデータ（usePlanData）の割り当てを「確認用：個体 ID→札 ID」で出し、
@@ -183,6 +188,12 @@ function PlanProbe(): ReactNode {
       ))}
       <button type="button" onClick={() => void setAssignments((prev) => ({ ...prev, kitakami: "ulithi" }))}>
         {PROBE_MOVE_KITAKAMI}
+      </button>
+      <button
+        type="button"
+        onClick={() => void setAssignments((prev) => ({ ...prev, naganami: "tago", kitakami: "s31", hamanami: "tago" }))}
+      >
+        {PROBE_RESOLVE_THREE}
       </button>
     </div>
   );
@@ -223,10 +234,28 @@ function expectNoDoneMessage(): void {
   expect(screen.queryByRole("button", { name: "元に戻す" })).not.toBeInTheDocument();
 }
 
+/** まとめての確認の枠の名前 */
+const BULK_GROUP_NAME = "まとめて合わせる確認";
+
+/** まとめての確認の枠（role="group"、名前「まとめて合わせる確認」）。なければ null */
+function queryBulk(): HTMLElement | null {
+  return screen.queryByRole("group", { name: BULK_GROUP_NAME });
+}
+
 /** まとめての確認を開いて返す */
 async function openBulk(user: UserEvent): Promise<HTMLElement> {
   await user.click(screen.getByRole("button", { name: "計画をまとめて実際に合わせる" }));
-  return screen.findByRole("alertdialog");
+  return screen.findByRole("group", { name: BULK_GROUP_NAME });
+}
+
+/** 今フォーカスのある要素が expected であることを確かめる（失敗したら、今のフォーカスを短く書く） */
+function expectFocused(expected: HTMLElement, label: string): void {
+  const active = document.activeElement;
+  const now =
+    active === null || active === document.body
+      ? "body（フォーカスを失った）"
+      : `<${active.tagName.toLowerCase()}> ${(active.textContent ?? "").trim().slice(0, 30)}`;
+  expect(active === expected, `${label}にフォーカスがあること（今のフォーカス：${now}）`).toBe(true);
 }
 
 /** 読み込み中を出していて、中身・取り込みの案内・警告を出していないことを確かめる */
@@ -492,7 +521,7 @@ describe("差分の画面（DriftPageContent）", () => {
       expect(card.textContent ?? "").not.toMatch(MULTIPLIER);
     });
 
-    it("定義のどの札番号にも当たらない札が付いた計画の艦は、実際の札を「定義にない札（番号 9）」とし、反映すると控えに戻ることを書く", async () => {
+    it("定義のどの札番号にも当たらない札が付いた計画の艦は、実際の札を「札番号が定義にない札（番号 9）」とし、反映すると控えに戻ることを書く", async () => {
       // 準備：長波改二（計画 連合艦隊）に、定義にない札番号 9 が付いている
       await seed({ sally: { naganami: 9 } });
 
@@ -503,7 +532,8 @@ describe("差分の画面（DriftPageContent）", () => {
       // 検証
       const card = getIssueCard("長波改二");
       expect(plannedFudaOf(card)).toHaveTextContent("連合艦隊");
-      expect(card).toHaveTextContent(/定義にない札（番号\s*9）/);
+      expect(card).toHaveTextContent(/札番号が定義にない札（番号\s*9）/);
+      expect(actualFudaOf(card, "札番号が定義にない札（番号 9）")).toBeInTheDocument();
       expect(card).toHaveTextContent(/控えに戻/);
       expect(within(card).getByRole("button", { name: "計画を実際に合わせる" })).toBeEnabled();
       expect(summaryCount("計画と違う札が付いた")).toBe(1);
@@ -778,7 +808,7 @@ describe("差分の画面（DriftPageContent）", () => {
   });
 
   describe("まとめて反映（「計画をまとめて実際に合わせる」）", () => {
-    it("確認の枠（role=alertdialog）に説明・1 件ずつのチェック（初期は全部 ON、艦名と「計画 A → B」）・注意書き・「4件を計画に反映する」・「やめる」を出す", async () => {
+    it("確認の枠（role=group、名前「まとめて合わせる確認」）に説明・1 件ずつのチェック（初期は全部 ON、艦名と「計画 A → B」）・注意書き・「4件を計画に反映する」・「やめる」を出す", async () => {
       // 準備
       await seed();
       const { user } = renderDrift();
@@ -824,7 +854,7 @@ describe("差分の画面（DriftPageContent）", () => {
       expect(apply).toBeDisabled();
       await user.click(apply);
       expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
-      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      expect(queryBulk()).toBeInTheDocument();
     });
 
     it("「やめる」で確認の枠を閉じ、計画は変えない", async () => {
@@ -838,7 +868,7 @@ describe("差分の画面（DriftPageContent）", () => {
       await user.click(within(dialog).getByRole("button", { name: "やめる" }));
 
       // 検証
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(queryBulk()).not.toBeInTheDocument();
       expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
       expect(issueCards()).toHaveLength(4);
       expect(screen.getByRole("button", { name: "計画をまとめて実際に合わせる" })).toBeEnabled();
@@ -858,7 +888,7 @@ describe("差分の画面（DriftPageContent）", () => {
 
       // 検証：3 件だけ反映。あきつ丸改は控えのまま一覧に残る
       await expectSaved({ ...summer2026Assignments, naganami: "tago", kitakami: "s31", hamanami: "tago" });
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(queryBulk()).not.toBeInTheDocument();
       expect(issueCards()).toHaveLength(1);
       expect(getIssueCard("あきつ丸改")).toBeInTheDocument();
       expect(screen.getByText(`${PROBE}akitsumaru→控え`)).toBeInTheDocument();
@@ -886,6 +916,121 @@ describe("差分の画面（DriftPageContent）", () => {
       // 検証
       for (const box of within(dialog).getAllByRole("checkbox")) expect(box).toBeChecked();
       expect(within(dialog).getByRole("button", { name: bulkApplyLabel(4) })).toBeEnabled();
+    });
+  });
+
+  describe("フォーカス（キーボード・読み上げで見失わない）", () => {
+    it("1 件ずつの反映の後、押したボタンが一覧から消えるので、「元に戻す」へフォーカスを移す", async () => {
+      // 準備
+      await seed();
+      const { user } = renderDrift();
+      await waitForReady();
+
+      // 実行
+      await clickInCard(user, "長波改二", "計画を実際に合わせる");
+
+      // 検証
+      const undoButton = await screen.findByRole("button", { name: "元に戻す" });
+      await waitFor(() => expectFocused(undoButton, "「元に戻す」"));
+    });
+
+    it("まとめて反映した後も、「元に戻す」へフォーカスを移す", async () => {
+      // 準備
+      await seed();
+      const { user } = renderDrift();
+      await waitForReady();
+      const dialog = await openBulk(user);
+
+      // 実行
+      await user.click(within(dialog).getByRole("button", { name: bulkApplyLabel(4) }));
+
+      // 検証
+      const undoButton = await screen.findByRole("button", { name: "元に戻す" });
+      await waitFor(() => expectFocused(undoButton, "「元に戻す」"));
+    });
+
+    it("「元に戻す」を押した後、ボタンが消えるので、見出し「対応が必要 n件」（tabIndex=-1）へフォーカスを移す", async () => {
+      // 準備：長波改二を反映しておく
+      await seed();
+      const { user } = renderDrift();
+      await waitForReady();
+      await clickInCard(user, "長波改二", "計画を実際に合わせる");
+      await expectSaved({ ...summer2026Assignments, naganami: "tago" });
+
+      // 実行
+      await user.click(screen.getByRole("button", { name: "元に戻す" }));
+
+      // 検証：戻した後は 4 件
+      const heading = await screen.findByRole("heading", { name: issuesHeadingPattern(4) });
+      expect(heading).toHaveAttribute("tabindex", "-1");
+      await waitFor(() => expectFocused(heading, "見出し「対応が必要 4件」"));
+    });
+
+    it("「計画をまとめて実際に合わせる」で確認の枠を開いたら、枠へフォーカスを移す", async () => {
+      // 準備
+      await seed();
+      const { user } = renderDrift();
+      await waitForReady();
+
+      // 実行
+      const dialog = await openBulk(user);
+
+      // 検証
+      await waitFor(() => expectFocused(dialog, "確認の枠"));
+    });
+
+    it("確認の枠の「やめる」で閉じたら、開いたボタン「計画をまとめて実際に合わせる」へフォーカスを戻す", async () => {
+      // 準備
+      await seed();
+      const { user } = renderDrift();
+      await waitForReady();
+      const dialog = await openBulk(user);
+
+      // 実行
+      await user.click(within(dialog).getByRole("button", { name: "やめる" }));
+
+      // 検証
+      expect(queryBulk()).not.toBeInTheDocument();
+      expectFocused(screen.getByRole("button", { name: "計画をまとめて実際に合わせる" }), "「計画をまとめて実際に合わせる」");
+    });
+
+    it("確認の枠の中で Esc を押したら閉じて、開いたボタンへフォーカスを戻す（計画は変えない）", async () => {
+      // 準備：枠の中のチェックにフォーカスを置く
+      await seed();
+      const { user } = renderDrift();
+      await waitForReady();
+      const dialog = await openBulk(user);
+      within(dialog).getAllByRole("checkbox")[0].focus();
+
+      // 実行
+      await user.keyboard("{Escape}");
+
+      // 検証
+      expect(queryBulk()).not.toBeInTheDocument();
+      expectFocused(screen.getByRole("button", { name: "計画をまとめて実際に合わせる" }), "「計画をまとめて実際に合わせる」");
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
+    });
+
+    it("確認の枠を開いたまま、ほかの部品の変更で対応が必要なものが 1 件になって開いたボタンが消えても、「やめる」でフォーカスを失わず、見出し「対応が必要 1件」へ移す", async () => {
+      // 準備：確認の枠を開いてから、ほかの部品が 3 件を実際の札に合わせる
+      await seed();
+      const { user } = renderDrift();
+      await waitForReady();
+      await openBulk(user);
+      await user.click(screen.getByRole("button", { name: PROBE_RESOLVE_THREE }));
+      await waitFor(() => expect(screen.getByRole("heading", { name: issuesHeadingPattern(1) })).toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "計画をまとめて実際に合わせる" })).not.toBeInTheDocument();
+      const dialog = queryBulk();
+      if (dialog === null) throw new Error("確認の枠が開いたままであること");
+
+      // 実行
+      await user.click(within(dialog).getByRole("button", { name: "やめる" }));
+
+      // 検証
+      expect(queryBulk()).not.toBeInTheDocument();
+      const heading = screen.getByRole("heading", { name: issuesHeadingPattern(1) });
+      expect(heading).toHaveAttribute("tabindex", "-1");
+      expectFocused(heading, "見出し「対応が必要 1件」");
     });
   });
 });

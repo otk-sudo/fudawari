@@ -3,7 +3,8 @@
 // 部品の公開する形（実装の担当向け。テストはこの形で探す）
 // - 差し込み方：レイアウトで `<SettingsDialog><SettingsContent /></SettingsDialog>`（枠は src/components/SettingsDialog.tsx。
 //   開閉は settings-dialog-store）。中身は開いている間だけ描かれる（閉じると外れる）
-// - 見出し「表示」「データ」（モックの h2。ウィンドウの見出し「設定」の下の階層）。アカウントの欄はデータの後（PR-10b を取り込んでから）
+// - 見出し「表示」「データ」（モックの h2。ウィンドウの見出し「設定」の下の階層）。アカウントの欄（AccountSection）はデータの後
+//   （SettingsContent.account.test.tsx で確かめる）
 // - 表示：radiogroup「画面モード」（radio「ダーク」「ライト」「端末に合わせる」）、radiogroup「文字の大きさ」（「小」「標準」「大」）、
 //   radiogroup「控えの表示」（「一行」「カード」）、radiogroup「控えの並び順」（「艦型」「Lv」「特効の強さ」「名前」）。
 //   選ばれている項目は checked（<input type="radio"> か、role="radio" と aria-checked）。
@@ -17,6 +18,9 @@
 //     ファイルとしてダウンロードさせる（Blob → URL.createObjectURL → <a download> の click()）。
 //     読み込みはファイルを選ぶ → role="alertdialog" の確認（「置き換え」る旨。ボタン「置き換える」を含む名前と「やめる」）→
 //     共有の札割りのデータ（usePlanData の setAssignments）で最新イベントの割り当てを置き換える。
+//     読み込んだ割り当てのうち、今の定義にない札 ID のものは外して控えに戻す（PR-08 のレビュー P2・Codex P2）。確認の「n隻分」は
+//     外した後の数。外した数があれば、確認に「定義にない札の n 隻は控えに戻します」を出す。
+//     置き換えた割り当てを保存できなければ、設定のウィンドウの中の role="alert" で「保存できませんでした」と知らせる。
 //     読めないファイル・別のイベントのファイルは、確認を出さずに role="alert" で知らせる（「読み込めませんでした」、別のイベントは「別のイベント」）
 //   - 「取り込んだ艦娘データを削除」：「最終取り込み（M/D HH:mm） ／ n隻。札割りは残ります」とボタン「削除する」。
 //     押すと role="alertdialog" の確認（ボタン「削除する」「やめる」）。削除は getPlanStorage().clearImportedShips() の後に
@@ -427,6 +431,63 @@ describe("設定のウィンドウの中身（SettingsContent）", () => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
       expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
       expect(screen.getByText(`${PROBE}hatsushimo→s31`)).toBeInTheDocument();
+    });
+
+    it("確認の文に、読み込んだファイルの隻数（「n隻分」）を出し、定義にない札がなければ控えに戻す旨は出さない", async () => {
+      // 準備
+      await seedPlan(storage);
+      const { user } = renderSettings();
+      await waitForDataLoaded();
+
+      // 実行
+      await user.upload(getImportInput(), planFileOf(planFileText(EVENT_ID, { hatsushimo: "rengo", okinami: "s31" })));
+
+      // 検証
+      const confirm = await screen.findByRole("alertdialog");
+      expect(confirm).toHaveTextContent(/(?<!\d)2\s*隻分/);
+      expect(confirm).not.toHaveTextContent(/定義にない札/);
+    });
+
+    it("今の定義にない札 ID の割り当ては外して控えに戻す：確認の「n隻分」は外した後の数にし、「定義にない札の n 隻は控えに戻します」と出し、置き換えた後も保存しない", async () => {
+      // 準備：3 隻のうち 2 隻は、今の定義にない札（消えた札・書き間違い）に置いたファイル（レビュー P2・Codex P2）
+      await seedPlan(storage);
+      const fromFile: AssignmentMap = { hatsushimo: "rengo", okinami: "no-such-fuda", kitakami: "old-fuda" };
+      const { user } = renderSettings();
+      await waitForDataLoaded();
+
+      // 実行：ファイルを選ぶ
+      await user.upload(getImportInput(), planFileOf(planFileText(EVENT_ID, fromFile)));
+
+      // 検証：確認の文
+      const confirm = await screen.findByRole("alertdialog");
+      expect(confirm).toHaveTextContent(/(?<!\d)1\s*隻分/);
+      expect(confirm).not.toHaveTextContent(/(?<!\d)3\s*隻分/);
+      expect(confirm).toHaveTextContent(/定義にない札の\s*2\s*隻は控えに戻します/);
+
+      // 実行：置き換える
+      await user.click(within(confirm).getByRole("button", { name: /置き換える/ }));
+
+      // 検証：定義の札の割り当てだけを保存し、定義にない札の艦は控え（割り当てなし）
+      await waitFor(async () => expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "rengo" }));
+      await waitFor(() => expect(screen.getByText(`${PROBE}hatsushimo→rengo`)).toBeInTheDocument());
+    });
+
+    it("置き換えた割り当てを保存できなかったら、設定のウィンドウの中で「保存できませんでした」と知らせる", async () => {
+      // 準備：割り当ての保存だけを失敗させる
+      await seedPlan(storage);
+      vi.spyOn(storage, "saveAssignments").mockRejectedValue(new Error("保存できない（テスト）"));
+      const { user } = renderSettings();
+      await waitForDataLoaded();
+      await user.upload(getImportInput(), planFileOf(planFileText(EVENT_ID, { hatsushimo: "rengo" })));
+      const confirm = await screen.findByRole("alertdialog");
+
+      // 実行
+      await user.click(within(confirm).getByRole("button", { name: /置き換える/ }));
+
+      // 検証
+      const alert = await within(getDialog()).findByRole("alert");
+      expect(alert).toHaveTextContent(/保存できませんでした/);
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
 
     it.each([
