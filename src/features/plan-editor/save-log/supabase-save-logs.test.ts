@@ -27,6 +27,10 @@ vi.mock("@supabase/supabase-js", async (importOriginal) => ({
 //   user_id → userId（PR-12b。「誰が」を ID で見分けるため。null はそのまま null）
 // - PR-12b（レビュー M1・Codex #21-4301315075）：PostgREST は 1 回に返す行数に上限（max_rows。既定 1000）があるため、
 //   .range(from, from + 999) を、返った件数が 1000 未満になるまでくり返して連結する（偽物は max_rows をまねないので、range の呼び方で確かめる）
+// - PR-14（PR-12b のレビュー P3）：サーバーの max_rows が 1000 より小さくても全部読む。返った件数が 0 件になるまで読み続け、
+//   次に読む位置（from）は、それまでに返った件数の合計にする（1 回に頼む件数は 1000 のまま。to は from + 999）。
+//   そのため、PR-12b の「999 件なら 1 回」「2345 件なら 3 回」のテストは、最後に 0 件が返る 1 回を足した呼び方に変えた
+//   （999 件：0〜999 → 999〜1998、2345 件：… → 2345〜3344）。max_rows のまねは、偽物の読み取りに limit を足して作る
 //
 // PR-12b で変えたこと：最初のテストの期待値に userId を足した（記録に利用者の ID を持たせる仕様にしたため）
 // - 失敗は、画面に出す理由の文（日本語）を message に持つ Error にする（言葉の要点だけを確かめる。定義の保管庫と同じ）
@@ -294,18 +298,19 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       });
     }
 
-    it("2345 件なら、0〜999・1000〜1999・2000〜2999 の 3 回に分けて読み、新しい順に連結して 2345 件を返す", async () => {
+    it("2345 件なら、0〜999・1000〜1999・2000〜2999 と読み、0 件が返る 2345〜3344 で終えて、新しい順に連結して 2345 件を返す", async () => {
       // 準備
       seedMany(2345);
 
       // 実行
       const logs = await loadSaveLogs(MANY_ID);
 
-      // 検証
+      // 検証（PR-14 で、最後の 0 件の読み取りを足した）
       expect(saveLogRanges()).toEqual([
         [0, 999],
         [1000, 1999],
         [2000, 2999],
+        [2345, 3344],
       ]);
       expect(logs).toHaveLength(2345);
       expect(logs.map((log) => log.id)).toEqual(Array.from({ length: 2345 }, (_, index) => 2345 - index));
@@ -328,7 +333,7 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       expect(logs.at(-1)?.id).toBe(1);
     });
 
-    it("999 件なら 1 回（0〜999）だけ読む（境界）", async () => {
+    it("999 件なら、0〜999 の後に 0 件が返る 999〜1998 を読んで終える（境界。PR-14 で 1 回から 2 回に変えた）", async () => {
       // 準備
       seedMany(999);
 
@@ -336,8 +341,28 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       const logs = await loadSaveLogs(MANY_ID);
 
       // 検証
-      expect(saveLogRanges()).toEqual([[0, 999]]);
+      expect(saveLogRanges()).toEqual([
+        [0, 999],
+        [999, 1998],
+      ]);
       expect(logs).toHaveLength(999);
+    });
+
+    it("サーバーの max_rows が 500 でも、返った件数の合計から続けて 0 件になるまで読み、1234 件を新しい順にすべて返す（PR-14：PR-12b のレビュー P3）", async () => {
+      // 準備：save_logs の読み取りは 1 回に 500 件までしか返さない（max_rows のまね）
+      seedMany(1234);
+      const original = fake.main.from.getMockImplementation();
+      if (original === undefined) throw new Error("偽物の from に返し方がありません");
+      fake.main.from.mockImplementation((table: string): FakeQuery =>
+        table === "save_logs" ? original(table).limit(500) : original(table),
+      );
+
+      // 実行
+      const logs = await loadSaveLogs(MANY_ID);
+
+      // 検証：抜けも重なりもなく全部読む。読む位置は 0・500・1000・1234（最後は 0 件）
+      expect(logs.map((log) => log.id)).toEqual(Array.from({ length: 1234 }, (_, index) => 1234 - index));
+      expect(saveLogRanges().map((range) => range?.[0])).toEqual([0, 500, 1000, 1234]);
     });
 
     it("2 回目の読み取りが通信に失敗したら、途中までの記録を返さず「通信に失敗しました」の理由で失敗する", async () => {

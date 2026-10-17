@@ -9,12 +9,25 @@
 // - fetch は差し替える（src/test/latest-data-fetch.ts でパスごとに振り分ける）。
 // - 保存先は fake-indexeddb の上の本物の保存（テストごとに別の DB）を、共有の札割りのデータに渡す（resetPlanDataCache）。
 // - 部品の探し方は src/test/assign-screen.ts の冒頭にまとめてある。
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+//
+// PR-14（T4-2 の点検の B1）で足したこと（先に書いたテスト。直し方は親が決めた）
+// - 割り振りの画面を開いたまま、共有の札割りのデータ（usePlanData）の割り当てが外から置き換えられたら
+//   （設定の「札割りの書き出し・読み込み」の読み込みなど。setAssignments）、画面は新しい割り当てを表示し、
+//   「元に戻す」の履歴を捨てる（押せなくする）。次の操作は新しい割り当ての上に重ねて保存する
+//   （古い割り当てに 1 手を足した全体を保存して、読み込んだ内容を消さない）。
+//   この画面の中の操作（setAssignments を通した保存）では履歴を捨てない（既存の「元に戻す」のテストのとおり）
+// - 取り込み直し（取り込みの画面）・取り込んだ艦娘データの削除（艦が 0 隻になり、取り込みの案内に替わる）は、
+//   割り振りの画面の中身を外すので、この問題は起きない（テストは足していない）
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AssignPage from "@/app/assign/page";
+import { SettingsDialog } from "@/components/SettingsDialog";
+import { closeSettingsDialog, openSettingsDialog } from "@/components/settings-dialog-store";
+import { serializePlanFile } from "@/domain/plan/planFile";
 import type { AssignmentMap } from "@/domain/plan/types";
+import { SettingsContent } from "@/features/settings";
 import { LATEST_DEFINITION_PATH, resetLatestDefinitionCache, useLatestDefinition } from "@/lib/definition";
 import { resetPlanDataCache, usePlanData } from "@/lib/plan";
 import { resetShipMasterCache, SHIP_MASTER_PATH } from "@/lib/ship-master";
@@ -70,6 +83,7 @@ beforeEach(() => {
 afterEach(async () => {
   // 部品を外してから、共有の読み込みの状態を捨て、差し替えを戻し、DB を消す
   cleanup();
+  closeSettingsDialog();
   resetLatestDefinitionCache();
   resetShipMasterCache();
   resetPlanDataCache();
@@ -147,6 +161,46 @@ function ReturnedProbe(): ReactNode {
   const plan = usePlanData(definition?.event.id ?? null, definition?.fudas.map((fuda) => fuda.id) ?? []);
   const text = plan.status === "ready" ? String(plan.returnedCount) : plan.status;
   return <p>{`確認用：控えに戻した件数→${text}`}</p>;
+}
+
+/** 確認用の部品の、共有の札割りのデータの割り当てを外から置き換えるボタン */
+const PROBE_REPLACE = "確認用：割り当てを置き換える";
+
+/**
+ * 外から置き換える割り当て（設定で読み込む札割りの代わり）：
+ * 時雨改二（shigure2）を連合艦隊から外して控えへ、浜波改（hamanami）を第六艦隊へ。利根改二（tone）は控え
+ */
+const REPLACED: AssignmentMap = {
+  ...Object.fromEntries(Object.entries(summer2026Assignments).filter(([uid]) => uid !== "shigure2")),
+  hamanami: "sixth",
+};
+
+/** 確認用：同じページの別の部品（設定の読み込みなど）として、共有の札割りのデータの割り当てを next で丸ごと置き換えるボタン */
+function PlanReplacer({ next }: { next: AssignmentMap }): ReactNode {
+  const state = useLatestDefinition();
+  const definition = state.status === "success" ? state.definition : null;
+  const plan = usePlanData(definition?.event.id ?? null, definition?.fudas.map((fuda) => fuda.id) ?? []);
+  return (
+    <button type="button" disabled={plan.status !== "ready"} onClick={() => void plan.setAssignments(next)}>
+      {PROBE_REPLACE}
+    </button>
+  );
+}
+
+/** ヘッダーの「元に戻す」 */
+function getUndoButton(): HTMLElement {
+  return screen.getByRole("button", { name: "元に戻す" });
+}
+
+/** 外から置き換えた割り当て（REPLACED）を表示していることを確かめる（利根改二は控えにいる前提） */
+async function expectReplacedShown(): Promise<void> {
+  // 時雨改二は控えへ（連合艦隊から外れる）、浜波改は第六艦隊へ
+  await waitFor(() => expect(getCard(getTray(), "時雨改二")).toBeInTheDocument());
+  expect(queryCard(getColumn("連合艦隊"), "時雨改二")).toBeNull();
+  expect(getColumn("連合艦隊")).toHaveTextContent(shipCountPattern(7));
+  expect(getCard(getColumn("第六艦隊"), "浜波改")).toBeInTheDocument();
+  expect(getCard(getTray(), "利根改二")).toBeInTheDocument();
+  expect(queryCard(getColumn("連合艦隊"), "利根改二")).toBeNull();
 }
 
 /** 読み込み中を出していて、中身・取り込みの案内・警告を出していないことを確かめる */
@@ -405,6 +459,116 @@ describe("割り振りの画面（/assign）", () => {
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveTextContent("保存できませんでした");
       expect(getCard(getColumn("連合艦隊"), "利根改二")).toBeInTheDocument();
+    });
+  });
+
+  describe("共有の札割りのデータが外から置き換えられたとき（PR-14：T4-2 の点検の B1）", () => {    it("画面を開いたまま共有の割り当てが外から置き換えられたら、新しい割り当てを表示し、「元に戻す」の履歴を捨てる（押せなくする）", async () => {
+      // 準備：この画面で利根改二を連合艦隊に置き（「元に戻す」を押せる）、保存されるまで待つ
+      await seedPlan(storage);
+      const user = userEvent.setup();
+      render(
+        <>
+          <AssignPage />
+          <PlanReplacer next={REPLACED} />
+        </>,
+      );
+      await waitForReady();
+      await placeToneOnRengo(user);
+      await waitFor(async () =>
+        expect(await storage.loadAssignments(EVENT_ID)).toEqual({ ...summer2026Assignments, tone: "rengo" }),
+      );
+      expect(getUndoButton()).toBeEnabled();
+
+      // 実行：ほかの部品（設定の読み込みなど）が割り当てを丸ごと置き換える
+      await user.click(screen.getByRole("button", { name: PROBE_REPLACE }));
+
+      // 検証：置き換えた割り当てを表示する（この画面で置いた利根改二も控えに戻る）。「元に戻す」は押せない
+      await expectReplacedShown();
+      expect(getUndoButton()).toBeDisabled();
+    });
+
+    it("外から置き換えられた後の次の操作は、新しい割り当ての上に重ねて保存する（読み込んだ内容を消さない）。「元に戻す」は置き換えた割り当てまで戻す", async () => {
+      // 準備：開いた後に、ほかの部品が割り当てを置き換え、保存されるまで待つ
+      await seedPlan(storage);
+      const user = userEvent.setup();
+      render(
+        <>
+          <AssignPage />
+          <PlanReplacer next={REPLACED} />
+        </>,
+      );
+      await waitForReady();
+      await user.click(screen.getByRole("button", { name: PROBE_REPLACE }));
+      await waitFor(async () => expect(await storage.loadAssignments(EVENT_ID)).toEqual(REPLACED));
+      await expectReplacedShown();
+
+      // 実行：利根改二をウルシー攻撃部隊に置く
+      await user.click(getCard(getTray(), "利根改二"));
+      await user.click(within(getPanel()).getByRole("button", { name: "ウルシー攻撃部隊に置く" }));
+
+      // 検証：置き換えた割り当てに 1 手を足したものを保存する（時雨改二は控え・浜波改は第六艦隊のまま）
+      await waitFor(async () =>
+        expect(await storage.loadAssignments(EVENT_ID)).toEqual({ ...REPLACED, tone: "ulithi" }),
+      );
+      expect(getCard(getTray(), "時雨改二")).toBeInTheDocument();
+      expect(getCard(getColumn("第六艦隊"), "浜波改")).toBeInTheDocument();
+
+      // 実行：元に戻す
+      await user.click(getUndoButton());
+
+      // 検証：置き換えた割り当てに戻り（置き換える前の割り当てには戻らない）、それ以上は戻せない
+      await waitFor(async () => expect(await storage.loadAssignments(EVENT_ID)).toEqual(REPLACED));
+      await expectReplacedShown();
+      expect(getUndoButton()).toBeDisabled();
+    });
+
+    it("設定のウィンドウで札割りのファイルを読み込んで置き換えたら、閉じた後の割り振りの画面は読み込んだ割り当てを表示し、次の操作はその上に重ねて保存する", async () => {
+      // 準備：割り振りの画面と設定のウィンドウ（全画面で 1 つ）を描き、利根改二を連合艦隊に置いておく
+      await seedPlan(storage);
+      const user = userEvent.setup();
+      render(
+        <>
+          <AssignPage />
+          <SettingsDialog>
+            <SettingsContent />
+          </SettingsDialog>
+        </>,
+      );
+      await waitForReady();
+      await placeToneOnRengo(user);
+      await waitFor(async () =>
+        expect(await storage.loadAssignments(EVENT_ID)).toEqual({ ...summer2026Assignments, tone: "rengo" }),
+      );
+
+      // 実行：設定のウィンドウを開き、REPLACED の札割りのファイルを読み込んで「置き換える」、ウィンドウを閉じる
+      act(() => {
+        openSettingsDialog();
+      });
+      const dialog = await screen.findByRole("dialog", { name: "設定" });
+      const fileInput = await within(dialog).findByLabelText(/読み込む/);
+      await waitFor(() => expect(fileInput).toBeEnabled());
+      const file = new File([serializePlanFile(EVENT_ID, REPLACED)], "fudawari-plan.json", { type: "application/json" });
+      await user.upload(fileInput, file);
+      const confirm = await screen.findByRole("alertdialog");
+      await user.click(within(confirm).getByRole("button", { name: /置き換える/ }));
+      await waitFor(async () => expect(await storage.loadAssignments(EVENT_ID)).toEqual(REPLACED));
+      act(() => {
+        closeSettingsDialog();
+      });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "設定" })).not.toBeInTheDocument());
+
+      // 検証：読み込んだ割り当てを表示し、「元に戻す」は押せない
+      await expectReplacedShown();
+      expect(getUndoButton()).toBeDisabled();
+
+      // 実行：次の操作（利根改二をウルシー攻撃部隊に置く）
+      await user.click(getCard(getTray(), "利根改二"));
+      await user.click(within(getPanel()).getByRole("button", { name: "ウルシー攻撃部隊に置く" }));
+
+      // 検証：読み込んだ割り当てに 1 手を足したものを保存する
+      await waitFor(async () =>
+        expect(await storage.loadAssignments(EVENT_ID)).toEqual({ ...REPLACED, tone: "ulithi" }),
+      );
     });
   });
 

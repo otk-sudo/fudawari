@@ -1,10 +1,12 @@
-import { act, render, type RenderResult, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, type RenderResult, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // `@/` の別名が Vitest でも解決できることを兼ねて確かめるため、別名で読み込む
 import HomePage from "@/app/page";
 import { setRole } from "@/features/auth";
 import { resetLatestDefinitionCache, useLatestDefinition } from "@/lib/definition";
+import { resetPlanDataCache, usePlanData } from "@/lib/plan";
+import type { FudawariStorage } from "@/lib/storage";
 import {
   failNetwork,
   type FetchMock,
@@ -15,7 +17,8 @@ import {
   stubFetch,
   textResponse,
 } from "@/test/definition-fetch";
-import { cloneSummer2026Definition } from "@/test/fixtures";
+import { cloneSummer2026Definition, summer2026Ships } from "@/test/fixtures";
+import { cleanupTestStorages, importInput, openTestStorage } from "@/test/plan-storage";
 
 // テスト用の 2026夏イベは 2026-08-07 12:00（日本時間）開始・終了日時は未定（src/test/fixtures/summer2026Definition.ts）
 /** 2026夏イベの開始日時 */
@@ -529,6 +532,119 @@ describe("トップ画面", () => {
 
       // 検証
       expect(getDefinitionTile()).toHaveTextContent(ADMIN_NOTE);
+    });
+  });
+
+  // PR-14（T4-2 の点検の M1）：ヘッダーの補足に「開催中：（イベント名） ／ 最終取り込み M/D HH:mm」（モック Home.dc.html、要件 3.1）。
+  // 最終取り込みはブラウザ内の保存（共有の札割りのデータと同じ保存先。getPlanStorage・usePlanData のどちらから読んでもよい）から読む。
+  // 取り込んでいなければ「最終取り込み」は出さない。開催中でなければ「開催中：」と区切りの「／」は出さない。
+  // 補足の文は 1 つの要素でも分かれていてもよい（ヘッダー〔h1 を含む <header>〕の文字で確かめる）
+  describe("「最終取り込み M/D HH:mm」（PR-14：T4-2 の点検の M1）", () => {
+    /** 取り込んだ日時（端末の時刻帯で 2026-10-15 20:40）。端末の時刻帯に左右されないよう、端末の時刻で作ってから ISO 8601 にする */
+    const IMPORTED_AT = new Date(2026, 9, 15, 20, 40).toISOString();
+    /** 画面に出る最終取り込み */
+    const LAST_IMPORT = /最終取り込み\s*10\/15\s+20:40/;
+
+    let storage: FudawariStorage;
+
+    beforeEach(() => {
+      storage = openTestStorage("fudawari-home-test").storage;
+      resetPlanDataCache({ storage });
+    });
+
+    afterEach(async () => {
+      cleanup();
+      resetPlanDataCache();
+      await cleanupTestStorages();
+    });
+
+    /** ホームのヘッダー（h1「札割りプランナー」を含む <header>） */
+    function getHomeHeader(): HTMLElement {
+      const header = screen.getByRole("heading", { level: 1, name: "札割りプランナー" }).closest("header");
+      if (header === null) throw new Error("h1 を含む <header> がありません");
+      return header;
+    }
+
+    /** 確認用：共有の札割りのデータ（usePlanData）の状態を文字で出す（ホームと同じ保存先を読み終えたかを確かめる） */
+    function PlanStatusProbe(): ReactNode {
+      const state = useLatestDefinition();
+      const definition = state.status === "success" ? state.definition : null;
+      const plan = usePlanData(definition?.event.id ?? null, definition?.fudas.map((fuda) => fuda.id) ?? []);
+      return <p>{`確認用：札割りのデータ＝${plan.status}`}</p>;
+    }
+
+    /**
+     * ホームを確認用の部品と一緒に描き、定義と保存先（最終取り込み）を読み終えるまで待つ。
+     * ホームが保存先から直接読んでも、共有の札割りのデータから読んでもよいよう、確認用の部品が読み終え、
+     * 保存先の最終取り込みの読み取りがすべて終わってから、その結果を受けた描き直しを済ませる
+     */
+    async function renderHomeAndWaitForData(): Promise<void> {
+      const loadLastImport = vi.spyOn(storage, "loadLastImport");
+      render(
+        <>
+          <HomePage />
+          <DefinitionStatusProbe />
+          <PlanStatusProbe />
+        </>,
+      );
+      await waitForDefinition("success");
+      expect(await screen.findByText("確認用：札割りのデータ＝ready")).toBeInTheDocument();
+      await act(async () => {
+        await Promise.allSettled(loadLastImport.mock.results.map((result) => result.value as Promise<unknown>));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    it("開催中で取り込み済みなら、ヘッダーに「開催中：2026夏イベ ／ 最終取り込み 10/15 20:40」を出す", async () => {
+      // 準備：取り込みを保存しておく（beforeEach のとおり開催中の時刻）
+      await storage.saveImport(importInput(summer2026Ships, { importedAt: IMPORTED_AT }));
+
+      // 実行
+      render(<HomePage />);
+
+      // 検証
+      await waitFor(() =>
+        expect(getHomeHeader()).toHaveTextContent(/開催中：2026夏イベ\s*／\s*最終取り込み\s*10\/15\s+20:40/),
+      );
+    });
+
+    it("最新イベントが終了していて取り込み済みなら、「最終取り込み 10/15 20:40」だけを出す（「開催中：」と前の「／」は出さない）", async () => {
+      // 準備：2026-09-01 に終了したイベント、今は 2026-10-16。取り込みを保存しておく
+      respondWithEndAt(fetchMock, ENDED_AT);
+      await storage.saveImport(importInput(summer2026Ships, { importedAt: IMPORTED_AT }));
+
+      // 実行
+      render(<HomePage />);
+
+      // 検証
+      await waitFor(() => expect(getHomeHeader()).toHaveTextContent(LAST_IMPORT));
+      expect(getHomeHeader()).not.toHaveTextContent(/開催中：/);
+      expect(getHomeHeader()).not.toHaveTextContent(/／\s*最終取り込み/);
+    });
+
+    it("取り込んでいなければ「最終取り込み」を出さない（「開催中：2026夏イベ」だけで、後ろに「／」を付けない）", async () => {
+      // 準備：何も保存していない
+
+      // 実行：定義と保存先を読み終えるまで待つ
+      await renderHomeAndWaitForData();
+
+      // 検証
+      expect(getHomeHeader()).toHaveTextContent(/開催中：2026夏イベ/);
+      expect(getHomeHeader()).not.toHaveTextContent(/最終取り込み/);
+      expect(getHomeHeader()).not.toHaveTextContent(/開催中：2026夏イベ\s*／/);
+    });
+
+    it("取り込んだ艦娘データを削除した後（最終取り込みの記録がない）も「最終取り込み」を出さない", async () => {
+      // 準備：取り込んでから削除しておく
+      await storage.saveImport(importInput(summer2026Ships, { importedAt: IMPORTED_AT }));
+      await storage.clearImportedShips();
+
+      // 実行
+      await renderHomeAndWaitForData();
+
+      // 検証
+      expect(getHomeHeader()).toHaveTextContent(/開催中：2026夏イベ/);
+      expect(getHomeHeader()).not.toHaveTextContent(/最終取り込み/);
     });
   });
 });
