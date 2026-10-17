@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 import { formatDateTimeJst } from "@/domain/definition-edit";
 import type { ChangeKind, ConflictChoice, ConflictChoices, MergeConflict } from "@/domain/merge";
 import styles from "./ConflictDialog.module.css";
@@ -77,6 +77,7 @@ export type ConflictDialogProps = {
 export function ConflictDialog(props: ConflictDialogProps): ReactNode {
   const { theirsName, conflicts, choices } = props;
   const dialogRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
   const allChosen = conflicts.every((conflict) => choices[conflict.id] !== undefined);
   const canConfirm = allChosen && props.problem === null && !props.saving;
 
@@ -89,6 +90,7 @@ export function ConflictDialog(props: ConflictDialogProps): ReactNode {
       ref={dialogRef}
       role="alertdialog"
       aria-label="保存の確認"
+      aria-describedby={titleId}
       tabIndex={-1}
       className={styles.dialog}
       onKeyDown={(event) => {
@@ -96,7 +98,7 @@ export function ConflictDialog(props: ConflictDialogProps): ReactNode {
         if (event.key === "Escape" && !props.saving) props.onCancel();
       }}
     >
-      <p className={styles.title}>
+      <p id={titleId} className={styles.title}>
         開いた後に{theirsName}が下書きを保存していました（{formatDateTimeJst(props.theirsAt)}）
       </p>
       <p className={styles.note}>
