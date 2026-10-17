@@ -304,6 +304,28 @@ describe("parseImportText：api_ship の配列（svdata= も api_data もない�
     expect(result.lockFilterIgnored).toBe(false);
   });
 
+  it("api_locked を持つ艦が一部だけなら、ロックの情報がないものとして扱い、「ロック済みだけ」で絞り込まない", () => {
+    const elements = JSON.parse(apiShipArrayText(true)) as Record<string, unknown>[];
+    delete elements[2]?.api_locked; // 103 だけロックの情報がない
+
+    const result = expectSuccess(parseImportText(JSON.stringify(elements), master, { lockedOnly: true, minLevel: 1 }));
+
+    expect(result.ships).toEqual(standardShips);
+    expect(result.hasLockInfo).toBe(false);
+    expect(result.lockFilterIgnored).toBe(true);
+  });
+
+  it("api_locked が飛ばす要素（艦の ID が 0）にだけあっても、ロックの情報がないものとして扱う", () => {
+    const elements = JSON.parse(apiShipArrayText(false)) as Record<string, unknown>[];
+    const skipped = elements.find((e) => e.api_ship_id === 0);
+    if (skipped) skipped.api_locked = 1;
+
+    const result = expectSuccess(parseImportText(JSON.stringify(elements), master, { lockedOnly: true, minLevel: 1 }));
+
+    expect(result.ships).toEqual(standardShips);
+    expect(result.hasLockInfo).toBe(false);
+  });
+
   it("Lv 下限が効く", () => {
     const result = expectSuccess(parseImportText(apiShipArrayText(false), master, { lockedOnly: false, minLevel: 99 }));
 
