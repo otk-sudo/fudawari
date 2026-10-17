@@ -1,0 +1,535 @@
+/*
+ * 差分の画面の中身（モック Drift.dc.html）。
+ *
+ * 差分の画面だけで使う色は、.screen に CSS 変数（--drift-*）として置く。ほかの画面と共通の色は theme.css の変数をそのまま使う。
+ * ダークの値はモックの値、ライトの値はモックにないため同じ役割で読みやすい値を仮に置いている（theme.css と同じ扱い）。
+ * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
+ * ほかの画面でも使うようになったら theme.css へ移す。
+ * 札の色（札の表示・進み具合の見出しとバー・艦名の帯の左端）は定義のデータなので style で渡す。
+ */
+
+/* ダーク（既定。モックの値） */
+.screen {
+  --drift-danger-bg: #3a2224; /* 計画と違う札が付いた（赤）の下地 */
+  --drift-danger-text: #ffb4ae; /* 計画と違う札が付いた（赤）の文字 */
+  --drift-danger-border: #7a3a36; /* 計画と違う札が付いた（赤）の枠・1 件の枠 */
+  --drift-danger-stripe: #ff8a80; /* 計画と違う札が付いた 1 件の左端 */
+  --drift-warning-bg: #2a2116; /* 計画にない艦に札が付いた（橙）の下地 */
+  --drift-warning-text: #f2c98a; /* 計画にない艦に札が付いた（橙）の文字 */
+  --drift-warning-border: #4a3a22; /* 計画にない艦に札が付いた（橙）の枠 */
+  --drift-warning-stripe: #f0a33a; /* 計画にない艦に札が付いた 1 件の左端 */
+  --drift-ok-bg: #1c2a22; /* 計画どおり（緑）の下地 */
+  --drift-ok-text: #a8ddb5; /* 計画どおり（緑）の文字 */
+  --drift-ok-border: #2f5a3e; /* 計画どおり（緑）の枠 */
+  --drift-banner-bg: #2c2f36; /* 1 件の艦名の帯 */
+  --drift-body-text: #d7dadf; /* 1 件の説明文 */
+  --drift-on-accent: #101114; /* 強調の金の上の文字（「計画をまとめて実際に合わせる」「n件を計画に反映する」） */
+  --drift-bulk-bg: #2a2416; /* まとめての確認の下地 */
+  --drift-bulk-border: #7a6230; /* まとめての確認の枠 */
+  --drift-bulk-title: #f2c98a; /* まとめての確認の説明 */
+  --drift-bulk-note: #d9cfb8; /* まとめての確認の注意書き */
+  --drift-bulk-disabled-bg: #3a3426; /* 「0件を計画に反映する」（押せない）の下地 */
+  --drift-bulk-disabled-text: #8a7f66; /* 「0件を計画に反映する」（押せない）の文字 */
+  --drift-done-bg: #17291f; /* 反映後の知らせの下地 */
+  --drift-done-border: #2e6b4a; /* 反映後の知らせの枠 */
+  --drift-done-text: #bfe8d0; /* 反映後の知らせの文字 */
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1120px;
+  padding: 14px;
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:global(:root[data-theme="light"]) .screen {
+  --drift-danger-bg: #fdecea;
+  --drift-danger-text: #8f1d14;
+  --drift-danger-border: #e8a59f;
+  --drift-danger-stripe: #d64538;
+  --drift-warning-bg: #fdf3e2;
+  --drift-warning-text: #7a4a00;
+  --drift-warning-border: #e6c48c;
+  --drift-warning-stripe: #c77700;
+  --drift-ok-bg: #e7f5ec;
+  --drift-ok-text: #1d5c34;
+  --drift-ok-border: #9fd0b0;
+  --drift-banner-bg: #eceef2;
+  --drift-body-text: #2b2f36;
+  --drift-on-accent: #ffffff;
+  --drift-bulk-bg: #fbf3e2;
+  --drift-bulk-border: #e0c58a;
+  --drift-bulk-title: #6b4a00;
+  --drift-bulk-note: #5e5137;
+  --drift-bulk-disabled-bg: #ece6d8;
+  --drift-bulk-disabled-text: #8a7f66;
+  --drift-done-bg: #e7f5ec;
+  --drift-done-border: #9fd0b0;
+  --drift-done-text: #1d5c34;
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .screen {
+    --drift-danger-bg: #fdecea;
+    --drift-danger-text: #8f1d14;
+    --drift-danger-border: #e8a59f;
+    --drift-danger-stripe: #d64538;
+    --drift-warning-bg: #fdf3e2;
+    --drift-warning-text: #7a4a00;
+    --drift-warning-border: #e6c48c;
+    --drift-warning-stripe: #c77700;
+    --drift-ok-bg: #e7f5ec;
+    --drift-ok-text: #1d5c34;
+    --drift-ok-border: #9fd0b0;
+    --drift-banner-bg: #eceef2;
+    --drift-body-text: #2b2f36;
+    --drift-on-accent: #ffffff;
+    --drift-bulk-bg: #fbf3e2;
+    --drift-bulk-border: #e0c58a;
+    --drift-bulk-title: #6b4a00;
+    --drift-bulk-note: #5e5137;
+    --drift-bulk-disabled-bg: #ece6d8;
+    --drift-bulk-disabled-text: #8a7f66;
+    --drift-done-bg: #e7f5ec;
+    --drift-done-border: #9fd0b0;
+    --drift-done-text: #1d5c34;
+  }
+}
+
+/* ---- 共通 ---- */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1 1 20px;
+}
+
+/* 札の色の上の文字（テーマで変えない。下地が札の色のため） */
+.inkDark {
+  color: #101114;
+}
+
+.inkLight {
+  color: #ffffff;
+}
+
+/* 画面には出さず、読み上げには残す文（「計画の札：」「実際の札：」） */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primaryButton {
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border: 0;
+}
+
+.secondaryButton {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+}
+
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible,
+.bulkButton:focus-visible,
+.bulkApply:focus-visible,
+.undoButton:focus-visible,
+.bulk:focus-visible,
+.heading:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* ---- 件数のまとめ ---- */
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  border: 1px solid;
+  border-radius: 6px;
+}
+
+.summaryCount {
+  font-family: Consolas, monospace;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.summaryLabel {
+  font-size: 12px;
+}
+
+.toneDanger {
+  background: var(--drift-danger-bg);
+  color: var(--drift-danger-text);
+  border-color: var(--drift-danger-border);
+}
+
+.toneWarning {
+  background: var(--drift-warning-bg);
+  color: var(--drift-warning-text);
+  border-color: var(--drift-warning-border);
+}
+
+.toneOk {
+  background: var(--drift-ok-bg);
+  color: var(--drift-ok-text);
+  border-color: var(--drift-ok-border);
+}
+
+.toneNeutral {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+
+/* ---- 対応が必要な一覧 ---- */
+
+.issuesHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.bulkButton {
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--color-accent);
+  color: var(--drift-on-accent);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.saveError {
+  margin: 0;
+  padding: 8px 14px;
+  background: var(--drift-danger-bg);
+  color: var(--drift-danger-text);
+  border: 1px solid var(--drift-danger-border);
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--drift-done-bg);
+  color: var(--drift-done-text);
+  border: 1px solid var(--drift-done-border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.doneText {
+  flex: 1 1 auto;
+}
+
+.undoButton {
+  min-height: 30px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--drift-done-text);
+  border: 1px solid var(--drift-done-border);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.allDone {
+  margin: 0;
+  padding: 14px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* 1 件（左端の線：計画と違う札は赤、計画にない艦は橙） */
+.issue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.issueDanger {
+  border-color: var(--drift-danger-border);
+  box-shadow: inset 3px 0 0 var(--drift-danger-stripe);
+}
+
+.issueWarning {
+  box-shadow: inset 3px 0 0 var(--drift-warning-stripe);
+}
+
+.issueMain {
+  display: flex;
+  flex: 1 1 360px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.issueLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.shipBanner {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 120px;
+  min-height: 30px;
+  padding: 5px 10px;
+  background: var(--drift-banner-bg);
+  border-radius: 3px;
+  box-shadow: inset 4px 0 0 var(--color-border-strong);
+}
+
+.shipName {
+  font-weight: 700;
+}
+
+/* Lv（同名艦を見分けるため） */
+.shipLevel {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.chip {
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* 札なし（計画外）・定義にない札 */
+.chipNone {
+  background: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+/* 計画の札（取り消し線） */
+.chipPlanned {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.arrow {
+  color: var(--color-text-muted);
+}
+
+.issueText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--drift-body-text);
+}
+
+.issueActions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- まとめての確認 ---- */
+
+.bulk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--drift-bulk-bg);
+  border: 1px solid var(--drift-bulk-border);
+  border-radius: 6px;
+}
+
+.bulkTitle {
+  margin: 0;
+  font-weight: 700;
+  color: var(--drift-bulk-title);
+}
+
+.bulkList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bulkRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.bulkCheck {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.bulkName {
+  min-width: 90px;
+  font-weight: 700;
+}
+
+.bulkLevel {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.bulkChange {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.bulkNote {
+  margin: 0;
+  font-size: 11px;
+  color: var(--drift-bulk-note);
+}
+
+.bulkActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bulkApply {
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--color-accent);
+  color: var(--drift-on-accent);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bulkApply:disabled {
+  background: var(--drift-bulk-disabled-bg);
+  color: var(--drift-bulk-disabled-text);
+  cursor: not-allowed;
+}
+
+/* ---- 札ごとの進み具合 ---- */
+
+.progressGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progressCard {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.progressHead {
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progressBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.progressBar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  background: var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+}
+
+.progressText {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}

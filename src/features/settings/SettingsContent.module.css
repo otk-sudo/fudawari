@@ -1,0 +1,209 @@
+/*
+ * 設定のウィンドウの中身（モック SettingsDialog.dc.html）。
+ *
+ * 設定のウィンドウだけで使う赤系の色（「削除する」・読み込めなかったときの知らせ）は、.content に CSS 変数（--settings-*）として置く
+ * （theme.css に赤系の変数がまだないため）。ほかの色は theme.css の変数をそのまま使う。
+ * ダークの値はモックの値、ライトの値はモックにないため同じ役割で読みやすい値を仮に置いている（theme.css と同じ扱い）。
+ * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
+ */
+
+/* ダーク（既定。モックの値） */
+.content {
+  --settings-danger-text: #ff8a80; /* 「削除する」の文字 */
+  --settings-danger-border: #7a3a36; /* 「削除する」の枠・知らせの枠 */
+  --settings-alert-bg: #3a2224; /* 読み込めなかった・保存できなかったときの知らせの下地 */
+  --settings-alert-text: #ffb4ae; /* 読み込めなかった・保存できなかったときの知らせの文字 */
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:global(:root[data-theme="light"]) .content {
+  --settings-danger-text: #b3261e;
+  --settings-danger-border: #e8a59f;
+  --settings-alert-bg: #fdecea;
+  --settings-alert-text: #8f1d14;
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .content {
+    --settings-danger-text: #b3261e;
+    --settings-danger-border: #e8a59f;
+    --settings-alert-bg: #fdecea;
+    --settings-alert-text: #8f1d14;
+  }
+}
+
+/* 「表示」「データ」の区分 */
+.section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.heading {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+/* 1 行（項目名・説明と、操作） */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 14px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--color-border);
+}
+
+.rowText {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowTitle {
+  font-weight: 700;
+}
+
+.rowNote {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+}
+
+/* 読み込めなかった・保存できなかったときの知らせ（行の幅いっぱいに出す） */
+.rowAlert {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--settings-alert-bg);
+  color: var(--settings-alert-text);
+  border: 1px solid var(--settings-danger-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* 区分の直下（行の外）に出すとき */
+.section > .rowAlert {
+  margin: 12px 14px;
+}
+
+/* ---- 表示の設定の選択肢（横に並べた区切りのボタンの見た目） ---- */
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.segment {
+  display: inline-flex;
+}
+
+/* 選択肢の <input type="radio"> は見えなくする（フォーカス・矢印キーでの選び直しは残す） */
+.segmentInput,
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.segmentLabel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segment + .segment .segmentLabel {
+  border-left: 0;
+}
+
+.segment:first-child .segmentLabel {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.segment:last-child .segmentLabel {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.segmentInput:checked + .segmentLabel {
+  background: var(--color-action);
+  color: var(--color-on-action);
+  font-weight: 700;
+}
+
+.segmentInput:disabled + .segmentLabel {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.segmentInput:focus-visible + .segmentLabel {
+  position: relative;
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* ---- データの操作のボタン ---- */
+
+.button,
+.dangerButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  background: transparent;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.button {
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+}
+
+.dangerButton {
+  color: var(--settings-danger-text);
+  border: 1px solid var(--settings-danger-border);
+}
+
+.button:disabled,
+.button[data-disabled="true"],
+.dangerButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.button:focus-visible,
+.button:has(.fileInput:focus-visible),
+.dangerButton:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
