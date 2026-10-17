@@ -14,7 +14,12 @@
 // 置いた後は移った艦のカード、「×」の後は選んでいた艦のカードにフォーカスを移す（押したボタンが消えても document.body に落とさない）。
 // カードが描かれていない（区切りの折りたたみ・検索・絞り込み）ときは、控えの検索欄に移す。
 // テストが探す形（role・名前・属性）は src/test/assign-screen.ts の冒頭にまとめてある。
-// ドラッグ＆ドロップと 600 隻の仮想スクロールは PR-06（T2-8）で、TrayGroupList・FudaColumn・ShipCard を包む形で足す。
+//
+// ドラッグ＆ドロップ（roadmap T2-8。dnd-kit）：艦カードを包む li（DraggableShipItem）をドラッグし、札の列・控え・別の艦のカードに落とす。
+// 状態と DndContext に渡すものは useShipDnd、落とす先の判定・ドラッグ中の表示・読み上げの文は dnd.ts。
+// ドラッグ中はポインターに艦カードの写し（DragOverlay）をつけ、元のカードは薄く残す。
+// 控えの 600 隻以上の仮想スクロールは TrayGroupList。
+import { DndContext, DragOverlay } from "@dnd-kit/core";
 import Link from "next/link";
 import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
@@ -25,7 +30,9 @@ import type { AssignmentMap } from "@/domain/plan/types";
 import type { OwnedShip, ShipUid } from "@/domain/ship/types";
 import { ROUTES } from "@/lib/routes";
 import { createAssignStore, type SaveAssignments } from "./assign-store";
-import { FudaColumn, type PlaceButtonKind } from "./FudaColumn";
+import { type DragLookup, dropFeedbackOf } from "./dnd";
+import { DraggableShipItem, DragLookupContext } from "./DraggableShipItem";
+import { FudaColumn, type MoveHintKind, type PlaceButtonKind } from "./FudaColumn";
 import { SelectedShipPanel } from "./SelectedShipPanel";
 import { ShipCard } from "./ShipCard";
 import {
@@ -44,6 +51,7 @@ import {
 import { ASSIGN_SCREEN_TITLE } from "./title";
 import type { TrayEntry, TrayOptionsInit } from "./tray";
 import { TrayPanel } from "./TrayPanel";
+import { useShipDnd } from "./useShipDnd";
 import styles from "./AssignScreen.module.css";
 
 /** 割り振り画面の中身に渡すもの */
@@ -77,6 +85,13 @@ const TRAY_NO_BOOST_TEXT = "特効なし";
 const COLUMN_NO_BOOST_TEXT = "この札では特効なし";
 /** 閉じているカードに渡す段階の倍率（毎回同じ配列を渡して、ShipCard の memo を効かせる） */
 const EMPTY_LINES: readonly BoostLine[] = [];
+/** 艦名が分からないとき（読み上げ）の呼び方 */
+const UNKNOWN_SHIP_NAME = "艦";
+/** 札名が分からないとき（読み上げ）の呼び方 */
+const UNKNOWN_FUDA_NAME = "札";
+
+/** ドラッグ中の艦カードの写しは押せないので、押したときは何もしない */
+function ignorePress(): void {}
 
 /** フォーカスを移す先の艦（頼むたびに新しいオブジェクトにする。同じ艦を続けて頼んでも移す） */
 interface FocusRequest {
@@ -160,6 +175,21 @@ export function AssignScreen({
   const selected = selectedUid === null ? undefined : entries.get(selectedUid);
   const selectedFudaId = selected === undefined ? null : placedFudaOf(assignments, selected.ship.uid, fudaIds);
 
+  // ドラッグ＆ドロップ（読み上げは艦名・札名で。ドラッグ中の表示は、ドラッグした艦と相手の艦の今いる札で決める）
+  const dragLookup = useMemo<DragLookup>(
+    () => ({
+      shipName: (uid) => entries.get(uid)?.info.name ?? UNKNOWN_SHIP_NAME,
+      fudaName: (fudaId) => fudas.get(fudaId)?.name ?? UNKNOWN_FUDA_NAME,
+      placeOf: (uid) => placedFudaOf(assignments, uid, fudaIds),
+    }),
+    [entries, fudas, assignments, fudaIds],
+  );
+  const { contextProps: dndContextProps, activeUid, over } = useShipDnd({ store, lookup: dragLookup });
+  const dropFeedback = dropFeedbackOf(dragLookup, activeUid, over);
+  /** 札の列の「ここに移動」の出し方（ドラッグ中はどの列にも場所を取り、出す列だけ見せる） */
+  const moveHintOf = (fudaId: string): MoveHintKind =>
+    activeUid === null ? null : dropFeedback.moveHintFudaId === fudaId ? "shown" : "reserved";
+
   /** 控えの艦のカード：左端は一番効く札の色、開いたら効く札のスコアの高い順に効く段階をすべて並べる */
   const renderTrayCard = (entry: TrayEntry, dense: boolean): ReactNode => {
     const { ship, info, boost } = entry;
@@ -208,89 +238,135 @@ export function AssignScreen({
     );
   };
 
-  return (
-    <div ref={screenRef} className={styles.screen}>
-      <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
-        <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
-        <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
-        <span className={styles.headerSpacer} />
-        <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
-          元に戻す
-        </button>
-        <Link href={ROUTES.list} className={styles.listLink}>
-          一覧で確認
-        </Link>
-      </ScreenHeader>
+  /**
+   * ドラッグ中にポインターにつける艦カードの写し（閉じたカード表示。左端と特効の印は、札の列の艦ならその札、控えの艦なら一番効く札で決める）。
+   * 見た目だけなので inert にする（押せず、Tab で止まらず、読み上げない）
+   */
+  const renderDragPreview = (uid: ShipUid): ReactNode => {
+    const entry = entries.get(uid);
+    if (entry === undefined) return null;
+    const { ship, info } = entry;
+    const placedFudaId = placedFudaOf(assignments, uid, fudaIds);
+    const best = entry.boost.effective.at(0);
+    const colorFudaId = placedFudaId ?? best?.fudaId;
+    return (
+      <div inert className={styles.dragPreview}>
+        <ShipCard
+          uid={ship.uid}
+          name={info.name}
+          typeLabel={shipTypeLabel(info)}
+          level={ship.level}
+          luck={ship.luck}
+          dense={false}
+          hasBoost={placedFudaId === null ? best !== undefined : hasBoostIn(entry, placedFudaId)}
+          stripeColor={colorFudaId === undefined ? null : (fudas.get(colorFudaId)?.color ?? null)}
+          selected={false}
+          expanded={false}
+          lines={EMPTY_LINES}
+          noBoostText=""
+          onPress={ignorePress}
+        />
+      </div>
+    );
+  };
 
-      {(saveError !== null || returnedCount > 0) && (
-        <div className={styles.notices}>
-          {saveError !== null && (
-            <div role="alert" className={styles.alert}>
-              <p className={styles.alertTitle}>保存できませんでした</p>
-              <p className={styles.alertReason}>{saveError}</p>
+  return (
+    <DndContext {...dndContextProps}>
+      <DragLookupContext.Provider value={dragLookup}>
+        <div ref={screenRef} className={styles.screen}>
+          <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
+            <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
+            <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
+            <span className={styles.headerSpacer} />
+            <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
+              元に戻す
+            </button>
+            <Link href={ROUTES.list} className={styles.listLink}>
+              一覧で確認
+            </Link>
+          </ScreenHeader>
+
+          {(saveError !== null || returnedCount > 0) && (
+            <div className={styles.notices}>
+              {saveError !== null && (
+                <div role="alert" className={styles.alert}>
+                  <p className={styles.alertTitle}>保存できませんでした</p>
+                  <p className={styles.alertReason}>{saveError}</p>
+                </div>
+              )}
+              {returnedCount > 0 && (
+                <p role="status" className={styles.notice}>
+                  イベントの定義から消えた札に置いていた {returnedCount} 件の割り当てを、控えに戻しました
+                </p>
+              )}
             </div>
           )}
-          {returnedCount > 0 && (
-            <p role="status" className={styles.notice}>
-              イベントの定義から消えた札に置いていた {returnedCount} 件の割り当てを、控えに戻しました
-            </p>
-          )}
-        </div>
-      )}
 
-      <div className={styles.body}>
-        <TrayPanel
-          definition={definition}
-          master={master}
-          ships={ships}
-          assignments={assignments}
-          trayInit={trayInit}
-          openCount={openUids.length}
-          onCloseAll={closeAll}
-          renderCard={renderTrayCard}
-          searchRef={searchRef}
-        />
-
-        <div className={styles.columns}>
-          {definition.fudas.map((fuda) => {
-            const members = membersByFuda.get(fuda.id) ?? [];
-            const isHere = selected !== undefined && selectedFudaId === fuda.id;
-            const boosted = selected !== undefined && hasBoostIn(selected, fuda.id);
-            const place: PlaceButtonKind = selected === undefined || isHere ? null : boosted ? "boost" : "no-boost";
-            return (
-              <FudaColumn
-                key={fuda.id}
-                fuda={fuda}
-                stageLabels={stageLabelsByFuda.get(fuda.id) ?? []}
-                count={members.length}
-                place={place}
-                dimmed={selected !== undefined && !boosted && !isHere}
-                onPlace={() => placeAndFocus(fuda.id)}
-              >
-                {members.map((ship) => {
-                  const entry = entries.get(ship.uid);
-                  return entry === undefined ? null : (
-                    <li key={ship.uid}>{renderColumnCard(entry, fuda.id, fuda.color)}</li>
-                  );
-                })}
-              </FudaColumn>
-            );
-          })}
-        </div>
-
-        <div className={styles.side}>
-          {selected !== undefined && (
-            <SelectedShipPanel
+          <div className={styles.body}>
+            <TrayPanel
               definition={definition}
-              fudas={fudas}
-              entry={selected}
-              placedFudaId={selectedFudaId}
-              onPlace={placeAndFocus}
-              onClose={clearAndFocus}
+              master={master}
+              ships={ships}
+              assignments={assignments}
+              trayInit={trayInit}
+              openCount={openUids.length}
+              onCloseAll={closeAll}
+              renderCard={renderTrayCard}
+              searchRef={searchRef}
+              dropHighlight={dropFeedback.trayHighlighted}
             />
-          )}
+
+            <div className={styles.columns}>
+              {definition.fudas.map((fuda) => {
+                const members = membersByFuda.get(fuda.id) ?? [];
+                const isHere = selected !== undefined && selectedFudaId === fuda.id;
+                const boosted = selected !== undefined && hasBoostIn(selected, fuda.id);
+                const place: PlaceButtonKind = selected === undefined || isHere ? null : boosted ? "boost" : "no-boost";
+                return (
+                  <FudaColumn
+                    key={fuda.id}
+                    fuda={fuda}
+                    stageLabels={stageLabelsByFuda.get(fuda.id) ?? []}
+                    count={members.length}
+                    place={place}
+                    dimmed={selected !== undefined && !boosted && !isHere}
+                    onPlace={() => placeAndFocus(fuda.id)}
+                    dropHighlight={dropFeedback.highlightedFudaId === fuda.id}
+                    moveHint={moveHintOf(fuda.id)}
+                  >
+                    {members.map((ship) => {
+                      const entry = entries.get(ship.uid);
+                      return entry === undefined ? null : (
+                        <DraggableShipItem key={ship.uid} uid={ship.uid}>
+                          {renderColumnCard(entry, fuda.id, fuda.color)}
+                        </DraggableShipItem>
+                      );
+                    })}
+                  </FudaColumn>
+                );
+              })}
+            </div>
+
+            <div className={styles.side}>
+              {selected !== undefined && (
+                <SelectedShipPanel
+                  definition={definition}
+                  fudas={fudas}
+                  entry={selected}
+                  placedFudaId={selectedFudaId}
+                  onPlace={placeAndFocus}
+                  onClose={clearAndFocus}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* 落とした後は写しを元の場所へ戻す動きをさせずに消す（落とした先へ移ったカードと二重に見えないように） */}
+          <DragOverlay className={styles.dragOverlay} dropAnimation={null}>
+            {activeUid === null ? null : renderDragPreview(activeUid)}
+          </DragOverlay>
         </div>
-      </div>
-    </div>
+      </DragLookupContext.Provider>
+    </DndContext>
   );
 }

@@ -1,0 +1,38 @@
+/*
+ * 艦カードを包む li（モック Assign.dc.html の liStyle と「⇄ 入れ替え」）。
+ * 色は割り振り画面の変数（AssignScreen.module.css の .screen で決める --assign-*）を使う
+ */
+
+/* 指で長押ししてドラッグを始めるとき、iOS の長押しのメニューや文字の選択が出ないようにする */
+.item {
+  position: relative;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ドラッグしている艦（元の場所に薄く残す） */
+.item[data-dragging="true"] {
+  opacity: 0.35;
+}
+
+/* 重ねている相手のカードの点線の枠（li は控えの行の間隔を下に持つので、枠は中のカードに付ける） */
+.item[data-swap-target="true"] > :first-child {
+  outline: 2px dashed var(--assign-highlight);
+  outline-offset: 2px;
+}
+
+/* 「⇄ 入れ替え」 */
+.swapHint {
+  position: absolute;
+  top: -8px;
+  right: 6px;
+  z-index: 1;
+  padding: 1px 8px;
+  background: var(--assign-highlight);
+  color: var(--assign-on-highlight);
+  border-radius: 10px;
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 700;
+  pointer-events: none;
+}
