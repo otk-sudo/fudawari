@@ -123,6 +123,9 @@ test("1366×768 でテスト用データの割り当てのとき、いちばん�
   // 準備
   await seedPlan(page, { ships: summer2026Ships, assignments: summer2026Assignments });
   await openAssignScreen(page);
+  // 日本語フォント（Noto Sans JP。display: swap）を読み終えるまで待つ。読み込みの途中で差し替わると札の列の高さが
+  // 20px ほど変わり、札の列の下端とページの高さを測る間に変わると余白を少なく測るため（PR-14b で、測る時点の揺れを直した）
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
 
   // 実行
   await scrollToBottom(page);

@@ -4,19 +4,20 @@
  */
 
 /*
- * 控えは画面の高さに収め、艦の一覧の中だけをスクロールさせる（PR-14）。
+ * 控えは画面の高さに収め、艦の一覧の中だけをスクロールさせる（PR-14・PR-14b）。
  * 高さの上限は、画面の高さから、ページの一番上にいるときの控えの上（ヘッダー帯と本文の上の余白、約 63px）と
- * 本文の下の余白（16px）を除いた分。札の列が高くてページがスクロールするときは、控えを画面の上に留める（sticky）
+ * 本文の下の余白（16px）と、お知らせの欄の高さ（--assign-notices-height。AssignScreen が測って入れる。なければ 0）を除いた分。
+ * 札の列が高くてページがスクロールするときは、控えを画面の上端から 12px 離して留める（sticky）
  */
 .tray {
   position: sticky;
-  top: 0;
+  top: 12px;
   display: flex;
   flex: 1 1 280px;
   flex-direction: column;
   min-width: 0;
   max-width: 300px;
-  max-height: calc(100dvh - 84px);
+  max-height: calc(100dvh - 84px - var(--assign-notices-height, 0px));
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 6px;

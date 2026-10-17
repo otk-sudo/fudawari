@@ -21,7 +21,7 @@
 // 控えの 600 隻以上の仮想スクロールは TrayGroupList。
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import Link from "next/link";
-import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import type { PublicDefinition } from "@/domain/definition/types";
@@ -96,6 +96,26 @@ const UNKNOWN_SHIP_NAME = "艦";
 /** 札名が分からないとき（読み上げ）の呼び方 */
 const UNKNOWN_FUDA_NAME = "札";
 
+/** CSS 変数を含む style（React の CSSProperties は CSS 変数の名前を知らないため、型を足す） */
+type StyleWithVariables = CSSProperties & Record<`--${string}`, string>;
+
+/**
+ * 要素の高さ（border-box）を測り続ける（描いた後と、大きさが変わるたび。ResizeObserver の知らせで測る）。
+ * 戻り値は要素に付ける ref と高さ（px）。要素がない・測れない（ResizeObserver のない環境）ときは 0
+ */
+function useElementHeight<T extends HTMLElement>(): [(element: T | null) => void, number] {
+  const [element, setElement] = useState<T | null>(null);
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (element === null || typeof ResizeObserver === "undefined") return;
+    // 見始めたときにも 1 回知らせが来る
+    const observer = new ResizeObserver(() => setHeight(element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return [setElement, element === null ? 0 : height];
+}
+
 /** ドラッグ中の艦カードの写しは押せないので、押したときは何もしない */
 function ignorePress(): void {}
 
@@ -151,6 +171,9 @@ export function AssignScreen({
   const undo = useStore(store, (state) => state.undo);
 
   const screenRef = useRef<HTMLDivElement>(null);
+  // お知らせの欄の高さ。控えの高さの上限から引く（お知らせが出ていても、ページの一番上で控えが画面に収まるように。PR-14b）
+  const [noticesRef, noticesHeight] = useElementHeight<HTMLDivElement>();
+  const screenStyle: StyleWithVariables = { "--assign-notices-height": `${noticesHeight}px` };
   const searchRef = useRef<HTMLInputElement>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
 
@@ -288,7 +311,7 @@ export function AssignScreen({
   return (
     <DndContext {...dndContextProps}>
       <DragLookupContext.Provider value={dragLookup}>
-        <div ref={screenRef} className={styles.screen}>
+        <div ref={screenRef} className={styles.screen} style={screenStyle}>
           <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
             <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
             <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
@@ -302,7 +325,7 @@ export function AssignScreen({
           </ScreenHeader>
 
           {(saveError !== null || returnedCount > 0) && (
-            <div className={styles.notices}>
+            <div ref={noticesRef} className={styles.notices}>
               {saveError !== null && (
                 <div role="alert" className={styles.alert}>
                   <p className={styles.alertTitle}>保存できませんでした</p>
