@@ -8,11 +8,14 @@
 // - 区切りの見出しと艦カードの一覧（TrayGroupList）。条件に合う艦がいなければ「条件に合う艦はいません」
 //
 // 絞り込み・並び順・表示の条件と、絞り込みの開閉・区切りの折りたたみはこの部品の中で持つ（画面を移ると初めに戻る）。
+// 絞り込みの欄は「絞り込み」のボタンのほか、欄の中の「閉じる」と Esc（欄の中か「絞り込み」のボタンにフォーカスがあるとき）で閉じる。
+// 閉じても条件は残す（条件を戻すのは「リセット」）。欄の中から閉じたら「絞り込み」のボタンにフォーカスを戻す（2026-10-17 の要望）。
+// 上の操作（見出し〜艦種タブ）は控えの高さの半分までにして、超えた分はその中でスクロールさせ、艦の一覧に残りの高さを使う。
 // 控えの組み立て（絞り込み・並べ替え・区切り）は buildTray（tray.ts）が行う。
 // 艦の一覧（role="tabpanel"）は仮想スクロールのスクロールする要素で、TrayGroupList に渡す。
 // <section> は控えへのドロップの落とす先（dnd-kit の useDroppable。roadmap T2-8）。強調するかは画面（dropHighlight）が決める。
 import { useDroppable } from "@dnd-kit/core";
-import { type KeyboardEvent, type ReactNode, type Ref, useId, useMemo, useState } from "react";
+import { type KeyboardEvent, type ReactNode, type Ref, useId, useMemo, useRef, useState } from "react";
 import type { PublicDefinition } from "@/domain/definition/types";
 import type { RemodelStage, ShipMaster } from "@/domain/master/types";
 import type { AssignmentMap } from "@/domain/plan/types";
@@ -92,6 +95,7 @@ export function TrayPanel({
 }: TrayPanelProps): ReactNode {
   const [options, setOptions] = useState<TrayOptions>(() => createInitialTrayOptions(trayInit));
   const [filterOpen, setFilterOpen] = useState(false);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   // 艦の一覧（仮想スクロールのスクロールする要素）。描いた後に TrayGroupList へ渡す
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
@@ -125,6 +129,19 @@ export function TrayPanel({
         ? current.fudaIds.filter((id) => id !== fudaId)
         : [...current.fudaIds, fudaId],
     }));
+
+  /** 絞り込みの欄を閉じ、「絞り込み」のボタンにフォーカスを移す（欄の中の「閉じる」・Esc） */
+  const closeFilter = (): void => {
+    setFilterOpen(false);
+    filterButtonRef.current?.focus();
+  };
+
+  /** 「絞り込み」のボタン・欄の中で Esc を押したら欄を閉じる */
+  const handleFilterKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    if (event.key !== "Escape" || !filterOpen) return;
+    event.preventDefault();
+    closeFilter();
+  };
 
   /** 艦種タブの矢印キー・Home・End（選んだタブを移し、そのタブに焦点を移す） */
   const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -195,10 +212,12 @@ export function TrayPanel({
         <div className={styles.toolRow}>
           <button
             type="button"
+            ref={filterButtonRef}
             className={styles.filterButton}
             aria-expanded={filterOpen}
             aria-controls={filterOpen ? filterId : undefined}
             onClick={() => setFilterOpen((open) => !open)}
+            onKeyDown={handleFilterKeyDown}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M3 4h18l-7 8v6l-4 2v-8z" />
@@ -233,7 +252,7 @@ export function TrayPanel({
         </div>
 
         {filterOpen && (
-          <div id={filterId} className={styles.filters}>
+          <div id={filterId} className={styles.filters} onKeyDown={handleFilterKeyDown}>
             <fieldset className={styles.fieldset}>
               <legend className={styles.legend}>改造状態</legend>
               <div className={styles.checks}>
@@ -282,6 +301,12 @@ export function TrayPanel({
                 ))}
               </div>
             </fieldset>
+            <button type="button" className={styles.filterClose} onClick={closeFilter}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="M6 15l6-6 6 6" />
+              </svg>
+              閉じる
+            </button>
           </div>
         )}
 

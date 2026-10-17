@@ -29,11 +29,23 @@
   box-shadow: 0 0 0 2px var(--assign-highlight-ring);
 }
 
+/*
+ * 上の操作（見出し〜艦種タブ。絞り込みの欄を含む）。高さは控えの高さの上限の半分までにし、
+ * 超えた分（札が多くて絞り込みの欄が大きいときなど）はこの中でスクロールさせる。艦の一覧は残りの高さを使う。
+ * 縮ませない（flex-shrink: 0）：艦の一覧は中身の高さがとても大きいので、縮む量を比べて分けると、こちらがほとんど 0 まで縮むため
+ */
 .controls {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 12px 0;
+  min-height: 0;
+  max-height: calc((100dvh - 84px - var(--assign-notices-height, 0px)) / 2);
+  /* 下の 4px は、スクロールで切れないよう艦種タブのフォーカスの枠を入れる場所（下の余白は外の負の margin で打ち消して見た目を変えない） */
+  margin-bottom: -4px;
+  padding: 10px 12px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* 見出し「控え」と「表示数 / 総数」・表示の詰め具合 */
@@ -188,6 +200,23 @@
   font-size: calc(12px * var(--font-scale));
 }
 
+/* 絞り込みの欄の「閉じる」（「すべて閉じる」と同じ形の、控えめなボタン。欄の右下に置く） */
+.filterClose {
+  display: inline-flex;
+  align-self: flex-end;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: calc(12px * var(--font-scale));
+  cursor: pointer;
+}
+
 /* 絞り込みの条件 */
 .filters {
   display: flex;
@@ -331,6 +360,7 @@
 .sortSelect:focus-visible,
 .checkbox:focus-visible,
 .tab:focus-visible,
+.filterClose:focus-visible,
 .closeAll:focus-visible {
   outline: 2px solid var(--assign-highlight);
   outline-offset: 2px;
