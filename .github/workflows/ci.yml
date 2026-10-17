@@ -146,5 +146,25 @@ jobs:
             echo "::error::SUPABASE_DB_URL がありません（production 環境の秘密の値を確認してください）"
             exit 1
           fi
+          # 画面で貼り付けたときに混じる改行（CR・LF）と前後の空白・引用符を取り除いてから使う。
+          # 値そのものは表示せず、取り除いた文字があったかと、形だけを表示する
+          db_url="$(printf '%s' "${SUPABASE_DB_URL}" | tr -d '\r\n')"
+          db_url="$(printf '%s' "${db_url}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'\'']//' -e 's/["'\'']$//')"
+          echo "::add-mask::${db_url}"
+          if [ "${#db_url}" -ne "${#SUPABASE_DB_URL}" ]; then
+            echo "SUPABASE_DB_URL の前後の改行・空白・引用符を取り除きました（$(( ${#SUPABASE_DB_URL} - ${#db_url} )) 文字）"
+          fi
+          case "${db_url}" in
+            postgresql://*|postgres://*) ;;
+            *) echo "::error::SUPABASE_DB_URL が postgresql:// で始まっていません（Supabase の Connect の URI を 1 行で入れてください）"; exit 1 ;;
+          esac
+          if printf '%s' "${db_url}" | grep -q '[[:space:][]\|]'; then
+            echo "::error::SUPABASE_DB_URL の途中に空白か角かっこがあります（[YOUR-PASSWORD] は角かっこごと置き換えてください）"
+            exit 1
+          fi
+          if printf '%s' "${db_url}" | LC_ALL=C grep -q '[^ -~]'; then
+            echo "::error::SUPABASE_DB_URL に ASCII でない文字（全角の文字など）が入っています"
+            exit 1
+          fi
           # 失敗したら、まず Supabase のプロジェクトが停止していないか確かめる（無料プランは約 7 日で停止する）
-          npx supabase db push --db-url "${SUPABASE_DB_URL}" --include-all --yes
+          npx supabase db push --db-url "${db_url}" --include-all --yes
