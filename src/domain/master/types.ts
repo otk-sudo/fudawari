@@ -2,8 +2,10 @@
 //
 // - ビルド時（PR-04）に start2.json の api_mst_ship から必要な項目だけを抜き出し、
 //   ShipMasterEntry の配列（自前の形式の最小マスタ）を作って静的ファイルとして配る。
-// - 画面側は createShipMaster（master.ts）で索引を作り、lookupShip・baseNameOf で艦 ID から引く。
+// - 画面側は createShipMaster（master.ts）で索引を作り、lookupShip・baseNameOf・boostTargetOf で艦 ID から引く。
+// - 国籍（v1.1）は api_start2 にないため、艦型の番号から自前の対応表（SHIP_CLASS_NATIONALITIES）で入れる。
 // - ゲームの画像は含めない。
+import type { Nationality } from "@/domain/nationality";
 
 /** 改造状態。未改造／中間改造／最終改造 */
 export type RemodelStage = "unremodeled" | "intermediate" | "final";
@@ -24,6 +26,8 @@ export interface ShipMasterEntry {
   shipClassId: number;
   /** 艦型の名前（例「白露型」。api_start2 にないため自前の対応表から入れる） */
   shipClassName: string;
+  /** 国籍（艦型の番号から自前の対応表で入れる。対応表にない艦型は "unknown"。特効の国籍の条件の照合に使う。v1.1） */
+  nationality: Nationality;
   /** 改造状態 */
   remodelStage: RemodelStage;
   /** 図鑑番号（api_sortno） */

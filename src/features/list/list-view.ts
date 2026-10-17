@@ -128,7 +128,7 @@ export function buildFudaViews(
     const members = [...(byFuda.get(fuda.id) ?? [])].sort(compare).map((ship): FudaShipView => {
       const info = lookupShip(master, ship.shipId);
       const type = info.known ? SHIP_TYPE_INFO.get(info.shipTypeId) : undefined;
-      const boost = fudaBoost(definition, fuda.id, info.known ? info.baseName : null);
+      const boost = fudaBoost(definition, fuda.id, info.known ? info : null);
       return {
         ship,
         name: info.name,

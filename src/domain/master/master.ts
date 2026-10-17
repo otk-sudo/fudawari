@@ -1,4 +1,5 @@
 // 艦船マスタの参照
+import type { BoostTarget } from "@/domain/boost/types";
 import type { ShipLookup, ShipMaster, ShipMasterEntry } from "./types";
 
 /** マスタにない艦の表示名 */
@@ -28,4 +29,12 @@ export function lookupShip(master: ShipMaster, shipId: number): ShipLookup {
 /** 艦 ID から改装段階を問わない艦名を引く（特効の照合に使う）。マスタにない艦 ID は null */
 export function baseNameOf(master: ShipMaster, shipId: number): string | null {
   return master.byId.get(shipId)?.baseName ?? null;
+}
+
+/**
+ * 艦 ID から特効の照合の対象（改装段階を問わない艦名と国籍）を引く。マスタにない艦 ID は null（どこにも効かない）。
+ * マスタの行をそのまま返す（ShipMasterEntry は BoostTarget の項目を持つ。毎回の描画で新しいオブジェクトを作らない）
+ */
+export function boostTargetOf(master: ShipMaster, shipId: number): BoostTarget | null {
+  return master.byId.get(shipId) ?? null;
 }

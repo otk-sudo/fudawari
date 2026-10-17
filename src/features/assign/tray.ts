@@ -426,7 +426,7 @@ export function buildTray(input: BuildTrayInput): TrayResult {
   const shown = trayShips
     .map((ship): TrayEntry => {
       const info = lookupShip(master, ship.shipId);
-      return { ship, info, boost: shipBoostSummary(definition, info.known ? info.baseName : null) };
+      return { ship, info, boost: shipBoostSummary(definition, info.known ? info : null) };
     })
     .filter(matches);
 

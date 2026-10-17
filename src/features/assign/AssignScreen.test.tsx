@@ -87,6 +87,7 @@ const WARSPITE_ENTRY: ShipMasterEntry = {
   shipTypeId: 9,
   shipClassId: 67,
   shipClassName: "Queen Elizabeth級",
+  nationality: "uk",
   remodelStage: "final",
   sortNo: 1100,
   luckBase: 10,

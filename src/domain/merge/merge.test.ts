@@ -638,6 +638,57 @@ describe("mergeDefinitions・resolveMerge：削除", () => {
     expect(groupOf(keptTheirs, "E2-3-A").multiplier).toBe(1.2);
   });
 
+  it("特効グループ：相手が削除し、自分が国籍だけを変えたら衝突（相手「削除」、自分「変更」。v1.1）", () => {
+    const mine = editDoc(base, (d) => {
+      groupOf(d, "E2-3-A").nationalities = ["usa"];
+    });
+    const theirs = editDoc(base, (d) => {
+      const stage = stageOf(d, "E2-3");
+      stage.boosts = stage.boosts.filter((g) => g.id !== "E2-3-A");
+    });
+    const { input, result } = run(mine, theirs);
+    const conflict = conflictAt(result.conflicts, {
+      kind: "boostGroup",
+      stageId: "E2-3",
+      groupId: "E2-3-A",
+      field: null,
+    });
+
+    expect(result.conflicts).toHaveLength(1);
+    expect(conflict).toMatchObject({ theirsText: "削除", mineText: "変更", stageId: "E2-3" });
+    expect(conflict.label).toContain("連合艦隊A");
+    // 選んでいる間は自分の内容（国籍を変えたグループが残る）
+    expect(groupOf(result.merged, "E2-3-A").nationalities).toEqual(["usa"]);
+
+    const keptTheirs = expectResolved(resolveMerge(input, { [conflict.id]: "theirs" }));
+    expect(hasGroup(keptTheirs, "E2-3-A")).toBe(false);
+    const keptMine = expectResolved(resolveMerge(input, { [conflict.id]: "mine" }));
+    expect(groupOf(keptMine, "E2-3-A").nationalities).toEqual(["usa"]);
+  });
+
+  it("特効グループ：自分が削除し、相手が国籍だけを変えたら衝突（相手の内容を選ぶと相手の国籍が残る。v1.1）", () => {
+    const mine = editDoc(base, (d) => {
+      const stage = stageOf(d, "E2-3");
+      stage.boosts = stage.boosts.filter((g) => g.id !== "E2-3-A");
+    });
+    const theirs = editDoc(base, (d) => {
+      groupOf(d, "E2-3-A").nationalities = ["uk", "germany"];
+    });
+    const { input, result } = run(mine, theirs);
+    const conflict = conflictAt(result.conflicts, {
+      kind: "boostGroup",
+      stageId: "E2-3",
+      groupId: "E2-3-A",
+      field: null,
+    });
+
+    expect(conflict).toMatchObject({ theirsText: "変更", mineText: "削除", stageId: "E2-3" });
+    expect(hasGroup(result.merged, "E2-3-A")).toBe(false);
+
+    const keptTheirs = expectResolved(resolveMerge(input, { [conflict.id]: "theirs" }));
+    expect(groupOf(keptTheirs, "E2-3-A").nationalities).toEqual(["uk", "germany"]);
+  });
+
   it("相手が外した海域でも、自分がそこに段階を置いていれば海域を残す（参照の整合）", () => {
     const withE4 = editDoc(base, (d) => {
       d.areas.push({ id: "E4", name: "E4" });
@@ -1074,5 +1125,169 @@ describe("resolveMerge：選択によって衝突が増減しうる（今の動�
     // 札の衝突で自分の内容（削除）を選んでも、E2-3 が使うので札は残る（相手の内容で）
     expect(stageOf(doc, "E2-3").fudaId).toBe("spare");
     expect(fudaOf(doc, "spare")).toEqual({ id: "spare", name: "予備の札", color: "#E5484D", gameNumber: 6 });
+  });
+});
+
+describe("mergeDefinitions：特効グループの国籍（v1.1）", () => {
+  /** 国籍の場所（E2 ゲージ3 の連合艦隊C） */
+  const NATIONALITIES_AT: ChangeLocation = {
+    kind: "boostGroup",
+    stageId: "E2-3",
+    groupId: "E2-3-C",
+    field: "nationalities",
+  };
+
+  /** E2 ゲージ3 の連合艦隊C の国籍を変えた文書（undefined なら項目を消す） */
+  function withNationalities(from: DefinitionDoc, nationalities: string[] | undefined): DefinitionDoc {
+    return editDoc(from, (d) => {
+      const group = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+      if (nationalities === undefined) {
+        delete group.nationalities;
+      } else {
+        group.nationalities = nationalities;
+      }
+    });
+  }
+
+  /** 合わせた文書の連合艦隊C の国籍（項目がなければ undefined） */
+  function mergedNationalities(doc: DefinitionDoc): unknown {
+    const group = groupOf(doc, "E2-3-C");
+    return Object.hasOwn(group, "nationalities") ? group.nationalities : undefined;
+  }
+
+  it("2 人がそれぞれ足した国籍は、集合として合わせる（衝突にしない）。並びは BOOST_NATIONALITIES の順", () => {
+    // 準備：自分はイギリス、相手はアメリカを足す
+    const mine = withNationalities(base, ["uk"]);
+    const theirs = withNationalities(base, ["usa"]);
+
+    // 実行
+    const { result } = run(mine, theirs);
+
+    // 検証
+    expect(result.conflicts).toEqual([]);
+    expect(mergedNationalities(result.merged)).toEqual(["usa", "uk"]);
+  });
+
+  it("相手が足した国籍を取り込んだら、自動で合わせた所に field \"nationalities\" で入れる（表示名は「…の国籍」）", () => {
+    const mine = withNationalities(base, ["uk"]);
+    const theirs = withNationalities(base, ["usa"]);
+
+    const { result } = run(mine, theirs);
+
+    expect(result.autoMerged).toContainEqual({
+      location: NATIONALITIES_AT,
+      change: "modified",
+      label: "E2 ゲージ3 の特効「連合艦隊C」の国籍",
+      stageId: "E2-3",
+    });
+  });
+
+  it("base ＋ 2 人が足した国籍 − 2 人が外した国籍（自分がイギリスを外し、相手がドイツを足す）", () => {
+    // 準備：base はアメリカ・イギリス
+    const from = withNationalities(base, ["usa", "uk"]);
+    const mine = withNationalities(from, ["usa"]);
+    const theirs = withNationalities(from, ["usa", "uk", "germany"]);
+
+    // 実行
+    const { result } = run(mine, theirs, from);
+
+    // 検証
+    expect(result.conflicts).toEqual([]);
+    expect(mergedNationalities(result.merged)).toEqual(["usa", "germany"]);
+  });
+
+  it("相手が外した国籍は、自分が残していても外す（自動で合わせた所に入れる）", () => {
+    const from = withNationalities(base, ["usa", "uk"]);
+    const mine = withNationalities(from, ["usa", "uk", "italy"]);
+    const theirs = withNationalities(from, ["usa"]);
+
+    const { result } = run(mine, theirs, from);
+
+    expect(mergedNationalities(result.merged)).toEqual(["usa", "italy"]);
+    expect(result.autoMerged).toContainEqual(expect.objectContaining({ location: NATIONALITIES_AT, change: "modified" }));
+  });
+
+  it("並びは base・足した順ではなく BOOST_NATIONALITIES の順（タイ・日本を足すと日本が先頭、タイが最後）", () => {
+    const from = withNationalities(base, ["usa"]);
+    const mine = withNationalities(from, ["usa", "thailand"]);
+    const theirs = withNationalities(from, ["japan", "usa"]);
+
+    const { result } = run(mine, theirs, from);
+
+    expect(mergedNationalities(result.merged)).toEqual(["japan", "usa", "thailand"]);
+  });
+
+  it("結果が空なら、nationalities の項目を持たない（2 人がそれぞれ外して空になった）", () => {
+    const from = withNationalities(base, ["usa", "uk"]);
+    const mine = withNationalities(from, ["usa"]);
+    const theirs = withNationalities(from, ["uk"]);
+
+    const { result } = run(mine, theirs, from);
+
+    expect(result.conflicts).toEqual([]);
+    expect(mergedNationalities(result.merged)).toBeUndefined();
+  });
+
+  it("省略は空として扱う（相手が項目を消し、自分は空の配列にした：項目を持たず、自動で合わせた所にも入れない）", () => {
+    const from = withNationalities(base, ["usa"]);
+    const mine = withNationalities(from, []);
+    const theirs = withNationalities(from, undefined);
+
+    const { result } = run(mine, theirs, from);
+
+    expect(mergedNationalities(result.merged)).toBeUndefined();
+    expect(result.autoMerged.filter((c) => c.location.kind === "boostGroup" && c.location.field === "nationalities")).toEqual([]);
+  });
+
+  it("自分だけが国籍を変えたら、その国籍のまま（自動で合わせた所には入れない）", () => {
+    const mine = withNationalities(base, ["usa"]);
+
+    const { result } = run(mine, base);
+
+    expect(mergedNationalities(result.merged)).toEqual(["usa"]);
+    expect(result.autoMerged).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("相手だけが国籍を変えたら、その国籍を取り込み、自動で合わせた所に入れる", () => {
+    const theirs = withNationalities(base, ["usa"]);
+
+    const { result } = run(base, theirs);
+
+    expect(mergedNationalities(result.merged)).toEqual(["usa"]);
+    expect(result.autoMerged).toContainEqual(expect.objectContaining({ location: NATIONALITIES_AT, change: "modified" }));
+  });
+
+  it("2 人が同じ国籍を足したら、その国籍（衝突にせず、自動で合わせた所にも入れない）", () => {
+    const changed = withNationalities(base, ["usa"]);
+
+    const { result } = run(changed, changed);
+
+    expect(mergedNationalities(result.merged)).toEqual(["usa"]);
+    expect(result.autoMerged).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("国籍の変更と、艦名・倍率の変更は別々に合わせる（相手が国籍、自分が倍率を変えたら両方を取り込む）", () => {
+    const mine = editDoc(base, (d) => {
+      groupOf(d, "E2-3-C").multiplier = 1.3;
+    });
+    const theirs = withNationalities(base, ["usa"]);
+
+    const { result } = run(mine, theirs);
+
+    expect(result.conflicts).toEqual([]);
+    expect(groupOf(result.merged, "E2-3-C").multiplier).toBe(1.3);
+    expect(mergedNationalities(result.merged)).toEqual(["usa"]);
+  });
+
+  it("国籍のない v1 の文書どうしのマージでは、どのグループも nationalities の項目を持たない", () => {
+    const mine = editDoc(base, (d) => {
+      stageOf(d, "E2-3").importance = "important";
+    });
+
+    const { result } = run(mine, base);
+
+    expect(result.merged.stages.flatMap((s) => s.boosts).some((g) => Object.hasOwn(g, "nationalities"))).toBe(false);
   });
 });

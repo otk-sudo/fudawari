@@ -1,6 +1,7 @@
 // start2.json（Tibowl/api_start2）から、自前の形式の艦船マスタの行を作る（roadmap T1-5、U1）。純粋な関数
 //
 // ビルド時の生成（src/lib/ship-master/generateShipMaster.ts）から使う。取得・書き出しはここでは行わない。
+import type { BoostNationality, Nationality } from "@/domain/nationality";
 import { deriveRemodelInfo } from "./remodel";
 import type { ApiMstShipLike, ShipMasterEntry } from "./types";
 
@@ -14,6 +15,9 @@ export const FRIENDLY_SHIP_ID_LIMIT = 1500;
 
 /** 艦型の名前を補うときに、艦名の後ろに付ける文字 */
 const CLASS_NAME_SUFFIX = "型";
+
+/** 国籍の対応表にない艦型の艦の国籍 */
+const UNKNOWN_NATIONALITY: Nationality = "unknown";
 
 /** 値がオブジェクト（null・配列を除く）か */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -142,6 +146,7 @@ function representativeByClass(rows: readonly ApiMstShipLike[]): Map<number, Api
  * - 改装段階を問わない艦名・改造状態は改造の連鎖（deriveRemodelInfo）から求める。コンバート改装の輪の艦はすべて最終改造
  * - 艦型の名前は classNames（艦型の番号 → 名前）を優先する。対応表にない艦型は
  *   「その艦型で図鑑番号が最も小さい艦の、改装段階を問わない艦名＋型」で補う
+ * - 国籍は classNationalities（艦型の番号 → 国籍）から入れる。対応表にない艦型（省略時はすべての艦型）は "unknown"
  * - 結果は艦 ID の昇順（入力の順に左右されない）
  * - 同じ艦 ID の行が複数あるときは先の行を使う（deriveRemodelInfo と同じ）
  * - 項目が欠けている行は、文字は空、数は 0 で埋める
@@ -150,6 +155,7 @@ function representativeByClass(rows: readonly ApiMstShipLike[]): Map<number, Api
 export function buildShipMasterEntries(
   start2: Start2Like,
   classNames: ReadonlyMap<number, string>,
+  classNationalities: ReadonlyMap<number, BoostNationality> = new Map(),
 ): ShipMasterEntry[] {
   // 味方艦だけ（同じ艦 ID は先の行）
   const friendly = new Map<number, ApiMstShipLike>();
@@ -179,6 +185,7 @@ export function buildShipMasterEntries(
       shipTypeId: row.api_stype ?? 0,
       shipClassId,
       shipClassName: classNameById.get(shipClassId) ?? "",
+      nationality: classNationalities.get(shipClassId) ?? UNKNOWN_NATIONALITY,
       remodelStage: remodel.get(row.api_id)?.remodelStage ?? "unremodeled",
       sortNo: row.api_sortno ?? 0,
       luckBase: row.api_luck?.[0] ?? 0,

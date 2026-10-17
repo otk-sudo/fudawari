@@ -39,6 +39,16 @@ async function main(): Promise<void> {
     },
   });
   console.log(`艦船マスタを生成しました：${result.outputPath}（${result.shipCount} 隻）`);
+  // 国籍の対応表にない艦型（新しい艦型など）は国籍が不明になり、国籍の特効が効かない。生成は止めずに知らせる
+  if (result.unknownNationalityClasses.length > 0) {
+    const list = result.unknownNationalityClasses
+      .map(({ shipClassId, shipNames }) => `艦型 ${shipClassId}（${shipNames.join("、")}）`)
+      .join("、");
+    console.warn(
+      `国籍の対応表にない艦型があります（国籍は不明として扱います）：${list}。` +
+        "src/domain/master/shipClassNames.ts の SHIP_CLASS_NATIONALITIES に足してください",
+    );
+  }
 }
 
 // ファイルがあるか

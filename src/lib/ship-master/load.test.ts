@@ -322,6 +322,105 @@ describe("艦船マスタの読み込み（loadShipMaster）", () => {
       expect(error).toMatchObject({ kind: "invalid", reason: "invalid_shape", path: `ships[1].${field}` });
     });
 
+    describe("国籍（v1.1。nationality）", () => {
+      it("国籍のある行は、その国籍のまま引ける（時雨改三は日本）", async () => {
+        // 準備
+        respondWithShipMaster(fetchMock);
+
+        // 実行
+        const result = await loadShipMaster();
+
+        // 検証
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.master.byId.get(961)?.nationality).toBe("japan");
+        }
+      });
+
+      it("国籍のない行（v1.1 より前に生成したファイル）は、形の誤りにせず unknown として読む", async () => {
+        // 準備：2 行目の nationality を消す
+        respondWithShipMaster(
+          fetchMock,
+          fileWithSecondRow((row) => {
+            delete row.nationality;
+          }),
+        );
+
+        // 実行
+        const result = await loadShipMaster();
+
+        // 検証
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.master.byId.get(summer2026MasterEntries[1].id)?.nationality).toBe("unknown");
+          expect(result.master.byId.get(961)?.nationality).toBe("japan");
+        }
+      });
+
+      it("すべての行に国籍がない（古い形の）ファイルも読め、すべて unknown になる", async () => {
+        // 準備
+        const file = shipMasterFileOf();
+        const rows = file.ships as unknown as Record<string, unknown>[];
+        for (const row of rows) delete row.nationality;
+        respondWithShipMaster(fetchMock, file);
+
+        // 実行
+        const result = await loadShipMaster();
+
+        // 検証
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const nationalities = new Set([...result.master.byId.values()].map((entry) => entry.nationality));
+          expect(nationalities).toEqual(new Set(["unknown"]));
+        }
+      });
+
+      it("国籍が unknown の行は、そのまま unknown として読む（unknown も国籍の値の 1 つ）", async () => {
+        // 準備
+        respondWithShipMaster(
+          fetchMock,
+          fileWithSecondRow((row) => {
+            row.nationality = "unknown";
+          }),
+        );
+
+        // 実行
+        const result = await loadShipMaster();
+
+        // 検証
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.master.byId.get(summer2026MasterEntries[1].id)?.nationality).toBe("unknown");
+        }
+      });
+
+      it.each<[string, unknown]>([
+        ["知らない国籍の文字列", "china"],
+        ["表示名（日本語）", "アメリカ"],
+        ["空の文字列", ""],
+        ["数", 1],
+        ["null", null],
+        ["配列", ["usa"]],
+      ])(
+        "国籍が国籍のどれでもない値（%s）なら、その場所（ships[1].nationality）つきの invalid_shape にする",
+        async (_label, value) => {
+          // 準備
+          respondWithShipMaster(
+            fetchMock,
+            fileWithSecondRow((row) => {
+              row.nationality = value;
+            }),
+          );
+
+          // 実行
+          const error = expectFailure(await loadShipMaster());
+
+          // 検証
+          expect(error).toMatchObject({ kind: "invalid", reason: "invalid_shape", path: "ships[1].nationality" });
+        },
+      );
+    });
+
     it("行がオブジェクトでない（数）なら、その行の場所（ships[1]）つきの invalid_shape にする", async () => {
       // 準備
       const file = shipMasterFileOf();

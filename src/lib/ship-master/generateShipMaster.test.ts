@@ -5,7 +5,15 @@
 // - 取得の失敗は再試行する（既定 3 回・待ち 2000 ミリ秒）。失敗を確かめるテストは retryDelayMs: 0 を渡して待たない
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildShipMasterEntries } from "@/domain/master/fromStart2";
-import { abyssalRow, friendlyRow, start2Fragment, start2FragmentClassNames } from "@/test/fixtures/start2Fragment";
+import { SHIP_CLASS_NATIONALITIES } from "@/domain/master/shipClassNames";
+import type { ShipMasterEntry } from "@/domain/master/types";
+import {
+  abyssalRow,
+  friendlyRow,
+  start2Fragment,
+  start2FragmentClassNames,
+  start2FragmentClassNationalities,
+} from "@/test/fixtures/start2Fragment";
 import {
   type FetchResponseLike,
   type GenerateShipMasterDeps,
@@ -118,11 +126,131 @@ describe("generateShipMaster（start2.json を取得して艦船マスタを書�
     expect(writeFile).toHaveBeenCalledTimes(1);
     const [path, content] = writeFile.mock.calls[0];
     expect(path).toBe(SHIP_MASTER_OUTPUT_PATH);
+    // （国籍の対応表は省略したので、既定の SHIP_CLASS_NATIONALITIES で変換したものと同じ。v1.1）
     expect(JSON.parse(content)).toEqual({
       schemaVersion: 1,
-      ships: buildShipMasterEntries(start2Fragment, start2FragmentClassNames),
+      ships: buildShipMasterEntries(start2Fragment, start2FragmentClassNames, SHIP_CLASS_NATIONALITIES),
     });
-    expect(result).toEqual({ outputPath: SHIP_MASTER_OUTPUT_PATH, shipCount: 8 });
+    // （断片の艦型 23・9 はどちらも既定の国籍の対応表にあるので、国籍の分からない艦型はない）
+    expect(result).toEqual({ outputPath: SHIP_MASTER_OUTPUT_PATH, shipCount: 8, unknownNationalityClasses: [] });
+  });
+
+  it("国籍の対応表を渡すと、書き出す各艦に艦型の国籍（nationality）を入れる。形式の版は 1 のまま（v1.1）", async () => {
+    // 準備
+    const writeFile = recordingWriteFile();
+
+    // 実行
+    await generateShipMaster({
+      fetch: fetchReturning(fragmentBody),
+      writeFile,
+      classNames: start2FragmentClassNames,
+      classNationalities: start2FragmentClassNationalities,
+      minShipCount: 1,
+    });
+
+    // 検証：時雨系（艦型 23）は日本、鈴谷系（艦型 9）はドイツ
+    const file = JSON.parse(writeFile.mock.calls[0][1]) as { schemaVersion: number; ships: ShipMasterEntry[] };
+    expect(file.schemaVersion).toBe(1);
+    expect(file.ships.map((ship) => [ship.id, ship.nationality])).toEqual([
+      [43, "japan"],
+      [124, "germany"],
+      [129, "germany"],
+      [145, "japan"],
+      [243, "japan"],
+      [503, "germany"],
+      [508, "germany"],
+      [961, "japan"],
+    ]);
+  });
+
+  it("国籍の対応表を省略すると SHIP_CLASS_NATIONALITIES を使う（艦型 23・9 はどちらも日本）。対応表にない艦型は unknown", async () => {
+    // 準備：断片に、対応表にない艦型 900 の艦を足す
+    const body = JSON.stringify({
+      ...start2Fragment,
+      api_mst_ship: [
+        ...start2Fragment.api_mst_ship,
+        friendlyRow({ id: 1400, sortno: 1400, name: "試験艦", yomi: "", stype: 2, ctype: 900, luck: [10, 49], after: "0" }),
+      ],
+    });
+    const writeFile = recordingWriteFile();
+
+    // 実行
+    await generateShipMaster({ fetch: fetchReturning(body), writeFile, classNames: start2FragmentClassNames, minShipCount: 1 });
+
+    // 検証
+    const file = JSON.parse(writeFile.mock.calls[0][1]) as { ships: ShipMasterEntry[] };
+    const nationalityOf = (id: number) => file.ships.find((ship) => ship.id === id)?.nationality;
+    expect(nationalityOf(961)).toBe("japan");
+    expect(nationalityOf(508)).toBe("japan");
+    expect(nationalityOf(1400)).toBe("unknown");
+  });
+
+  // レビューの指摘：国籍の対応表にない艦型（新しい艦型など）は unknown になり、国籍の特効が効かない。
+  // 生成は止めずに、どの艦型・艦が unknown になったかを結果で返す（scripts/generate-ship-master.ts が警告に出す）
+  describe("国籍の対応表にない艦型の報告（unknownNationalityClasses）", () => {
+    it("対応表にない艦型があれば、艦型の番号の昇順に、その艦型の艦名（艦 ID の昇順）を返す。生成は止めずに書き出す", async () => {
+      // 準備：断片に、対応表にない艦型 900（艦 ID 1401・1400）と 800（艦 ID 1402）の艦を、順を崩して足す
+      const extraRow = (id: number, name: string, ctype: number) =>
+        friendlyRow({ id, sortno: id, name, yomi: "", stype: 2, ctype, luck: [10, 49], after: "0" });
+      const body = JSON.stringify({
+        ...start2Fragment,
+        api_mst_ship: [
+          extraRow(1401, "試験艦乙", 900),
+          ...start2Fragment.api_mst_ship,
+          extraRow(1402, "試験艦丙", 800),
+          extraRow(1400, "試験艦甲", 900),
+        ],
+      });
+      const writeFile = recordingWriteFile();
+
+      // 実行
+      const result = await generateShipMaster({
+        fetch: fetchReturning(body),
+        writeFile,
+        classNames: start2FragmentClassNames,
+        classNationalities: start2FragmentClassNationalities,
+        minShipCount: 1,
+      });
+
+      // 検証
+      expect(result.unknownNationalityClasses).toEqual([
+        { shipClassId: 800, shipNames: ["試験艦丙"] },
+        { shipClassId: 900, shipNames: ["試験艦甲", "試験艦乙"] },
+      ]);
+      expect(writeFile).toHaveBeenCalledTimes(1);
+      expect(result.shipCount).toBe(11);
+    });
+
+    it("すべての艦型が対応表にあれば、空の配列を返す", async () => {
+      const result = await generateShipMaster({
+        fetch: fetchReturning(fragmentBody),
+        writeFile: recordingWriteFile(),
+        classNames: start2FragmentClassNames,
+        classNationalities: start2FragmentClassNationalities,
+        minShipCount: 1,
+      });
+
+      expect(result.unknownNationalityClasses).toEqual([]);
+    });
+
+    it("国籍の対応表を省略したときは、既定の SHIP_CLASS_NATIONALITIES にない艦型を返す（艦型 23・9 は既定の表にある）", async () => {
+      const body = JSON.stringify({
+        ...start2Fragment,
+        api_mst_ship: [
+          ...start2Fragment.api_mst_ship,
+          friendlyRow({ id: 1400, sortno: 1400, name: "試験艦", yomi: "", stype: 2, ctype: 900, luck: [10, 49], after: "0" }),
+        ],
+      });
+
+      const result = await generateShipMaster({
+        fetch: fetchReturning(body),
+        writeFile: recordingWriteFile(),
+        classNames: start2FragmentClassNames,
+        minShipCount: 1,
+      });
+
+      expect(result.unknownNationalityClasses).toEqual([{ shipClassId: 900, shipNames: ["試験艦"] }]);
+    });
   });
 
   it("書き出し先を指定すると、そこへ書き出す", async () => {
