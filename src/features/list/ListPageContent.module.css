@@ -3,7 +3,7 @@
 /* ---- ヘッダー ---- */
 
 .headerNote {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--color-text-muted);
 }
 
@@ -20,7 +20,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   cursor: pointer;
 }
 
@@ -44,7 +44,7 @@
   background: var(--color-accent);
   color: var(--list-header-on-accent);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   text-decoration: none;
 }
@@ -92,7 +92,7 @@
   background: var(--color-action);
   color: var(--color-on-action);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   text-decoration: none;
 }
@@ -115,7 +115,7 @@
   border: 1px solid var(--color-border-strong);
   border-left: 3px solid var(--color-accent);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   color: var(--color-text);
 }
 

@@ -27,13 +27,13 @@
 
 .name {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(16px * var(--font-scale));
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .sub {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--assign-panel-sub);
 }
 
@@ -47,7 +47,7 @@
   border: 1px solid var(--assign-band-button-border);
   border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   cursor: pointer;
 }
 
@@ -59,7 +59,7 @@
 }
 
 .caption {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--color-text-muted);
 }
 
@@ -98,7 +98,7 @@
 
 .score {
   font-family: Consolas, monospace;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   color: var(--color-accent);
 }
 
@@ -115,7 +115,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .lineLabel {
@@ -139,18 +139,18 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   cursor: pointer;
 }
 
 .here {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--assign-highlight);
 }
 
 .none {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--assign-faint-text);
 }
 
