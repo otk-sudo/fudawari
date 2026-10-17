@@ -80,6 +80,19 @@ export interface GenerateShipMasterResult {
   outputPath: string;
   /** 書き出した艦の数 */
   shipCount: number;
+  /**
+   * 国籍の対応表にない艦型（国籍が unknown になり、国籍の特効が効かない艦型。v1.1）。
+   * 艦型の番号の昇順で、艦名は艦 ID の昇順。なければ空の配列。生成は止めない（スクリプトが警告に出す）
+   */
+  unknownNationalityClasses: UnknownNationalityClass[];
+}
+
+/** 国籍の対応表にない艦型と、その艦型の艦名 */
+export interface UnknownNationalityClass {
+  /** 艦型の番号（api_ctype） */
+  shipClassId: number;
+  /** その艦型の艦名（艦 ID の昇順） */
+  shipNames: string[];
 }
 
 /**
@@ -138,7 +151,24 @@ export async function generateShipMaster(deps: GenerateShipMasterDeps): Promise<
   // 書き出し
   const file: ShipMasterFile = { schemaVersion: SHIP_MASTER_FILE_SCHEMA_VERSION, ships };
   await deps.writeFile(outputPath, JSON.stringify(file));
-  return { outputPath, shipCount: ships.length };
+  return { outputPath, shipCount: ships.length, unknownNationalityClasses: unknownNationalityClassesOf(ships) };
+}
+
+/** 国籍が unknown になった艦を艦型ごとにまとめる（艦型の番号の昇順。ships は艦 ID の昇順なので、艦名もその順） */
+function unknownNationalityClassesOf(ships: readonly ShipMasterEntry[]): UnknownNationalityClass[] {
+  const byClass = new Map<number, string[]>();
+  for (const ship of ships) {
+    if (ship.nationality !== "unknown") continue;
+    const names = byClass.get(ship.shipClassId);
+    if (names === undefined) {
+      byClass.set(ship.shipClassId, [ship.name]);
+    } else {
+      names.push(ship.name);
+    }
+  }
+  return [...byClass]
+    .sort(([a], [b]) => a - b)
+    .map(([shipClassId, shipNames]) => ({ shipClassId, shipNames }));
 }
 
 /** 1 回の取得の結果 */

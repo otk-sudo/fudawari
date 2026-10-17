@@ -33,7 +33,7 @@
 // - 海域・札の配列そのものが壊れているときは、段階からの参照の確認（unknown_reference）を省く（誤りが連鎖して増えるのを防ぐ）。
 // - 検証を通った値は、入力から読み取った値で作り直したもの（入力のオブジェクト・配列を使い回さない）で、
 //   返す前に深く凍結する（特効の計算が定義のオブジェクトごとに索引を覚えるため）。入力の値は凍結せず、書き換えもしない。
-import { type BoostNationality, isBoostNationality } from "@/domain/nationality";
+import { type BoostNationality, isBoostNationality, nationalityLabel } from "@/domain/nationality";
 import { deepFreeze } from "./freeze";
 import { isImportance } from "./importance";
 import type {
@@ -494,7 +494,7 @@ function readNationalities(errors: Errors, group: JsonObject, parent: string): B
     const nationality = readNationality(errors, item, childPath);
     if (nationality === undefined) return undefined;
     if (seen.has(nationality)) {
-      report(errors, "duplicate_value", childPath, `国籍「${nationality}」が重複しています`);
+      report(errors, "duplicate_value", childPath, `国籍「${nationalityLabel(nationality)}」が重複しています`);
       return undefined;
     }
     seen.add(nationality);
