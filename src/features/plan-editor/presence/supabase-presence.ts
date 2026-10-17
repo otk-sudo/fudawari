@@ -51,15 +51,55 @@ export function peersFromPresenceState(state: Record<string, unknown>, selfUserI
   return [...byUser.values()];
 }
 
-/** Realtime の setAuth（テストの偽物のクライアントは realtime を持たないため、ないこともある形で読む） */
-type RealtimeAuth = { setAuth?: (token?: string | null) => Promise<void> };
+/** 海域が変わってから送るまでの待ち（続けて切り替えたときは最後の値だけを送る） */
+export const PRESENCE_SEND_DELAY_MS = 1000;
+/** 送れなかった（track が ok 以外・例外）ときに送り直すまでの最初の待ち。続けて失敗したら倍にし、上限で止める */
+export const PRESENCE_RETRY_DELAY_MS = 3000;
+const PRESENCE_RETRY_MAX_DELAY_MS = 30_000;
+
+/**
+ * 外している途中のチャンネル（クライアントごと・チャンネル名ごと）。
+ * supabase-js は、同じ名前のチャンネルが外し終わるまで、新しく作らずにそれ（抜けている途中のもの）を返すため、
+ * 同じイベントにすぐつなぎ直すときは、外し終わるのを待ってから作る
+ */
+const pendingRemovals = new WeakMap<SupabaseClient, Map<string, Promise<void>>>();
+
+function removalsOf(client: SupabaseClient): Map<string, Promise<void>> {
+  let removals = pendingRemovals.get(client);
+  if (removals === undefined) {
+    removals = new Map();
+    pendingRemovals.set(client, removals);
+  }
+  return removals;
+}
+
+/** チャンネルを外す（外し終わるまで、同じ名前でつなぐ処理を待たせる。失敗しても待ちは解く） */
+function removeChannelTracked(client: SupabaseClient, channel: RealtimeChannel, name: string): void {
+  const removals = removalsOf(client);
+  const previous = removals.get(name) ?? Promise.resolve();
+  const removal: Promise<void> = previous
+    .then(() => client.removeChannel(channel))
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+    .finally(() => {
+      if (removals.get(name) === removal) removals.delete(name);
+    });
+  removals.set(name, removal);
+}
+
+/** 同じ名前のチャンネルを外している途中なら、外し終わるまで待つ */
+async function waitForRemoval(client: SupabaseClient, name: string): Promise<void> {
+  for (let pending = removalsOf(client).get(name); pending !== undefined; pending = removalsOf(client).get(name)) {
+    await pending;
+  }
+}
 
 /** 参加の前に、セッションのトークンを Realtime に渡す（渡せなくても参加は試す。断られたら表示が出ないだけ） */
 async function passTokenToRealtime(client: SupabaseClient, token: string): Promise<void> {
-  const realtime: RealtimeAuth | undefined = client.realtime;
-  if (realtime?.setAuth === undefined) return;
   try {
-    await realtime.setAuth(token);
+    await client.realtime.setAuth(token);
   } catch {
     // 渡せなかったときは supabase-js の accessToken のコールバックに任せる
   }
@@ -77,9 +117,15 @@ async function currentSession(client: SupabaseClient): Promise<{ userId: string;
   }
 }
 
-/** イベントごとの Presence のチャンネルにつなぐ（PresenceConnector の Supabase の実装） */
+/**
+ * イベントごとの Presence のチャンネルにつなぐ（PresenceConnector の Supabase の実装）。
+ * - 参加したら、すぐに自分の値を送る
+ * - 海域の変更は PRESENCE_SEND_DELAY_MS 待ってから、最後の値だけを送る
+ * - 送れなかったら（ok 以外・例外）、少し後にその時点の最新の値を送り直す（届いたら止める）
+ */
 export function connectSupabasePresence(options: PresenceConnectOptions): PresenceConnection {
   const { eventId, displayName, onPeersChange } = options;
+  const name = presenceChannelName(eventId);
   let areaName = options.areaName;
   let left = false;
   let client: SupabaseClient | null = null;
@@ -87,13 +133,50 @@ export function connectSupabasePresence(options: PresenceConnectOptions): Presen
   let selfUserId: string | null = null;
   // 参加中か（参加の前の setArea は送らず、参加したときに最新の海域を送る）
   let joined = false;
+  // 海域の変更をまとめる待ち・送り直しの待ち
+  let sendTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryDelay = PRESENCE_RETRY_DELAY_MS;
+  // 送った回の通し番号（古い回の結果で送り直しを決めない）
+  let sendCount = 0;
 
-  const sendSelf = (): void => {
-    if (left || channel === null || selfUserId === null || !joined) return;
-    void channel.track({ userId: selfUserId, displayName, areaName }).catch(() => {
-      // 送れなかったときは次の送り直し（海域の変更・参加し直し）に任せる
-    });
+  const clearTimers = (): void => {
+    if (sendTimer !== null) clearTimeout(sendTimer);
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    sendTimer = null;
+    retryTimer = null;
   };
+
+  const scheduleRetry = (): void => {
+    if (left || retryTimer !== null) return;
+    const delay = retryDelay;
+    retryDelay = Math.min(retryDelay * 2, PRESENCE_RETRY_MAX_DELAY_MS);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      sendSelf();
+    }, delay);
+  };
+
+  /** 今の値（最新の海域）を送る。参加していなければ送らない（参加したときに送る） */
+  function sendSelf(): void {
+    if (sendTimer !== null) clearTimeout(sendTimer);
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    sendTimer = null;
+    retryTimer = null;
+    if (left || channel === null || selfUserId === null || !joined) return;
+    sendCount += 1;
+    const thisSend = sendCount;
+    channel.track({ userId: selfUserId, displayName, areaName }).then(
+      (response) => {
+        if (thisSend !== sendCount) return;
+        if (response === "ok") retryDelay = PRESENCE_RETRY_DELAY_MS;
+        else scheduleRetry();
+      },
+      () => {
+        if (thisSend === sendCount) scheduleRetry();
+      },
+    );
+  }
 
   const start = async (): Promise<void> => {
     const found = getSupabaseClient();
@@ -102,9 +185,12 @@ export function connectSupabasePresence(options: PresenceConnectOptions): Presen
     if (session === null || left) return;
     await passTokenToRealtime(found, session.accessToken);
     if (left) return;
+    // 同じイベントのチャンネルを外している途中なら、外し終わってから作る
+    await waitForRemoval(found, name);
+    if (left) return;
 
     const userId = session.userId;
-    const created = found.channel(presenceChannelName(eventId), {
+    const created = found.channel(name, {
       config: { private: true, presence: { key: userId } },
     });
     client = found;
@@ -135,17 +221,15 @@ export function connectSupabasePresence(options: PresenceConnectOptions): Presen
     setArea(next) {
       if (areaName === next) return;
       areaName = next;
-      sendSelf();
+      if (sendTimer !== null) clearTimeout(sendTimer);
+      sendTimer = setTimeout(sendSelf, PRESENCE_SEND_DELAY_MS);
     },
     leave() {
       if (left) return;
       left = true;
       joined = false;
-      if (client !== null && channel !== null) {
-        void client.removeChannel(channel).catch(() => {
-          // 抜けられなかったときも、以後は知らせない（left で止めている）
-        });
-      }
+      clearTimers();
+      if (client !== null && channel !== null) removeChannelTracked(client, channel, name);
       client = null;
       channel = null;
     },

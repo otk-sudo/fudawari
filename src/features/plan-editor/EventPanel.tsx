@@ -28,8 +28,14 @@ export interface FieldTexts {
 /** 「元にするイベント」の選択欄で、イベントを作成した後に出す値（作成した後は選び直せないので、作成済みと出す） */
 const CREATED_VALUE = "__created__";
 
-/** 確認のウィンドウが出ている間、切り替えられない理由 */
-const MSG_MODE_LOCKED = "保存の確認が終わるまで、既存を更新・新規作成は切り替えられません";
+/** 「既存を更新」「新規作成」を切り替えられない理由（confirming：保存の確認のウィンドウの間、busy：保存・公開の途中） */
+export type ModeLock = "confirming" | "busy";
+
+/** 切り替えられない理由の文 */
+const MODE_LOCK_MESSAGES: Readonly<Record<ModeLock, string>> = {
+  confirming: "保存の確認が終わるまで、既存を更新・新規作成は切り替えられません",
+  busy: "保存・公開が終わるまで、既存を更新・新規作成は切り替えられません",
+};
 
 const MODE_CHOICES: ReadonlyArray<readonly [EditMode, string]> = [
   ["update", "既存を更新"],
@@ -58,8 +64,8 @@ export type EventPanelProps = {
   onClearEnd: () => void;
   /** イベント名・日時の欄と「終了日時を消す」を操作できなくする（保存・公開の途中。新規作成のイベントの作成を含む） */
   metaLocked: boolean;
-  /** 「既存を更新」「新規作成」を切り替えられなくする（保存の確認のウィンドウが出ている間） */
-  modeLocked: boolean;
+  /** 「既存を更新」「新規作成」を切り替えられなくする理由（保存の確認のウィンドウの間・保存や公開の途中。切り替えられるなら null） */
+  modeLock: ModeLock | null;
   baseEventOptions: readonly BaseEventOption[];
   /** 「元にするイベント」を選べるか（イベントを作る前で、作成の途中でもないときだけ） */
   canChooseBase: boolean;
@@ -148,6 +154,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
   const radioName = useId();
   const baseSelectId = useId();
   const modeLockedId = useId();
+  const modeLocked = props.modeLock !== null;
 
   const startValue = texts.startAt ?? toDateTimeLocalValue(meta.startAt) ?? "";
   const endValue = texts.endAt ?? toDateTimeLocalValue(meta.endAt) ?? "";
@@ -164,7 +171,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
           <div
             role="radiogroup"
             aria-label="新規か更新か"
-            aria-describedby={props.modeLocked ? modeLockedId : undefined}
+            aria-describedby={modeLocked ? modeLockedId : undefined}
             className={controls.segment}
           >
             {MODE_CHOICES.map(([value, label]) => (
@@ -175,7 +182,7 @@ export function EventPanel(props: EventPanelProps): ReactNode {
                   value={value}
                   className={controls.segmentInput}
                   checked={mode === value}
-                  disabled={props.modeLocked || (value === "update" && !props.canSwitchToUpdate)}
+                  disabled={modeLocked || (value === "update" && !props.canSwitchToUpdate)}
                   onChange={() => props.onSwitchMode(value)}
                 />
                 <span className={controls.segmentLabel}>{label}</span>
@@ -183,9 +190,9 @@ export function EventPanel(props: EventPanelProps): ReactNode {
             ))}
           </div>
         )}
-        {isAdmin && props.modeLocked && (
+        {isAdmin && props.modeLock !== null && (
           <span id={modeLockedId} className={styles.hint}>
-            {MSG_MODE_LOCKED}
+            {MODE_LOCK_MESSAGES[props.modeLock]}
           </span>
         )}
 

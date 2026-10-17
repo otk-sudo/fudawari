@@ -1,15 +1,18 @@
 -- 定義画面の「編集中」の表示（Realtime の Presence）を、管理者・協力者だけに限る
--- 設計：docs/design/database.md の 3.1（Realtime の private チャンネル）
+-- 設計：docs/design/database.md の 5 章（リアルタイム〔編集中の表示〕。Realtime の private チャンネル）
 --   チャンネル名は「plan-editor:（イベント ID）」。画面は private のチャンネルで参加する
 --   realtime.messages のポリシーは、判定の関数 can_use_editor_presence(topic) を使う
 --   管理者・協力者：plan-editor: で始まるチャンネルだけ true
 --   権限なしのログイン利用者・anon：false。ほかの名前のチャンネルも false
+-- PR-12b（レビュー P2）で足したこと
+--   ポリシーと同じ形（realtime.topic() にチャンネル名を入れた上で can_use_editor_presence((select realtime.topic()))）の判定、
+--   ポリシーの式が Presence（extension = 'presence'）だけに限っていること
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(11);
+select plan(16);
 
 -- ---------------------------------------------------------------------------
 -- 演じ分けの補助（pg_temp に作るので rollback で消える）
@@ -78,6 +81,20 @@ select ok(
   'INSERT のポリシーは can_use_editor_presence で判定する'
 );
 
+select ok(
+  (select qual from pg_policies
+   where schemaname = 'realtime' and tablename = 'messages' and policyname = 'editor_presence_select')
+    like '%extension%''presence''%',
+  'SELECT のポリシーは Presence（extension = ''presence''）だけに限る'
+);
+
+select ok(
+  (select with_check from pg_policies
+   where schemaname = 'realtime' and tablename = 'messages' and policyname = 'editor_presence_insert')
+    like '%extension%''presence''%',
+  'INSERT のポリシーは Presence（extension = ''presence''）だけに限る'
+);
+
 -- ---------------------------------------------------------------------------
 -- 判定の関数
 -- ---------------------------------------------------------------------------
@@ -96,6 +113,23 @@ select is(public.can_use_editor_presence(null), false,
 select pg_temp.act_as('44444444-4444-4444-8444-444444444444');
 select is(public.can_use_editor_presence('plan-editor:aaaaaaaa-0000-4000-8000-000000000001'), false,
   '権限なしのログイン利用者は使えない');
+
+-- ---------------------------------------------------------------------------
+-- ポリシーと同じ形の判定（Realtime はチャンネル名を realtime.topic() で渡す）
+-- ---------------------------------------------------------------------------
+select pg_temp.act_as('11111111-1111-4111-8111-111111111111');
+select set_config('realtime.topic', 'plan-editor:aaaaaaaa-0000-4000-8000-000000000001', true);
+select is(public.can_use_editor_presence((select realtime.topic())), true,
+  '管理者は、realtime.topic() が plan-editor: のチャンネルなら使える（ポリシーと同じ形）');
+
+select set_config('realtime.topic', 'other-room', true);
+select is(public.can_use_editor_presence((select realtime.topic())), false,
+  '管理者でも、realtime.topic() がほかの名前のチャンネルなら使えない');
+
+select pg_temp.act_as('44444444-4444-4444-8444-444444444444');
+select set_config('realtime.topic', 'plan-editor:aaaaaaaa-0000-4000-8000-000000000001', true);
+select is(public.can_use_editor_presence((select realtime.topic())), false,
+  '権限なしのログイン利用者は、realtime.topic() が plan-editor: のチャンネルでも使えない');
 
 reset role;
 

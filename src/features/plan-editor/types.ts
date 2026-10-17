@@ -59,6 +59,8 @@ export interface EditableEvent {
 
 /** 編集できる人（profiles の行） */
 export interface EditorMember {
+  /** profiles.user_id（編集中の表示の名前・保存の記録の「誰が」を ID で引くため） */
+  readonly userId: string;
   readonly displayName: string;
   readonly role: EditorRole;
 }

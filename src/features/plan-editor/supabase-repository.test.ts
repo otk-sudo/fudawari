@@ -418,7 +418,8 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
       expect(data.latestEvent?.published).toEqual({ versionDate: "2026-08-04", content: summer2026Definition });
     });
 
-    it("編集できる人を profiles の全行から、管理者を先に、追加した順で返す", async () => {
+    // PR-12b：編集できる人に利用者の ID（profiles.user_id）を足した（編集中の表示の名前・保存の記録の「誰が」を ID で引くため）
+    it("編集できる人を profiles の全行から、管理者を先に、追加した順で、利用者の ID つきで返す", async () => {
       // 準備
       const repository = createSupabaseDefinitionRepository();
 
@@ -427,10 +428,10 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
 
       // 検証
       expect(data.members).toEqual([
-        { displayName: "提督", role: "admin" },
-        { displayName: "副提督", role: "admin" },
-        { displayName: "協力者B", role: "collab" },
-        { displayName: "あかね", role: "collab" },
+        { userId: ADMIRAL.userId, displayName: "提督", role: "admin" },
+        { userId: "user-vice", displayName: "副提督", role: "admin" },
+        { userId: "user-b", displayName: "協力者B", role: "collab" },
+        { userId: AKANE.userId, displayName: "あかね", role: "collab" },
       ]);
     });
 
@@ -547,7 +548,7 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
       // 検証
       expect(data.latestEvent).toBeNull();
       expect(data.unpublishedEvent?.id).toBe(AUTUMN26_ID);
-      expect(data.members).toEqual([{ displayName: "提督", role: "admin" }]);
+      expect(data.members).toEqual([{ userId: ADMIRAL.userId, displayName: "提督", role: "admin" }]);
     });
 
     it("ログインしていなければ（セッションがない）、「ログインし直してください」の理由で失敗し、イベントと下書きを読まない", async () => {
@@ -640,6 +641,38 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
       expect(readTables(fake)).not.toContain("events");
     });
 
+    // PR-12b（Codex #22-4301258470）：リフレッシュトークンが使えない・セッションの期限切れは、状態が 400 でもセッション切れにする
+    it.each<[string, () => AuthError]>([
+      ["AuthApiError 400（refresh_token_not_found）", () => new AuthApiError("Invalid Refresh Token: Refresh Token Not Found", 400, "refresh_token_not_found")],
+      ["AuthApiError 400（refresh_token_already_used）", () => new AuthApiError("Invalid Refresh Token: Already Used", 400, "refresh_token_already_used")],
+      ["AuthApiError 400（session_expired）", () => new AuthApiError("Session Expired", 400, "session_expired")],
+      ["AuthApiError 403（session_expired）", () => new AuthApiError("Session Expired", 403, "session_expired")],
+    ])("auth.getUser が %s を返したら、SessionExpiredError で失敗し、イベントを読まない（PR-12b）", async (_label, error) => {
+      // 準備
+      failGetUser(error());
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(isSessionExpiredError(failure)).toBe(true);
+      expect(readTables(fake)).not.toContain("events");
+    });
+
+    it("（比べる元）auth.getUser が 400 でもほかのコード（validation_failed）なら、SessionExpiredError にしない", async () => {
+      // 準備
+      failGetUser(new AuthApiError("Validation failed", 400, "validation_failed"));
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(failure).toBeInstanceOf(Error);
+      expect(isSessionExpiredError(failure)).toBe(false);
+    });
+
     it.each<[string, () => AuthError]>([
       ["届かなかった（AuthRetryableFetchError）", authNetworkError],
       ["Auth のサーバーの障害（AuthApiError 500）", () => new AuthApiError("Internal Server Error", 500, "unexpected_failure")],
@@ -712,6 +745,37 @@ describe("イベント定義の保管庫の Supabase の実装（createSupabaseD
       expect(failure).toBeInstanceOf(Error);
       expect(isSessionExpiredError(failure)).toBe(false);
       expect(String(failure)).toMatch(/権限がありません/);
+    });
+
+    // PR-12b（レビュー P-d）の守り：表の読み取り・RPC の回数の上限（429）は、セッション切れにせず「しばらくしてから」の失敗にする
+    it("表の読み取りが回数の上限（状態コード 429）で断られたら、SessionExpiredError にせず「しばらくしてから」やり直す失敗にする", async () => {
+      // 準備
+      failTable(fake, "events", postgrestFailure("", 429, "Too Many Requests"));
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await loadFailure(repository);
+
+      // 検証
+      expect(isSessionExpiredError(failure)).toBe(false);
+      expect(String(failure)).toMatch(/しばらくしてから/);
+    });
+
+    it("下書きの保存（RPC）が回数の上限（状態コード 429）で断られたら、SessionExpiredError にせず「しばらくしてから」やり直す失敗にする", async () => {
+      // 準備
+      fake.main.rpc.mockResolvedValueOnce(postgrestFailure("", 429, "Too Many Requests"));
+      const repository = createSupabaseDefinitionRepository();
+
+      // 実行
+      const failure = await repository.saveDraft(SAVE_INPUT).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      // 検証
+      expect(failure).toBeInstanceOf(Error);
+      expect(isSessionExpiredError(failure)).toBe(false);
+      expect(String(failure)).toMatch(/しばらくしてから/);
     });
 
     it.each<[string, () => FakeQueryResult]>([

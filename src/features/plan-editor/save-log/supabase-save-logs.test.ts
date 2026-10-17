@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetSupabaseClient } from "@/lib/supabase";
 import {
   failedQuery,
+  type FakeQuery,
   type FakeSupabase,
   installFakeSupabase,
   networkFailure,
@@ -22,7 +23,12 @@ vi.mock("@supabase/supabase-js", async (importOriginal) => ({
 // 保存の記録を Supabase の save_logs 表から読む（loadSaveLogs。docs/design/database.md 2.6、roadmap T3-10）
 // - 指定したイベントの記録だけを、新しい順（created_at の新しい順、同じ日時なら id の大きい順）にすべて返す
 // - 列の対応：id → id、created_at → createdAt（同じ時刻の日本時間の「秒の小数のない時差つき」。定義の保管庫の日時と同じ形）、
-//   kind → kind（'save'・'publish'）、map_label → mapLabel（公開は null）、summary → summary、保存した人の表示名 → userName
+//   kind → kind（'save'・'publish'）、map_label → mapLabel（公開は null）、summary → summary、保存した人の表示名 → userName、
+//   user_id → userId（PR-12b。「誰が」を ID で見分けるため。null はそのまま null）
+// - PR-12b（レビュー M1・Codex #21-4301315075）：PostgREST は 1 回に返す行数に上限（max_rows。既定 1000）があるため、
+//   .range(from, from + 999) を、返った件数が 1000 未満になるまでくり返して連結する（偽物は max_rows をまねないので、range の呼び方で確かめる）
+//
+// PR-12b で変えたこと：最初のテストの期待値に userId を足した（記録に利用者の ID を持たせる仕様にしたため）
 // - 失敗は、画面に出す理由の文（日本語）を message に持つ Error にする（言葉の要点だけを確かめる。定義の保管庫と同じ）
 //
 // テストで決めていないこと（親が決める）
@@ -131,6 +137,7 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       {
         id: 12,
         createdAt: "2026-10-15T22:52:00+09:00",
+        userId: "user-akane",
         userName: "あかね",
         kind: "save",
         mapLabel: "E3",
@@ -139,6 +146,7 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       {
         id: 11,
         createdAt: "2026-10-15T22:40:00+09:00",
+        userId: "user-admiral",
         userName: "提督",
         kind: "publish",
         mapLabel: null,
@@ -147,6 +155,7 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       {
         id: 10,
         createdAt: "2026-10-15T22:40:00+09:00",
+        userId: "user-akane",
         userName: "あかね",
         kind: "save",
         mapLabel: "E2",
@@ -155,6 +164,7 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       {
         id: 9,
         createdAt: "2026-10-14T22:18:00+09:00",
+        userId: "user-b",
         userName: "協力者B",
         kind: "save",
         mapLabel: "E3",
@@ -163,6 +173,7 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       {
         id: 3,
         createdAt: "2026-08-04T19:55:00+09:00",
+        userId: "user-akane",
         userName: "あかね",
         kind: "save",
         mapLabel: "E1",
@@ -229,5 +240,121 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
 
     // 実行・検証
     await expect(loadSaveLogs(SUMMER_ID)).rejects.toThrow(/形が正しくありません/);
+  });
+
+  it("user_id が null の記録（古い記録など）は userId を null にする", async () => {
+    // 準備
+    fake.server.saveLogs.push(
+      saveLogRow({
+        id: 30,
+        event_id: "2026-winter",
+        user_id: null,
+        user_name: "旧協力者",
+        summary: "E1 の段階を追加",
+        created_at: "2026-10-16T00:00:00+00:00",
+      }),
+    );
+
+    // 実行
+    const logs = await loadSaveLogs("2026-winter");
+
+    // 検証
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ id: 30, userId: null, userName: "旧協力者" });
+  });
+
+  describe("1000 件を超える記録も全部読む（PR-12b：レビュー M1・Codex #21-4301315075）", () => {
+    const MANY_ID = "2026-many";
+
+    /** MANY_ID の記録を n 件入れる（id は 1〜n。id が大きいほど新しい。並び順に頼れないよう逆順に入れる） */
+    function seedMany(n: number): void {
+      for (let id = n; id >= 1; id -= 1) {
+        const seconds = String(id % 60).padStart(2, "0");
+        const minutes = String(Math.floor(id / 60) % 60).padStart(2, "0");
+        const hours = String(Math.floor(id / 3600)).padStart(2, "0");
+        fake.server.saveLogs.push(
+          saveLogRow({
+            id,
+            event_id: MANY_ID,
+            user_id: "user-akane",
+            user_name: "あかね",
+            summary: `記録 ${String(id)}`,
+            created_at: `2026-10-01T${hours}:${minutes}:${seconds}+00:00`,
+          }),
+        );
+      }
+    }
+
+    /** save_logs の読み取りで呼んだ range（読み取りごとに、最後に指定した from・to） */
+    function saveLogRanges(): Array<readonly [number, number] | undefined> {
+      return fake.main.from.mock.calls.flatMap(([table], index) => {
+        if (table !== "save_logs") return [];
+        const query = fake.main.from.mock.results[index]?.value as FakeQuery | undefined;
+        return [query?.ranges.at(-1)];
+      });
+    }
+
+    it("2345 件なら、0〜999・1000〜1999・2000〜2999 の 3 回に分けて読み、新しい順に連結して 2345 件を返す", async () => {
+      // 準備
+      seedMany(2345);
+
+      // 実行
+      const logs = await loadSaveLogs(MANY_ID);
+
+      // 検証
+      expect(saveLogRanges()).toEqual([
+        [0, 999],
+        [1000, 1999],
+        [2000, 2999],
+      ]);
+      expect(logs).toHaveLength(2345);
+      expect(logs.map((log) => log.id)).toEqual(Array.from({ length: 2345 }, (_, index) => 2345 - index));
+    });
+
+    it("ちょうど 1000 件なら、2 回目（1000〜1999）が 0 件で終わり、1000 件を返す（境界）", async () => {
+      // 準備
+      seedMany(1000);
+
+      // 実行
+      const logs = await loadSaveLogs(MANY_ID);
+
+      // 検証
+      expect(saveLogRanges()).toEqual([
+        [0, 999],
+        [1000, 1999],
+      ]);
+      expect(logs).toHaveLength(1000);
+      expect(logs[0]?.id).toBe(1000);
+      expect(logs.at(-1)?.id).toBe(1);
+    });
+
+    it("999 件なら 1 回（0〜999）だけ読む（境界）", async () => {
+      // 準備
+      seedMany(999);
+
+      // 実行
+      const logs = await loadSaveLogs(MANY_ID);
+
+      // 検証
+      expect(saveLogRanges()).toEqual([[0, 999]]);
+      expect(logs).toHaveLength(999);
+    });
+
+    it("2 回目の読み取りが通信に失敗したら、途中までの記録を返さず「通信に失敗しました」の理由で失敗する", async () => {
+      // 準備：1 回目はふだんどおり、2 回目の save_logs の読み取りだけ失敗する
+      seedMany(1500);
+      const original = fake.main.from.getMockImplementation();
+      if (original === undefined) throw new Error("偽物の from に返し方がありません");
+      let saveLogReads = 0;
+      fake.main.from.mockImplementation((table: string): FakeQuery => {
+        if (table !== "save_logs") return original(table);
+        saveLogReads += 1;
+        return saveLogReads === 2 ? failedQuery(networkFailure()) : original(table);
+      });
+
+      // 実行・検証
+      await expect(loadSaveLogs(MANY_ID)).rejects.toThrow(/通信に失敗しました/);
+      expect(saveLogReads).toBe(2);
+    });
   });
 });
