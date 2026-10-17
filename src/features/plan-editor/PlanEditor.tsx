@@ -4,7 +4,9 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { DefinitionEditor } from "./DefinitionEditor";
 import { EditorHeader } from "./EditorHeader";
 import { errorMessage } from "./editor-model";
+import type { PresenceConnector } from "./presence/types";
 import { isSessionExpiredError } from "./repository-errors";
+import type { SaveLogLoader } from "./save-log/types";
 import type { DefinitionRepository, PlanEditorData } from "./types";
 import styles from "./PlanEditor.module.css";
 
@@ -21,6 +23,16 @@ export type PlanEditorProps = {
    * 同じ関数を渡し続けること（変わると読み込み直す）
    */
   onSessionExpired?: () => void;
+  /**
+   * 保存の記録を読む（PR-12。「保存の記録を見る」のウィンドウで使う）。
+   * 【PR-12 の先行テスト用に型だけを置いた。画面への差し込みは実装担当が作る】
+   */
+  loadSaveLogs?: SaveLogLoader;
+  /**
+   * 編集中の表示のチャンネルにつなぐ（PR-12。「（名前）も編集中（E3 を表示中）」に使う）。
+   * 【PR-12 の先行テスト用に型だけを置いた。画面への差し込みは実装担当が作る】
+   */
+  connectPresence?: PresenceConnector;
 };
 
 /** 保管庫の読み込みの状態（loaded の key は読み込みごとに変わる番号。編集画面をその読み込みの内容で作り直すために使う） */
