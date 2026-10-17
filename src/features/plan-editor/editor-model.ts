@@ -50,6 +50,11 @@ export interface Workspace {
    * 選び直した後に届いた古い要求の結果は使わない（DefinitionEditor が要求ごとの番号で見分ける）
    */
   readonly loadingBaseEventId: string | null;
+  /**
+   * 保存の衝突で、相手の変更を自動で合わせた段階（段階の ID → 変えた人の表示名）。
+   * 攻略の流れで橙の枠と「（名前）が変更」の印を付ける（保存した後も残す。要件 3.7「同時編集」）
+   */
+  readonly mergedStages: ReadonlyMap<string, string>;
 }
 
 /** 保存の記録に入れる海域の表示名（文書にない海域は ID のまま） */
@@ -124,6 +129,7 @@ export function workspaceFromEvent(event: EditableEvent): Workspace {
     selectedStageId: firstStageId(doc),
     baseEventId: "",
     loadingBaseEventId: null,
+    mergedStages: new Map(),
   };
 }
 
@@ -140,6 +146,7 @@ export function emptyCreateWorkspace(): Workspace {
     selectedStageId: null,
     baseEventId: "",
     loadingBaseEventId: null,
+    mergedStages: new Map(),
   };
 }
 

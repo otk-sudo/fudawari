@@ -1,16 +1,17 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { DefinitionScreen } from "./DefinitionScreen";
-import { unconnectedRepository } from "./unconnected-repository";
+import { createLazySupabaseDefinitionRepository } from "./lazy-repository";
 
 /**
- * /definition のページの中身。保管庫を選んで DefinitionScreen に渡す
- * （保管庫は関数を持つため、サーバーで描くページ〔page.tsx〕から渡せない。ここで渡す）。
- *
- * PR-11a では、まだ DB に接続していない仮の保管庫を渡す（読み込みに失敗し、理由を出す）。
- * PR-11b で Supabase の保管庫に差し替え、艦船マスタから knownShipNames を渡す。
+ * /definition のページの中身。Supabase の保管庫を作って DefinitionScreen に渡す
+ * （保管庫は関数を持つため、サーバーで描くページ〔page.tsx〕から渡せない。ここで作る）。
+ * - 保管庫は supabase-js を、管理者・協力者が開いて読み込むときに初めて読み込む（lazy-repository.ts）
+ * - 艦船マスタを読み、知らない艦名の警告に使う（読めなければ警告しない）
  */
 export function DefinitionPageContent(): ReactNode {
-  return <DefinitionScreen repository={unconnectedRepository} />;
+  // 描き直しのたびに作り直さない（作り直すと読み込み直し、編集画面を作り直してしまう）
+  const [repository] = useState(createLazySupabaseDefinitionRepository);
+  return <DefinitionScreen repository={repository} withShipMaster />;
 }

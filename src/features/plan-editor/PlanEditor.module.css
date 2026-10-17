@@ -37,6 +37,17 @@
   --pe-disabled-bg: #3a3426; /* 押せない公開のボタン */
   --pe-disabled-text: #8a7f66;
   --pe-menu-shadow: 0 6px 18px rgb(0 0 0 / 50%);
+  /* 保存の衝突の確認（モックの値） */
+  --pe-merge-bg: #2a2416; /* 確認のウィンドウの下地 */
+  --pe-merge-border: #7a6230;
+  --pe-merge-text: #d9cfb8;
+  --pe-merge-accent: #f0a33a; /* 相手だけが変えた所（橙の枠・印・「場所を見る」） */
+  --pe-on-merge-accent: #101114;
+  --pe-conflict: #ff5a50; /* 2 人とも変えた所（赤く光らせる・「要選択」） */
+  --pe-on-conflict: #ffffff;
+  --pe-conflict-glow: rgb(255 90 80 / 55%);
+  --pe-choice-bg: #22304a; /* 選んだ選択肢の下地 */
+  --pe-choice-text: #ffffff;
 
   display: flex;
   flex-direction: column;
@@ -73,6 +84,16 @@
   --pe-disabled-bg: #ebe5d8; /* 仮 */
   --pe-disabled-text: #8a7f66; /* 仮 */
   --pe-menu-shadow: 0 6px 18px rgb(0 0 0 / 15%); /* 仮 */
+  --pe-merge-bg: #fdf4e3; /* 仮 */
+  --pe-merge-border: #e2c79c; /* 仮 */
+  --pe-merge-text: #5a4a2a; /* 仮 */
+  --pe-merge-accent: #a85a00; /* 仮 */
+  --pe-on-merge-accent: #ffffff; /* 仮 */
+  --pe-conflict: #c9302c; /* 仮 */
+  --pe-on-conflict: #ffffff; /* 仮 */
+  --pe-conflict-glow: rgb(201 48 44 / 40%); /* 仮 */
+  --pe-choice-bg: #d6e2f7; /* 仮 */
+  --pe-choice-text: #1c1e22; /* 仮 */
 }
 
 @media (prefers-color-scheme: light) {
@@ -106,6 +127,16 @@
     --pe-disabled-bg: #ebe5d8; /* 仮 */
     --pe-disabled-text: #8a7f66; /* 仮 */
     --pe-menu-shadow: 0 6px 18px rgb(0 0 0 / 15%); /* 仮 */
+    --pe-merge-bg: #fdf4e3; /* 仮 */
+    --pe-merge-border: #e2c79c; /* 仮 */
+    --pe-merge-text: #5a4a2a; /* 仮 */
+    --pe-merge-accent: #a85a00; /* 仮 */
+    --pe-on-merge-accent: #ffffff; /* 仮 */
+    --pe-conflict: #c9302c; /* 仮 */
+    --pe-on-conflict: #ffffff; /* 仮 */
+    --pe-conflict-glow: rgb(201 48 44 / 40%); /* 仮 */
+    --pe-choice-bg: #d6e2f7; /* 仮 */
+    --pe-choice-text: #1c1e22; /* 仮 */
   }
 }
 
@@ -288,4 +319,19 @@
   font-weight: 700;
   white-space: nowrap;
   cursor: grabbing;
+}
+
+/* ログインし直す案内のリンク */
+.link {
+  color: var(--pe-link);
+}
+
+/* 相手の変更を合わせて保存したときの、自動で合わせた所の一覧（知らせの中） */
+.noticeList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
 }
