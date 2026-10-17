@@ -12,7 +12,6 @@
 import {
   type AuthError,
   isAuthApiError,
-  isAuthRetryableFetchError,
   isAuthSessionMissingError,
   type PostgrestError,
   type SupabaseClient,
@@ -44,6 +43,7 @@ const MSG_NO_CONFIG = "Supabase の接続の設定がありません（管理者
 const MSG_NETWORK = "通信に失敗しました。しばらくしてからやり直してください";
 const MSG_FORBIDDEN = "権限がありません（管理者・協力者だけが使えます）";
 const MSG_PERMISSION_DENIED = "権限がありません。管理者・協力者でログインし直してください";
+const MSG_RATE_LIMITED = "問い合わせの回数が上限に達しました。しばらくしてからやり直してください";
 const MSG_INVALID_RESPONSE = "サーバーの応答の形が正しくありません";
 const MSG_NOT_FOUND = "イベントが見つかりません";
 /** 下書きの保存者が profiles にいない（外された協力者）ときの表示名（save_draft の conflict と同じ） */
@@ -87,6 +87,7 @@ function postgrestError(error: PostgrestError, status: number): Error {
   if (error.code === "PGRST301" || status === 401) return new SessionExpiredError();
   // 権限がない（RLS・GRANT で断られた。外された協力者など）
   if (error.code === "42501") return new Error(MSG_PERMISSION_DENIED);
+  if (status === 429) return new Error(MSG_RATE_LIMITED);
   if (isUnreachableStatus(status)) return networkError();
   return new Error(`サーバーで失敗しました（${error.code === "" ? String(status) : error.code}）`);
 }
@@ -113,13 +114,26 @@ function requireClient(): SupabaseClient {
   return client;
 }
 
-/** auth.getUser の失敗を Error にする */
+/** Auth の失敗のうち、セッションが切れていることを表すコード（403 のとき。JWT が受け付けられない・セッションがない） */
+const SESSION_EXPIRED_AUTH_CODES: ReadonlySet<string> = new Set(["bad_jwt", "session_not_found"]);
+
+/**
+ * auth.getUser の失敗を Error にする。SessionExpiredError にするのは、セッションが切れていると分かるときだけ
+ * （AuthSessionMissingError、AuthApiError の 401、403 の bad_jwt・session_not_found）。
+ * 回数の上限（429）は「しばらくしてから」の失敗、届かなかった・Auth のサーバーの障害は通信の失敗にする
+ */
 function authError(error: AuthError): Error {
-  // 届かなかった・Auth のサーバーの障害
-  if (isAuthRetryableFetchError(error)) return networkError();
-  if (isAuthApiError(error) && isUnreachableStatus(error.status)) return networkError();
-  // セッションがない・期限切れで更新できない・JWT が受け付けられない
-  if (isAuthSessionMissingError(error) || isAuthApiError(error)) return new SessionExpiredError();
+  if (isAuthSessionMissingError(error)) return new SessionExpiredError();
+  if (isAuthApiError(error)) {
+    if (error.status === 401) return new SessionExpiredError();
+    if (error.status === 403 && error.code !== undefined && SESSION_EXPIRED_AUTH_CODES.has(error.code)) {
+      return new SessionExpiredError();
+    }
+    if (error.status === 429) return new Error(MSG_RATE_LIMITED);
+    if (isUnreachableStatus(error.status)) return networkError();
+    return new Error(`ログインの状態を確かめられませんでした（${error.code ?? String(error.status)}）`);
+  }
+  // 届かなかった（AuthRetryableFetchError）・そのほかの失敗
   return networkError();
 }
 
@@ -177,8 +191,8 @@ function asDoc(value: unknown): DefinitionDoc {
 
 // ---- 日時 ----
 
-/** PostgREST の timestamptz（秒・秒の小数・時差の書き方に幅がある） */
-const TIMESTAMP_PATTERN = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}(?::?\d{2})?)$/;
+/** PostgREST の timestamptz（秒・秒の小数・時差の書き方に幅がある）。4 つ目は秒の小数、5 つ目は時差 */
+const TIMESTAMP_PATTERN = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?(\.\d+)?(Z|[+-]\d{2}(?::?\d{2})?)$/;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /** 時差の書き方を "+09:00" の形にそろえる（"Z" はそのまま） */
@@ -188,13 +202,27 @@ function normalizeOffset(offset: string): string {
   return `${offset[0]}${digits.slice(0, 2)}:${digits.slice(2, 4) || "00"}`;
 }
 
-/** 日時の文字列を、1970-01-01T00:00Z からのミリ秒にする（秒の小数は切り捨てる）。読めなければ失敗 */
-function timestampMs(value: unknown): number {
+/** 日時の文字列を読む（秒までのミリ秒と、秒の小数のミリ秒）。読めなければ失敗 */
+function readTimestamp(value: unknown): { readonly ms: number; readonly fractionMs: number } {
   const match = TIMESTAMP_PATTERN.exec(asString(value));
   if (match === null) throw invalidResponse();
-  const ms = parseDateTime(`${match[1]}T${match[2]}:${match[3] ?? "00"}${normalizeOffset(match[4] ?? "Z")}`);
+  const ms = parseDateTime(`${match[1]}T${match[2]}:${match[3] ?? "00"}${normalizeOffset(match[5] ?? "Z")}`);
   if (ms === undefined) throw invalidResponse();
-  return ms;
+  return { ms, fractionMs: match[4] === undefined ? 0 : Number(match[4]) * 1000 };
+}
+
+/** 日時の文字列を、1970-01-01T00:00Z からのミリ秒にする（秒の小数は切り捨てる。表示に使う）。読めなければ失敗 */
+function timestampMs(value: unknown): number {
+  return readTimestamp(value).ms;
+}
+
+/**
+ * 日時の文字列を、秒の小数（マイクロ秒まで）も含めたミリ秒にする（小数つきの数）。
+ * 作った順の比べ合いに使う（同じ秒に作った 2 つのイベントも見分ける）
+ */
+function preciseTimestampMs(value: unknown): number {
+  const { ms, fractionMs } = readTimestamp(value);
+  return ms + fractionMs;
 }
 
 function pad2(value: number): string {
@@ -230,6 +258,7 @@ interface ProfileRow {
   readonly userId: string;
   readonly displayName: string;
   readonly role: EditorRole;
+  /** 作った日時（秒の小数まで。並べる順に使う） */
   readonly createdMs: number;
 }
 
@@ -238,7 +267,7 @@ function toProfile(row: Record<string, unknown>): ProfileRow {
     userId: asString(row.user_id),
     displayName: asString(row.display_name),
     role: asRole(row.role),
-    createdMs: timestampMs(row.created_at),
+    createdMs: preciseTimestampMs(row.created_at),
   };
 }
 
@@ -248,6 +277,7 @@ interface EventRow {
   readonly startAt: string;
   readonly endAt: string | null;
   readonly startMs: number;
+  /** 作った日時（秒の小数まで。並べる順に使う） */
   readonly createdMs: number;
 }
 
@@ -258,7 +288,7 @@ function toEvent(row: Record<string, unknown>): EventRow {
     startAt: toJstIso(row.starts_at),
     endAt: toJstIsoOrNull(row.ends_at),
     startMs: timestampMs(row.starts_at),
-    createdMs: timestampMs(row.created_at),
+    createdMs: preciseTimestampMs(row.created_at),
   };
 }
 
