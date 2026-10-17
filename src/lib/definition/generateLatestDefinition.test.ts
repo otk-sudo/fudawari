@@ -249,7 +249,7 @@ describe("generateLatestDefinition（最新イベントの公開版を取得し�
   });
 });
 
-describe("generateLatestDefinition：まだ公開されたイベントがない（ファイルを消して成功する。テスト用の定義を本番に出さない）", () => {
+describe("generateLatestDefinition：まだ公開されたイベントがない（latest_event_id が null のときだけ、ファイルを消して成功する。テスト用の定義を本番に出さない）", () => {
   it("latest_event_id が null なら、公開版を読まずに書き出し先のファイルを消し、「まだ公開されたイベントがありません」の結果で成功する", async () => {
     // 準備
     const { deps, fetch, writeFile, removeFile } = setup({ appState: [okJson(noLatestEventRows)] });
@@ -267,17 +267,19 @@ describe("generateLatestDefinition：まだ公開されたイベントがない�
     expect(result.kind === "none" ? result.message : "").toContain(NONE_MESSAGE);
   });
 
-  it("最新のイベントに公開版がない（published_definitions が空の配列）なら、ファイルを消し、同じ結果で成功する", async () => {
+  // 最新のイベントは公開して最新にしたもの（U18）なので、正常な DB では公開版が 0 件にならない。
+  // 0 件は RLS の設定の誤り・データの不整合とみなし、ファイルを消さずに失敗する（本番を空のサイトにしない。PR-13a のレビュー M1）
+  it("最新のイベントに公開版がない（published_definitions が空の配列）なら、表の名前と RLS・データの確認の案内を入れた Error で失敗し、書き出さず消さない", async () => {
     const { deps, fetch, writeFile, removeFile } = setup({ appState: [okJson(latestEventRows)], published: [okJson([])] });
 
-    const result = await generateLatestDefinition(deps);
+    const message = await rejectionMessage(generateLatestDefinition(deps));
 
     expect(callsTo(fetch, "published_definitions")).toHaveLength(1);
-    expect(removeFile).toHaveBeenCalledTimes(1);
-    expect(removeFile).toHaveBeenCalledWith(LATEST_DEFINITION_OUTPUT_PATH);
+    expect(message).toContain("published_definitions");
+    expect(message).toContain(EVENT_ID);
+    expect(message).toContain("RLS");
     expect(writeFile).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ kind: "none", outputPath: LATEST_DEFINITION_OUTPUT_PATH });
-    expect(result.kind === "none" ? result.message : "").toContain(NONE_MESSAGE);
+    expect(removeFile).not.toHaveBeenCalled();
   });
 
   it("書き出し先を指定していれば、そのファイルを消す", async () => {
@@ -391,6 +393,11 @@ describe("generateLatestDefinition：取得の失敗（理由つきで失敗し�
       { appState: [okJson(latestEventRows)], published: [okJson(publishedRows()[0])] },
       "published_definitions",
     ],
+    [
+      "published_definitions の行に content がない",
+      { appState: [okJson(latestEventRows)], published: [okJson([{ published_at: "2026-08-04T03:00:00+00:00" }])] },
+      "published_definitions",
+    ],
   ])("%s なら、表の名前を入れた Error で失敗する（「公開されたイベントがない」とみなしてファイルを消さない）", async (_label, routes, table) => {
     const { deps, writeFile, removeFile } = setup(routes);
 
@@ -463,6 +470,9 @@ describe("generateLatestDefinition：接続先がない", () => {
   it.each<[string, Partial<Omit<GenerateLatestDefinitionDeps, "fetch">>]>([
     ["URL が空", { supabaseUrl: "" }],
     ["publishable key が空", { publishableKey: "" }],
+    ["URL が空白だけ", { supabaseUrl: "  \t " }],
+    ["publishable key が空白だけ", { publishableKey: "   " }],
+    ["URL として読めない", { supabaseUrl: "not a url" }],
   ])("%s なら、取得せずに Error で失敗し、書き出さず消さない", async (_label, overrides) => {
     const { deps, fetch, writeFile, removeFile } = setup(publishedRoutes(), overrides);
 
@@ -471,6 +481,21 @@ describe("generateLatestDefinition：接続先がない", () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(writeFile).not.toHaveBeenCalled();
     expect(removeFile).not.toHaveBeenCalled();
+  });
+
+  it("URL・publishable key の前後の空白は除いて使う", async () => {
+    const { deps, fetch, writeFile } = setup(publishedRoutes(), {
+      supabaseUrl: `  ${SUPABASE_URL}/ \n`,
+      publishableKey: ` ${PUBLISHABLE_KEY}\n`,
+    });
+
+    await generateLatestDefinition(deps);
+
+    expect(fetch.mock.calls.map(([url]) => new URL(url).origin)).toEqual([SUPABASE_URL, SUPABASE_URL]);
+    for (const [, init] of fetch.mock.calls) {
+      expect(new Headers(init.headers).get("apikey")).toBe(PUBLISHABLE_KEY);
+    }
+    expect(writeFile).toHaveBeenCalledTimes(1);
   });
 });
 

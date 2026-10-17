@@ -2,7 +2,7 @@
 //
 // - Supabase の REST（PostgREST）を anon の publishable key で読む（ヘッダー apikey だけ。publishable key は JWT ではないため Authorization: Bearer には入れない）。
 //   1. GET {url}/rest/v1/app_state?select=latest_event_id&id=eq.true で最新イベントの ID を読む
-//   2. ID があれば GET {url}/rest/v1/published_definitions?select=content,…&event_id=eq.{ID}&order=published_at.desc&limit=1
+//   2. ID があれば GET {url}/rest/v1/published_definitions?select=content&event_id=eq.{ID}&order=published_at.desc&limit=1
 //      で最新の公開版を 1 件読む
 // - 公開版の content を validatePublicDefinition（@/domain/definition）で確かめ、通れば検証済みの値を
 //   public/data/latest-definition.json に書き出す（一般の画面は loadLatestDefinition でこのファイルだけを読む）。
@@ -88,7 +88,7 @@ export type GenerateLatestDefinitionResult =
       versionDate: string;
     }
   /**
-   * 最新のイベントがない（latest_event_id が null）か、最新のイベントに公開版がない。
+   * 最新のイベントがない（latest_event_id が null。まだ公開して最新にしたイベントがない）。
    * 書き出し先のファイルを消した（一般の画面は 404 になり、読み込みの失敗の表示になる。テスト用の定義を本番に出さないため）
    */
   | {
@@ -101,12 +101,12 @@ export type GenerateLatestDefinitionResult =
 
 /**
  * 最新イベントの公開版を Supabase から取得し、検証して書き出す。
- * - 最新のイベントがない・公開版がない：ファイルを消して kind: "none" で成功する（書き出さない）
+ * - 最新のイベントがない（latest_event_id が null）：ファイルを消して kind: "none" で成功する（書き出さない）
  * - 次のときは理由を入れた Error で失敗し、書き出さない（消しもしない）：
  *   URL・キーが空（前後の空白を除いて）・URL として読めない、
  *   通信の失敗・ok でない応答（再試行してもすべて失敗。理由は最後の失敗のもの）、
- *   JSON として読めない応答、応答の形が想定と違う（app_state の行が読めないなど）、公開版が検証に通らない、
- *   公開版の event.id が最新イベントの ID と違う
+ *   JSON として読めない応答、応答の形が想定と違う（app_state の行が読めないなど）、最新のイベントの公開版がない（RLS の誤りなど）、
+ *   公開版が検証に通らない、公開版の event.id が最新イベントの ID と違う
  * - 通信の失敗・ok でない応答・JSON として読めない応答の Error の文には、どの表の取得か（app_state／published_definitions）、
  *   元の理由（通信の失敗の文、HTTP の状態の番号、PostgREST の誤りの message）、
  *   「Supabase のプロジェクトが停止していないか確かめてください」を入れる（無料プランは約 7 日アクセスがないと停止する）
@@ -141,20 +141,14 @@ export async function generateLatestDefinition(
   // 2. 最新イベントの最新の公開版（公開日時の新しい順に 1 件）
   const publishedRow = readPublishedRow(
     await readTable(reader, "published_definitions", {
-      select: "content,version_label,published_at",
+      // 使うのは content だけ（order の published_at は select に入れなくても使える）
+      select: "content",
       event_id: `eq.${latestEventId}`,
       order: "published_at.desc",
       limit: "1",
     }),
+    latestEventId,
   );
-  if (publishedRow === null) {
-    await deps.removeFile(outputPath);
-    return {
-      kind: "none",
-      outputPath,
-      message: `${NONE_MESSAGE}（最新のイベント ${latestEventId} に公開版がありません）`,
-    };
-  }
 
   // 3. 検証（一般の画面の読み込みと同じ検証。壊れた定義を配らない）
   const validation = validatePublicDefinition(publishedRow.content);
@@ -322,13 +316,22 @@ interface PublishedRow {
   content: unknown;
 }
 
-/** published_definitions の応答から公開版の行を読む（ない＝null）。形が違えば失敗する */
-function readPublishedRow(rows: unknown): PublishedRow | null {
+/**
+ * published_definitions の応答から公開版の行を読む。形が違えば失敗する。
+ * 行がないときも失敗する：最新のイベントは公開して最新にしたもの（U18）なので、正常な DB では公開版が 0 件にならない。
+ * RLS の設定の誤りなどで空の配列が返ったときに、ファイルを消して本番を空のサイトにしないため
+ */
+function readPublishedRow(rows: unknown, latestEventId: string): PublishedRow {
   if (!Array.isArray(rows)) {
     throw new Error("published_definitions の応答が配列ではありません（PostgREST の応答の形が想定と違います）");
   }
   const row: unknown = rows[0];
-  if (row === undefined) return null;
+  if (row === undefined) {
+    throw new Error(
+      `published_definitions に、app_state の最新のイベント（${latestEventId}）の公開版がありません。` +
+        "最新のイベントには公開版があるはずなので、RLS の設定の誤り（anon が公開版を読めない）か、データの不整合を確かめてください",
+    );
+  }
   if (!isRecord(row) || !("content" in row)) {
     throw new Error("published_definitions の行に content がありません");
   }
