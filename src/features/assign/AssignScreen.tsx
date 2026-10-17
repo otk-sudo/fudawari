@@ -68,6 +68,12 @@ export interface AssignScreenProps {
    */
   initialAssignments: AssignmentMap;
   /**
+   * 共有の札割りのデータの今の割り当て（省略できる）。この画面が保存した割り当て（save に渡したものと同じオブジェクト）と
+   * 違うものに変わったら、画面の外（設定の札割りの読み込みなど）で置き換えられたとみなし、新しい割り当てを表示して
+   * 「元に戻す」の履歴を捨てる（PR-14）
+   */
+  sharedAssignments?: AssignmentMap;
+  /**
    * 割り当てが変わるたびに呼ぶ保存の関数（createAssignStore に渡す。イベント ID は definition.event.id）。
    * 失敗したら理由の文をメッセージに持つエラーで reject する（画面は「保存できませんでした」と理由を出す）。
    * 最初の描画で渡した関数を使い続ける（後から別の関数を渡しても切り替わらない）ので、何度描いても同じ関数を渡す
@@ -114,6 +120,7 @@ export function AssignScreen({
   master,
   ships,
   initialAssignments,
+  sharedAssignments,
   save,
   returnedCount,
   trayInit,
@@ -122,6 +129,14 @@ export function AssignScreen({
   const [store] = useState(() =>
     createAssignStore({ eventId: definition.event.id, assignments: initialAssignments, save }),
   );
+
+  // 共有の割り当てが、この画面の保存したもの（ストアの今の割り当てと同じオブジェクト。保存の関数はすぐに共有の割り当てを
+  // 渡した値に替える）と違うものに変わったら、外で置き換えられたので、新しい割り当てに替えて履歴を捨てる
+  useLayoutEffect(() => {
+    if (sharedAssignments === undefined) return;
+    const state = store.getState();
+    if (state.assignments !== sharedAssignments) state.replaceAssignments(sharedAssignments);
+  }, [store, sharedAssignments]);
 
   const assignments = useStore(store, (state) => state.assignments);
   const selectedUid = useStore(store, (state) => state.selectedUid);

@@ -18,6 +18,7 @@
 import type { Page, Request, Route } from "@playwright/test";
 import type { PublicDefinition } from "@/domain/definition/types";
 import { summer2026Definition } from "./fixtures";
+import { matchesPostgrestOr } from "./postgrest-or";
 
 // ---- 接続先 ----
 
@@ -285,6 +286,11 @@ function selectRows(rows: readonly Row[], params: URLSearchParams): Row[] {
   let result = [...rows];
   for (const [column, expression] of params) {
     if (NON_FILTER_PARAMS.has(column)) continue;
+    // or=(条件,条件)（保存の記録の続きをキーで読む形。PR-14。読み方は src/test/postgrest-or.ts）
+    if (column === "or") {
+      result = result.filter((row) => matchesPostgrestOr(row, expression));
+      continue;
+    }
     result = result.filter((row) => matchesFilter(row, column, expression));
   }
   const order = params.get("order");

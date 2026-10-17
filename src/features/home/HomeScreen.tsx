@@ -31,6 +31,8 @@ export type HomeLatestEvent =
 export type HomeScreenProps = {
   /** 最新イベントの状態（ヘッダーの「開催中：」、読み込みの失敗の警告、協力者のイベント定義の説明に使う） */
   latestEvent: HomeLatestEvent;
+  /** 最終取り込みの日時（「10/15 20:40」の形。取り込んでいなければ null か省略。ヘッダーの「最終取り込み」に使う） */
+  lastImportedAt?: string | null;
 };
 
 type Tile = {
@@ -111,20 +113,25 @@ function TileBody({
 /**
  * ホーム（要件 3.1、モック Home.dc.html）。権限は `@/features/auth` の useRole() から受け取る。
  *
- * - ヘッダー：見出し（h1）にアプリ名。最新イベントが開催中のときだけ「開催中：（イベント名）」
+ * - ヘッダー：見出し（h1）にアプリ名。補足に「開催中：（イベント名） ／ 最終取り込み M/D HH:mm」（モック Home.dc.html）。
+ *   「開催中：」は開催中のときだけ、「最終取り込み」は取り込んでいるときだけ出し、両方あるときだけ「／」で区切る
  * - 定義の読み込みに失敗したら、ヘッダー帯の下に理由と次の行動（ほかの画面と同じ警告。role="alert"）
  * - 「札割り」の区分：一覧・割り振り・取り込み・差分（リンク）、設定（ボタン。設定のウィンドウを開く）
  * - 「管理」の区分（協力者・管理者のみ）：見出しに権限名のバッジ、イベント定義・協力者（管理者のみ）
  */
-export function HomeScreen({ latestEvent }: HomeScreenProps): ReactNode {
+export function HomeScreen({ latestEvent, lastImportedAt = null }: HomeScreenProps): ReactNode {
   const role = useRole();
   const adminTiles = managementTiles(role, latestEvent);
+  const noteParts = [
+    latestEvent.status === "running" ? `開催中：${latestEvent.eventName}` : null,
+    lastImportedAt === null ? null : `最終取り込み ${lastImportedAt}`,
+  ].filter((part) => part !== null);
 
   return (
     <>
       <ScreenHeader
         title={APP_NAME}
-        note={latestEvent.status === "running" ? `開催中：${latestEvent.eventName}` : undefined}
+        note={noteParts.length === 0 ? undefined : noteParts.join(" ／ ")}
       />
       {latestEvent.status === "error" && <DefinitionLoadAlert error={latestEvent.error} />}
       <div className={styles.body}>

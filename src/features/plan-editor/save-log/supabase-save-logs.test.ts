@@ -13,6 +13,7 @@ import {
   stubSupabaseEnvWithout,
 } from "@/test/supabase-fake";
 import { loadSaveLogs } from "./supabase-save-logs";
+import type { SaveLogEntry } from "./types";
 
 // supabase-js の createClient を偽物に差し替える（Supabase に通信しない）
 vi.mock("@supabase/supabase-js", async (importOriginal) => ({
@@ -27,6 +28,11 @@ vi.mock("@supabase/supabase-js", async (importOriginal) => ({
 //   user_id → userId（PR-12b。「誰が」を ID で見分けるため。null はそのまま null）
 // - PR-12b（レビュー M1・Codex #21-4301315075）：PostgREST は 1 回に返す行数に上限（max_rows。既定 1000）があるため、
 //   .range(from, from + 999) を、返った件数が 1000 未満になるまでくり返して連結する（偽物は max_rows をまねないので、range の呼び方で確かめる）
+// - PR-14（PR-12b のレビュー P3・PR-14 のレビュー P1）：サーバーの max_rows が 1000 より小さくても、読む間に記録が足されても全部読む。
+//   続きは読む位置（offset）ではなくキーで読む：前に読んだ最後の行（created_at・id）より古いものを
+//   .or("created_at.lt.X,and(created_at.eq.X,id.lt.Y)") で取り、0 件が返ったら終える（偽物の or は src/test/postgrest-or.ts）。
+//   そのため、読む位置（range の呼び方）を確かめていたテストは、読み取りの回数（余分な読み取りは 1 回まで）と結果で確かめる形に変えた。
+//   max_rows のまねは、偽物の読み取りの limit を抑えて作る（capSaveLogRows）
 //
 // PR-12b で変えたこと：最初のテストの期待値に userId を足した（記録に利用者の ID を持たせる仕様にしたため）
 // - 失敗は、画面に出す理由の文（日本語）を message に持つ Error にする（言葉の要点だけを確かめる。定義の保管庫と同じ）
@@ -285,33 +291,77 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       }
     }
 
-    /** save_logs の読み取りで呼んだ range（読み取りごとに、最後に指定した from・to） */
-    function saveLogRanges(): Array<readonly [number, number] | undefined> {
-      return fake.main.from.mock.calls.flatMap(([table], index) => {
-        if (table !== "save_logs") return [];
-        const query = fake.main.from.mock.results[index]?.value as FakeQuery | undefined;
-        return [query?.ranges.at(-1)];
+    /** save_logs の読み取りの回数（from("save_logs") を呼んだ回数） */
+    function saveLogReads(): number {
+      return fake.main.from.mock.calls.filter(([table]) => table === "save_logs").length;
+    }
+
+    /**
+     * MANY_ID の記録を n 件入れる。id は 1〜n（id が大きいほど新しい）で、created_at は 7 件ずつ同じ時刻にする
+     * （1000 件目などのページの境目が、同じ時刻の記録の途中に来るようにする。並び順に頼れないよう逆順に入れる）
+     */
+    function seedManyWithTies(n: number): void {
+      for (let id = n; id >= 1; id -= 1) {
+        const second = Math.floor(id / 7);
+        const seconds = String(second % 60).padStart(2, "0");
+        const minutes = String(Math.floor(second / 60) % 60).padStart(2, "0");
+        const hours = String(Math.floor(second / 3600)).padStart(2, "0");
+        fake.server.saveLogs.push(
+          saveLogRow({
+            id,
+            event_id: MANY_ID,
+            user_id: "user-akane",
+            user_name: "あかね",
+            summary: `記録 ${String(id)}`,
+            created_at: `2026-10-01T${hours}:${minutes}:${seconds}+00:00`,
+          }),
+        );
+      }
+    }
+
+    /**
+     * save_logs の読み取りが 1 回に max 件までしか返さないようにする（サーバーの max_rows のまね）。
+     * 読み取りの limit を max に抑える（実装が limit で頼んでも range で頼んでも、max 件を超えて返さない）
+     */
+    function capSaveLogRows(max: number): void {
+      const original = fake.main.from.getMockImplementation();
+      if (original === undefined) throw new Error("偽物の from に返し方がありません");
+      fake.main.from.mockImplementation((table: string): FakeQuery => {
+        const query = original(table);
+        if (table !== "save_logs") return query;
+        const limit = query.limit.bind(query);
+        limit(max);
+        query.limit = (count: number) => limit(Math.min(count, max));
+        return query;
       });
     }
 
-    it("2345 件なら、0〜999・1000〜1999・2000〜2999 の 3 回に分けて読み、新しい順に連結して 2345 件を返す", async () => {
+    /** 新しい順（created_at の新しい順、同じ時刻なら id の大きい順）に並んでいるか */
+    function expectNewestFirst(logs: readonly SaveLogEntry[]): void {
+      for (let index = 1; index < logs.length; index += 1) {
+        const previous = logs[index - 1];
+        const current = logs[index];
+        if (previous === undefined || current === undefined) continue;
+        const order = Date.parse(previous.createdAt) - Date.parse(current.createdAt) || previous.id - current.id;
+        expect(order, `${String(index)} 件目の並び`).toBeGreaterThan(0);
+      }
+    }
+
+    it("2345 件なら、新しい順に連結して 2345 件を返す（読み取りは 3〜4 回。0 件が返るまで読む形でも、余分な読み取りは 1 回まで）", async () => {
       // 準備
       seedMany(2345);
 
       // 実行
       const logs = await loadSaveLogs(MANY_ID);
 
-      // 検証
-      expect(saveLogRanges()).toEqual([
-        [0, 999],
-        [1000, 1999],
-        [2000, 2999],
-      ]);
+      // 検証（PR-14 で、読む位置〔range〕ではなく回数と結果で確かめる形に変えた）
       expect(logs).toHaveLength(2345);
       expect(logs.map((log) => log.id)).toEqual(Array.from({ length: 2345 }, (_, index) => 2345 - index));
+      expect(saveLogReads()).toBeGreaterThanOrEqual(3);
+      expect(saveLogReads()).toBeLessThanOrEqual(4);
     });
 
-    it("ちょうど 1000 件なら、2 回目（1000〜1999）が 0 件で終わり、1000 件を返す（境界）", async () => {
+    it("ちょうど 1000 件なら、2 回目が 0 件で終わり、1000 件を返す（境界）", async () => {
       // 準備
       seedMany(1000);
 
@@ -319,16 +369,13 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       const logs = await loadSaveLogs(MANY_ID);
 
       // 検証
-      expect(saveLogRanges()).toEqual([
-        [0, 999],
-        [1000, 1999],
-      ]);
+      expect(saveLogReads()).toBe(2);
       expect(logs).toHaveLength(1000);
       expect(logs[0]?.id).toBe(1000);
       expect(logs.at(-1)?.id).toBe(1);
     });
 
-    it("999 件なら 1 回（0〜999）だけ読む（境界）", async () => {
+    it("999 件なら 999 件を返し、読み取りは 2 回まで（999 件で終える形でも、0 件が返るまで読む形でもよい。境界）", async () => {
       // 準備
       seedMany(999);
 
@@ -336,8 +383,72 @@ describe("保存の記録の読み取り（loadSaveLogs）", () => {
       const logs = await loadSaveLogs(MANY_ID);
 
       // 検証
-      expect(saveLogRanges()).toEqual([[0, 999]]);
       expect(logs).toHaveLength(999);
+      expect(saveLogReads()).toBeGreaterThanOrEqual(1);
+      expect(saveLogReads()).toBeLessThanOrEqual(2);
+    });
+
+    it("サーバーの max_rows が 500 でも、0 件になるまで続きを読み、1234 件を新しい順にすべて返す（PR-14：PR-12b のレビュー P3）", async () => {
+      // 準備：save_logs の読み取りは 1 回に 500 件までしか返さない（max_rows のまね）
+      seedMany(1234);
+      capSaveLogRows(500);
+
+      // 実行
+      const logs = await loadSaveLogs(MANY_ID);
+
+      // 検証：抜けも重なりもなく全部読む
+      expect(logs.map((log) => log.id)).toEqual(Array.from({ length: 1234 }, (_, index) => 1234 - index));
+    });
+
+    it("同じ時刻の記録がページの境目をまたいでも（max_rows 500・7 件ずつ同じ時刻）、抜けも重なりもなく 2345 件を新しい順に返す（PR-14：レビュー P1）", async () => {
+      // 準備
+      seedManyWithTies(2345);
+      capSaveLogRows(500);
+
+      // 実行
+      const logs = await loadSaveLogs(MANY_ID);
+
+      // 検証
+      expect(logs.map((log) => log.id)).toEqual(Array.from({ length: 2345 }, (_, index) => 2345 - index));
+      expectNewestFirst(logs);
+    });
+
+    it("読んでいる間に max_rows（1000）以上の新しい記録が足されても、読み始めにあった記録を欠かさず、重ねずに新しい順で返す（PR-14：レビュー P1）", async () => {
+      // 準備：2345 件。2 回目の save_logs の読み取りの前に、より新しい記録を 1000 件足す
+      seedManyWithTies(2345);
+      const original = fake.main.from.getMockImplementation();
+      if (original === undefined) throw new Error("偽物の from に返し方がありません");
+      let reads = 0;
+      fake.main.from.mockImplementation((table: string): FakeQuery => {
+        if (table === "save_logs") {
+          reads += 1;
+          if (reads === 2) {
+            for (let id = 3001; id <= 4000; id += 1) {
+              fake.server.saveLogs.push(
+                saveLogRow({
+                  id,
+                  event_id: MANY_ID,
+                  user_id: "user-akane",
+                  user_name: "あかね",
+                  summary: `足した記録 ${String(id)}`,
+                  created_at: `2026-10-02T00:00:${String(id % 60).padStart(2, "0")}+00:00`,
+                }),
+              );
+            }
+          }
+        }
+        return original(table);
+      });
+
+      // 実行
+      const logs = await loadSaveLogs(MANY_ID);
+
+      // 検証：読み始めにあった 2345 件がすべて 1 回ずつある。重なりはなく、新しい順（足した記録は入っても入らなくてもよい）
+      const ids = logs.map((log) => log.id);
+      expect(new Set(ids).size, "重なり").toBe(ids.length);
+      const original2345 = ids.filter((id) => id <= 2345);
+      expect(original2345).toEqual(Array.from({ length: 2345 }, (_, index) => 2345 - index));
+      expectNewestFirst(logs);
     });
 
     it("2 回目の読み取りが通信に失敗したら、途中までの記録を返さず「通信に失敗しました」の理由で失敗する", async () => {

@@ -120,7 +120,7 @@ describe("一覧の本文（ListBoard）", () => {
       // 準備・実行
       renderBoard();
 
-      // 検証：モック Main.dc.html の数（E3 ギミックの 0 隻は出し方を決めていないので見ない）
+      // 検証：モック Main.dc.html の数（特効グループのない E3 ギミックの「特効 0隻」は次のテストで確かめる）
       const timeline = getTimeline();
       const expected: [area: string, stage: string, fuda: string, count: number][] = [
         ["E1", "ギミック〜ゲージ3", "第三十一戦隊", 3],
@@ -135,6 +135,29 @@ describe("一覧の本文（ListBoard）", () => {
       ];
       for (const [area, stage, fuda, count] of expected) {
         expect(getStep(timeline, area, stage, fuda), `${area} ${stage}`).toHaveTextContent(boostCountPattern(count));
+      }
+    });
+
+    it("特効グループのない段階（E3 ギミック）にも、札に艦がいれば「特効 0隻」を出す（全段階に出す。PR-07 再レビュー M-a）", () => {
+      // 準備・実行：E3 ギミックは第三十一戦隊（4隻）の段階で、特効グループがない
+      renderBoard();
+
+      // 検証
+      const step = getStep(getTimeline(), "E3", "ギミック", "第三十一戦隊");
+      expect(step).toHaveTextContent(boostCountPattern(0));
+      expect(step).not.toHaveTextContent(/特効\s*[1-9]\d*\s*隻/);
+    });
+
+    it("割り当てがなければ、全段階に「特効 0隻」を出す（1 隻以上は出さない。割り当てから数える）", () => {
+      // 準備・実行
+      renderBoard({ assignments: {} });
+
+      // 検証：段階の数（E1 1・E2 4・E3 5）だけ「特効 0隻」がある
+      const timeline = getTimeline();
+      const allSteps = ["E1", "E2", "E3"].flatMap((area) => getAreaSteps(timeline, area));
+      expect(allSteps).toHaveLength(10);
+      for (const step of allSteps) {
+        expect(step).toHaveTextContent(boostCountPattern(0));
       }
     });
 

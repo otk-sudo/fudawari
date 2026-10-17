@@ -17,6 +17,7 @@
 // Realtime のチャンネル（channel・removeChannel）は Presence だけをまねる（FakeRealtimeChannel。他の人の出入りは putPeer・removePeer、
 // 参加の失敗・切断は emitStatus で起こす）。同じ名前のチャンネルは、removeChannel が終わるまで同じものを返す（supabase-js と同じ）。
 // realtime.setAuth（参加の前にトークンを渡す）は呼ばれ方の確認だけ。表の読み取りの range は、max_rows をまねないので ranges で呼び方を確かめる。
+// 表の読み取りの or（"列.演算子.値,and(…)" の形。PR-14）は src/test/postgrest-or.ts で読む。
 // RPC は register_collaborator・remove_collaborator だけをまねる。ほかの RPC（save_draft など）は、テストで
 // `fake.main.rpc.mockResolvedValueOnce(rpcSuccess(…))`・`rpcFailure("FD002")` のように返し方を決める。
 // エラーの形は supabase-js と同じにする（Auth は AuthApiError など、表と RPC は PostgrestError と code）。
@@ -31,6 +32,7 @@ import {
 } from "@supabase/supabase-js";
 import { type Mock, vi } from "vitest";
 import type { FetchMock } from "@/test/definition-fetch";
+import { matchesPostgrestOr } from "@/test/postgrest-or";
 
 /** テスト用の接続先の URL（環境変数 NEXT_PUBLIC_SUPABASE_URL に入れる） */
 export const FAKE_SUPABASE_URL = "https://fake-project.supabase.co";
@@ -482,6 +484,12 @@ export class FakeQuery implements PromiseLike<FakeQueryResult> {
 
   is(column: string, value: null | boolean): this {
     this.predicates.push((row) => (value === null ? row[column] === null || row[column] === undefined : row[column] === value));
+    return this;
+  }
+
+  /** or の絞り込み（"条件,条件"。src/test/postgrest-or.ts の読める形。呼んだ順に、どれも当てる） */
+  or(filters: string): this {
+    this.predicates.push((row) => matchesPostgrestOr(row, filters));
     return this;
   }
 
