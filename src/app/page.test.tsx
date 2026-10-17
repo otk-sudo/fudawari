@@ -1,9 +1,13 @@
-import { act, cleanup, render, type RenderResult, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, type RenderResult, screen, waitFor, within } from "@testing-library/react";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // `@/` の別名が Vitest でも解決できることを兼ねて確かめるため、別名で読み込む
 import HomePage from "@/app/page";
+import { SettingsDialog } from "@/components/SettingsDialog";
+import { closeSettingsDialog, openSettingsDialog } from "@/components/settings-dialog-store";
 import { setRole } from "@/features/auth";
+import { SettingsContent } from "@/features/settings";
 import { resetLatestDefinitionCache, useLatestDefinition } from "@/lib/definition";
 import { resetPlanDataCache, usePlanData } from "@/lib/plan";
 import type { FudawariStorage } from "@/lib/storage";
@@ -684,6 +688,84 @@ describe("トップ画面", () => {
       // 検証
       expect(getHomeHeader()).toHaveTextContent(/開催中：2026夏イベ/);
       expect(getHomeHeader()).not.toHaveTextContent(/最終取り込み/);
+    });
+
+    // PR-14b（PR-14 の再レビュー M1'）：ホームを開いたまま設定のウィンドウで取り込んだ艦娘データを削除して閉じたら、
+    // ヘッダーの「最終取り込み」を消す。直し方は親が決めた（設定のウィンドウが閉じたら〔settings-dialog-store の購読〕、
+    // 最終取り込みを保存先から読み直す想定）。設定のウィンドウ（全画面で 1 つ）は、レイアウトと同じくホームと一緒に描く
+    describe("設定のウィンドウとのつながり（PR-14b：再レビュー M1'）", () => {
+      afterEach(() => {
+        closeSettingsDialog();
+      });
+
+      /** ホームと設定のウィンドウ（中身つき）を描き、ヘッダーに最終取り込みが出るまで待つ */
+      async function renderHomeWithSettings(): Promise<UserEvent> {
+        const user = userEvent.setup();
+        render(
+          <>
+            <HomePage />
+            <SettingsDialog>
+              <SettingsContent />
+            </SettingsDialog>
+          </>,
+        );
+        await waitFor(() => expect(getHomeHeader()).toHaveTextContent(LAST_IMPORT));
+        return user;
+      }
+
+      /** 設定のウィンドウを開き、「データ」の最終取り込みの行を読み終えるまで待つ */
+      async function openSettingsAndWaitForData(): Promise<HTMLElement> {
+        act(() => {
+          openSettingsDialog();
+        });
+        const dialog = await screen.findByRole("dialog", { name: "設定" });
+        await waitFor(() => expect(dialog).toHaveTextContent(/最終取り込み\s*10\/15\s+20:40/));
+        return dialog;
+      }
+
+      /** 設定のウィンドウを閉じ、閉じ終わるまで待つ */
+      async function closeSettings(): Promise<void> {
+        act(() => {
+          closeSettingsDialog();
+        });
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "設定" })).not.toBeInTheDocument());
+      }
+
+      it("ホームを開いたまま、設定のウィンドウで「取り込んだ艦娘データを削除」→「削除する」→ 閉じると、ヘッダーの「最終取り込み」が消える", async () => {
+        // 準備：取り込みを保存し、ホームに最終取り込みが出ている
+        await storage.saveImport(importInput(summer2026Ships, { importedAt: IMPORTED_AT }));
+        const user = await renderHomeWithSettings();
+
+        // 実行：設定のウィンドウで削除して、閉じる
+        const dialog = await openSettingsAndWaitForData();
+        await user.click(within(dialog).getByRole("button", { name: "削除する" }));
+        const confirm = await screen.findByRole("alertdialog");
+        await user.click(within(confirm).getByRole("button", { name: "削除する" }));
+        await waitFor(async () => expect(await storage.loadLastImport()).toBeNull());
+        await waitFor(() => expect(dialog).toHaveTextContent("取り込んだ艦娘データはありません"));
+        await closeSettings();
+
+        // 検証：「最終取り込み」は消え、「開催中：2026夏イベ」は残る（後ろに「／」を付けない）
+        await waitFor(() => expect(getHomeHeader()).not.toHaveTextContent(/最終取り込み/));
+        expect(getHomeHeader()).toHaveTextContent(/開催中：2026夏イベ/);
+        expect(getHomeHeader()).not.toHaveTextContent(/開催中：2026夏イベ\s*／/);
+      });
+
+      it("ホームを開いたまま、設定のウィンドウで何も変えずに閉じても、ヘッダーの「最終取り込み 10/15 20:40」はそのまま（守り）", async () => {
+        // 準備
+        await storage.saveImport(importInput(summer2026Ships, { importedAt: IMPORTED_AT }));
+        await renderHomeWithSettings();
+
+        // 実行：開いて、何も変えずに閉じる（読み直しが済むまで少し置く）
+        await openSettingsAndWaitForData();
+        await closeSettings();
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        });
+
+        // 検証
+        expect(getHomeHeader()).toHaveTextContent(/開催中：2026夏イベ\s*／\s*最終取り込み\s*10\/15\s+20:40/);
+      });
     });
   });
 });
