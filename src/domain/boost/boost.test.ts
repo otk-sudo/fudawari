@@ -590,6 +590,42 @@ describe("国籍の条件（v1.1）", () => {
       expect(stageMultiplier(s, target("Warspite", "uk"))).toBeCloseTo(1.05, 10);
     });
 
+    // レビューの指摘（回帰）：艦名だけ A・両方 B・国籍だけ C が同じ段階にあるとき、B は 1 回だけ掛け、A・C とは掛け合わせる。
+    // グループの並び（両方を持つ B が先頭・中・末尾）に左右されない
+    describe("艦名だけ A ×1.1・艦名と国籍の両方 B ×1.2・国籍だけ C ×1.3 が同じ段階にあるとき", () => {
+      const groupA = (): BoostGroup => group("A", 1.1, ["Iowa"]);
+      const groupB = (): BoostGroup => nationalGroup("B", 1.2, ["Iowa"], ["usa"]);
+      const groupC = (): BoostGroup => nationalGroup("C", 1.3, [], ["usa"]);
+
+      it.each<[string, () => BoostGroup[]]>([
+        ["A・B・C（共通の B が中）", () => [groupA(), groupB(), groupC()]],
+        ["B・A・C（共通の B が先頭）", () => [groupB(), groupA(), groupC()]],
+        ["B・C・A（共通の B が先頭）", () => [groupB(), groupC(), groupA()]],
+        ["A・C・B（共通の B が末尾）", () => [groupA(), groupC(), groupB()]],
+        ["C・A・B（共通の B が末尾）", () => [groupC(), groupA(), groupB()]],
+        ["C・B・A（共通の B が中）", () => [groupC(), groupB(), groupA()]],
+      ])("並び %s：艦名 A・B と国籍 B・C に当てはまる艦は 1.1 × 1.2 × 1.3（B は 1 回だけ）", (_label, boosts) => {
+        // 準備
+        const s = stage("S", "E1", "a", "hard", boosts());
+
+        // 実行・検証
+        expect(stageMultiplier(s, target("Iowa", "usa"))).toBeCloseTo(1.1 * 1.2 * 1.3, 10);
+        // 艦名だけ当てはまる艦（国籍が違う）は A・B、国籍だけ当てはまる艦は B・C
+        expect(stageMultiplier(s, target("Iowa", "uk"))).toBeCloseTo(1.1 * 1.2, 10);
+        expect(stageMultiplier(s, target("Johnston", "usa"))).toBeCloseTo(1.2 * 1.3, 10);
+        expect(stageMultiplier(s, target("Warspite", "uk"))).toBe(1);
+      });
+
+      it("札のスコアも、B を 1 回だけ掛けた倍率で求める（難所：(1.716 − 1) × 100 × 3 = 214.8 → 215）", () => {
+        const mini = miniDefinition([fuda("a")], [stage("S", "E1", "a", "hard", [groupB(), groupA(), groupC()])]);
+
+        const boost = fudaBoost(mini, "a", target("Iowa", "usa"));
+
+        expect(boost.score).toBe(215);
+        expect(boost.maxMultiplier).toBeCloseTo(1.716, 10);
+      });
+    });
+
     it("国籍が unknown の艦は国籍の条件には当てはまらないが、艦名の条件には当てはまる", () => {
       const s = stage("S", "E1", "a", "normal", [
         nationalGroup("us", 1.2, [], ["usa"]),

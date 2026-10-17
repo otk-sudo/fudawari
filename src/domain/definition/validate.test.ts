@@ -515,6 +515,22 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
       }
     });
 
+    it.each<[string, string]>([
+      ["usa", "アメリカ"],
+      ["uk", "イギリス"],
+      ["soviet", "ソ連"],
+    ])("国籍の重複の誤りの文は表示名を使う（%s の重複 →「%s」を含み、内部の値は含まない）", (value, label) => {
+      // 実行
+      const result = validatePublicDefinition(withNationalities([value, value]));
+
+      // 検証
+      expectError(result, "duplicate_value", `${groupPath}.nationalities[1]`);
+      if (result.ok) return;
+      const error = result.errors.find((e) => e.path === `${groupPath}.nationalities[1]`);
+      expect(error?.message).toContain(label);
+      expect(error?.message).not.toContain(value);
+    });
+
     it("別のグループどうしで同じ国籍を持つのは重複にしない", () => {
       const input = broken((d) => {
         (d.stages[E2_3].boosts[0] as unknown as Record<string, unknown>).nationalities = ["usa"];

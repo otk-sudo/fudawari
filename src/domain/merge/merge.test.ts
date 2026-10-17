@@ -638,6 +638,57 @@ describe("mergeDefinitions・resolveMerge：削除", () => {
     expect(groupOf(keptTheirs, "E2-3-A").multiplier).toBe(1.2);
   });
 
+  it("特効グループ：相手が削除し、自分が国籍だけを変えたら衝突（相手「削除」、自分「変更」。v1.1）", () => {
+    const mine = editDoc(base, (d) => {
+      groupOf(d, "E2-3-A").nationalities = ["usa"];
+    });
+    const theirs = editDoc(base, (d) => {
+      const stage = stageOf(d, "E2-3");
+      stage.boosts = stage.boosts.filter((g) => g.id !== "E2-3-A");
+    });
+    const { input, result } = run(mine, theirs);
+    const conflict = conflictAt(result.conflicts, {
+      kind: "boostGroup",
+      stageId: "E2-3",
+      groupId: "E2-3-A",
+      field: null,
+    });
+
+    expect(result.conflicts).toHaveLength(1);
+    expect(conflict).toMatchObject({ theirsText: "削除", mineText: "変更", stageId: "E2-3" });
+    expect(conflict.label).toContain("連合艦隊A");
+    // 選んでいる間は自分の内容（国籍を変えたグループが残る）
+    expect(groupOf(result.merged, "E2-3-A").nationalities).toEqual(["usa"]);
+
+    const keptTheirs = expectResolved(resolveMerge(input, { [conflict.id]: "theirs" }));
+    expect(hasGroup(keptTheirs, "E2-3-A")).toBe(false);
+    const keptMine = expectResolved(resolveMerge(input, { [conflict.id]: "mine" }));
+    expect(groupOf(keptMine, "E2-3-A").nationalities).toEqual(["usa"]);
+  });
+
+  it("特効グループ：自分が削除し、相手が国籍だけを変えたら衝突（相手の内容を選ぶと相手の国籍が残る。v1.1）", () => {
+    const mine = editDoc(base, (d) => {
+      const stage = stageOf(d, "E2-3");
+      stage.boosts = stage.boosts.filter((g) => g.id !== "E2-3-A");
+    });
+    const theirs = editDoc(base, (d) => {
+      groupOf(d, "E2-3-A").nationalities = ["uk", "germany"];
+    });
+    const { input, result } = run(mine, theirs);
+    const conflict = conflictAt(result.conflicts, {
+      kind: "boostGroup",
+      stageId: "E2-3",
+      groupId: "E2-3-A",
+      field: null,
+    });
+
+    expect(conflict).toMatchObject({ theirsText: "変更", mineText: "削除", stageId: "E2-3" });
+    expect(hasGroup(result.merged, "E2-3-A")).toBe(false);
+
+    const keptTheirs = expectResolved(resolveMerge(input, { [conflict.id]: "theirs" }));
+    expect(groupOf(keptTheirs, "E2-3-A").nationalities).toEqual(["uk", "germany"]);
+  });
+
   it("相手が外した海域でも、自分がそこに段階を置いていれば海域を残す（参照の整合）", () => {
     const withE4 = editDoc(base, (d) => {
       d.areas.push({ id: "E4", name: "E4" });
