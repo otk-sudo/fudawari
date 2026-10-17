@@ -16,6 +16,9 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
     // e2e/ は Playwright の担当なので Vitest では読まない
     exclude: [...configDefaults.exclude, "e2e/**"],
+    // 画面テストは全体を並べて流すと負荷で遅くなり、既定の 5 秒で時間切れになることがある（定義画面のテストで確認）。
+    // 振る舞いを確かめる待ちは findBy・waitFor で行うので、1 件の上限だけを広げる
+    testTimeout: 15_000,
     css: {
       // CSS は処理せず空にする。CSS Modules は import できて、クラス名は安定した文字列を返す
       include: [],
