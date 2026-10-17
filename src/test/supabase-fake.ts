@@ -12,7 +12,10 @@
 //    afterEach で vi.unstubAllEnvs() を呼ぶ。
 //
 // createClient（偽物）は、設定が auth.persistSession: false なら issuing（保存しない別のクライアント）を、
-// それ以外なら main（ふだんのクライアント）を返す。2 つのクライアントは同じ「サーバー」（Auth のアカウントと profiles 表）を共有する。
+// それ以外なら main（ふだんのクライアント）を返す。2 つのクライアントは同じ「サーバー」（Auth のアカウントと表）を共有する。
+// 表は profiles・events・app_state・drafts・published_definitions の読み取りをまねる（行は server に直接入れる。eventRow などの補助を使う）。
+// RPC は register_collaborator・remove_collaborator だけをまねる。ほかの RPC（save_draft など）は、テストで
+// `fake.main.rpc.mockResolvedValueOnce(rpcSuccess(…))`・`rpcFailure("FD002")` のように返し方を決める。
 // エラーの形は supabase-js と同じにする（Auth は AuthApiError など、表と RPC は PostgrestError と code）。
 import {
   AuthApiError,
@@ -85,10 +88,54 @@ export type FakeQueryResult = {
   statusText: string;
 };
 
-/** 偽物のサーバーの中身（Auth のアカウントと profiles 表）。テストから直接書き換えてよい */
+/** events 表の 1 行（DB と同じ列名。日時は PostgREST が返す形の文字列。例 "2026-08-07T03:00:00+00:00"） */
+export type FakeEventRow = {
+  id: string;
+  name: string;
+  starts_at: string;
+  ends_at: string | null;
+  created_by: string;
+  created_at: string;
+};
+
+/** app_state 表の 1 行（DB には 1 行だけある） */
+export type FakeAppStateRow = { id: true; latest_event_id: string | null };
+
+/** drafts 表の 1 行（content は定義の文書。jsonb） */
+export type FakeDraftRow = {
+  event_id: string;
+  version: number;
+  content: unknown;
+  updated_by: string;
+  updated_at: string;
+};
+
+/** published_definitions 表の 1 行（content は公開した時点の定義の文書。jsonb） */
+export type FakePublishedDefinitionRow = {
+  id: string;
+  event_id: string;
+  version_label: string;
+  content: unknown;
+  draft_version: number;
+  published_by: string;
+  published_at: string;
+};
+
+/**
+ * 偽物のサーバーの中身（Auth のアカウントと表）。テストから直接書き換えてよい。
+ * 表の読み取り（from(表)）は、ここの行を返す（RLS はまねない。権限ごとの絞り込みは呼び出し側の責任）
+ */
 export type FakeSupabaseServer = {
   accounts: FakeAccount[];
   profiles: FakeProfileRow[];
+  /** events 表 */
+  events: FakeEventRow[];
+  /** app_state 表（installFakeSupabase は latest_event_id が null の 1 行を入れる。DB のマイグレーションと同じ） */
+  appState: FakeAppStateRow[];
+  /** drafts 表 */
+  drafts: FakeDraftRow[];
+  /** published_definitions 表 */
+  publishedDefinitions: FakePublishedDefinitionRow[];
 };
 
 type Credentials = { email: string; password: string; options?: unknown };
@@ -138,6 +185,14 @@ function isNonPersistent(options: unknown): boolean {
 
 function okResult(data: unknown, status = 200): FakeQueryResult {
   return { data, error: null, count: null, status, statusText: status === 204 ? "No Content" : "OK" };
+}
+
+/**
+ * RPC が成功したときの結果（data は関数の戻り値。jsonb なら解析した値、uuid なら文字列、void なら null）。
+ * `fake.main.rpc.mockResolvedValueOnce(rpcSuccess({ status: "saved", version: 8 }))` のように使う
+ */
+export function rpcSuccess(data: unknown, status = 200): FakeQueryResult {
+  return okResult(data, status);
 }
 
 /** RPC が例外（SQLSTATE。例 "FD010"）を返したときの結果 */
@@ -210,12 +265,15 @@ function compareValues(a: unknown, b: unknown): number {
 
 /**
  * 表の読み取り（from(表).select(...).eq(...).order(...).maybeSingle() など）の偽物。
- * select の列の指定は見ない（行のすべての列を返す）。await すると結果になる
+ * select の列の指定は見ない（行のすべての列を返す）。await すると結果になる。
+ * 絞り込みは eq・neq・in・is（null との比較）だけをまねる。返す行は複製（jsonb の列も入れ子まで）なので、書き換えてもサーバーの中身は変わらない
  */
 export class FakeQuery implements PromiseLike<FakeQueryResult> {
   private readonly source: () => readonly object[];
   private readonly forced: FakeQueryResult | null;
   private readonly filters: Array<{ column: string; value: unknown }> = [];
+  /** eq 以外の絞り込み（neq・in・is） */
+  private readonly predicates: Array<(row: Record<string, unknown>) => boolean> = [];
   private readonly orders: Order[] = [];
   private limitCount: number | null = null;
   private mode: "many" | "maybeSingle" | "single" = "many";
@@ -231,6 +289,21 @@ export class FakeQuery implements PromiseLike<FakeQueryResult> {
 
   eq(column: string, value: unknown): this {
     this.filters.push({ column, value });
+    return this;
+  }
+
+  neq(column: string, value: unknown): this {
+    this.predicates.push((row) => row[column] !== value);
+    return this;
+  }
+
+  in(column: string, values: readonly unknown[]): this {
+    this.predicates.push((row) => values.includes(row[column]));
+    return this;
+  }
+
+  is(column: string, value: null | boolean): this {
+    this.predicates.push((row) => (value === null ? row[column] === null || row[column] === undefined : row[column] === value));
     return this;
   }
 
@@ -263,8 +336,10 @@ export class FakeQuery implements PromiseLike<FakeQueryResult> {
 
   private execute(): FakeQueryResult {
     if (this.forced !== null) return this.forced;
-    let rows = this.source().map((row) => ({ ...row }) as Record<string, unknown>);
+    // 通信で受け取る値と同じく、毎回新しい値にする（jsonb の列も入れ子まで複製する）
+    let rows = this.source().map((row) => JSON.parse(JSON.stringify(row)) as Record<string, unknown>);
     rows = rows.filter((row) => this.filters.every(({ column, value }) => row[column] === value));
+    rows = rows.filter((row) => this.predicates.every((matches) => matches(row)));
     if (this.orders.length > 0) {
       rows.sort((a, b) => {
         for (const { column, ascending } of this.orders) {
@@ -299,7 +374,20 @@ export function failedQuery(result: FakeQueryResult): FakeQuery {
 }
 
 function tableRows(server: FakeSupabaseServer, table: string): readonly object[] {
-  return table === "profiles" ? server.profiles : [];
+  switch (table) {
+    case "profiles":
+      return server.profiles;
+    case "events":
+      return server.events;
+    case "app_state":
+      return server.appState;
+    case "drafts":
+      return server.drafts;
+    case "published_definitions":
+      return server.publishedDefinitions;
+    default:
+      return [];
+  }
 }
 
 function stringArg(args: Record<string, unknown>, name: string): string | null {
@@ -423,7 +511,14 @@ export function installFakeSupabase(): FakeSupabase {
       'このテストファイルの先頭に vi.mock("@supabase/supabase-js", …) を書いてください（src/test/supabase-fake.ts の使い方）',
     );
   }
-  const server: FakeSupabaseServer = { accounts: [], profiles: [] };
+  const server: FakeSupabaseServer = {
+    accounts: [],
+    profiles: [],
+    events: [],
+    appState: [{ id: true, latest_event_id: null }],
+    drafts: [],
+    publishedDefinitions: [],
+  };
   const counter = { users: 0 };
   const main = createFakeClient(server, counter);
   const issuing = createFakeClient(server, counter);
@@ -441,6 +536,46 @@ export function profileRow(row: Pick<FakeProfileRow, "user_id" | "display_name" 
     last_edited_note: null,
     ...row,
   };
+}
+
+/** events 表の行を作る（指定しない列はテスト用の値） */
+export function eventRow(
+  row: Pick<FakeEventRow, "id" | "name" | "starts_at"> & Partial<FakeEventRow>,
+): FakeEventRow {
+  return {
+    ends_at: null,
+    created_by: "user-admiral",
+    created_at: "2026-07-01T03:00:00.000000+00:00",
+    ...row,
+  };
+}
+
+/** drafts 表の行を作る（指定しない列はテスト用の値） */
+export function draftRow(
+  row: Pick<FakeDraftRow, "event_id" | "version" | "content"> & Partial<FakeDraftRow>,
+): FakeDraftRow {
+  return {
+    updated_by: "user-admiral",
+    updated_at: "2026-07-01T03:00:00.000000+00:00",
+    ...row,
+  };
+}
+
+/** published_definitions 表の行を作る（指定しない列はテスト用の値） */
+export function publishedDefinitionRow(
+  row: Pick<FakePublishedDefinitionRow, "id" | "event_id" | "version_label" | "content" | "published_at"> &
+    Partial<FakePublishedDefinitionRow>,
+): FakePublishedDefinitionRow {
+  return {
+    draft_version: 1,
+    published_by: "user-admiral",
+    ...row,
+  };
+}
+
+/** app_state の最新のイベント（latest_event_id）を変える */
+export function setLatestEvent(fake: FakeSupabase, eventId: string | null): void {
+  fake.server.appState.splice(0, fake.server.appState.length, { id: true, latest_event_id: eventId });
 }
 
 /** 管理者・協力者のアカウント（ID とパスワード）と profiles の行を、偽物のサーバーに入れる */

@@ -1,0 +1,113 @@
+/*
+ * 設定のウィンドウの中から開く確認（取り込み画面の確認〔ConfirmRemoveDialog〕と同じ作り）。
+ * 設定のウィンドウ（z-index 1000）より後に開くので、同じ z-index でも上に重なる。
+ *
+ * 削除のボタンの赤系の色はモック（SettingsDialog.dc.html の「削除する」）の値。theme.css に赤系の変数がまだないため、
+ * ここに CSS 変数（--confirm-*）として置く。ライトの値はモックにないため仮（theme.css と同じく 2 か所にある）
+ */
+
+/* ダーク（既定。モックの値） */
+.content {
+  --confirm-danger-bg: #3a2224; /* 削除のボタンの下地 */
+  --confirm-danger-text: #ff8a80; /* 削除のボタンの文字 */
+  --confirm-danger-border: #7a3a36; /* 削除のボタンの枠 */
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 460px;
+  padding: 16px 18px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  color: var(--color-text);
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:global(:root[data-theme="light"]) .content {
+  --confirm-danger-bg: #fdecea;
+  --confirm-danger-text: #b3261e;
+  --confirm-danger-border: #e8a59f;
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .content {
+    --confirm-danger-bg: #fdecea;
+    --confirm-danger-text: #b3261e;
+    --confirm-danger-border: #e8a59f;
+  }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 80px 16px 40px;
+  overflow-y: auto;
+  background: var(--color-overlay);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cancelButton,
+.confirmButton,
+.dangerButton {
+  min-height: 36px;
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cancelButton {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+}
+
+.confirmButton {
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border: 0;
+  font-weight: 700;
+}
+
+.dangerButton {
+  background: var(--confirm-danger-bg);
+  color: var(--confirm-danger-text);
+  border: 1px solid var(--confirm-danger-border);
+  font-weight: 700;
+}
+
+.cancelButton:focus-visible,
+.confirmButton:focus-visible,
+.dangerButton:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}

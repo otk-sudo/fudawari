@@ -6,6 +6,7 @@
  * ダークの値はモックの値、ライトの値はモックにないため同じ役割で読みやすい値を仮に置いている（theme.css と同じ扱い）。
  * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
  * ほかの画面でも使うようになったら theme.css へ移す。
+ * 文字の大きさは calc(Npx * var(--font-scale)) で書く（設定の「文字の大きさ」。--font-scale は theme.css。割り振りの部品の CSS も同じ）。
  */
 
 /* ダーク（既定。モックの値） */
@@ -98,7 +99,7 @@
 /* ---- ヘッダー ---- */
 
 .headerNote {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--color-text-muted);
 }
 
@@ -114,7 +115,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   cursor: pointer;
 }
 
@@ -132,7 +133,7 @@
   background: var(--color-action);
   color: var(--color-on-action);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   text-decoration: none;
 }
@@ -162,7 +163,7 @@
   border: 1px solid var(--color-border-strong);
   border-left: 3px solid var(--color-accent);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   color: var(--color-text);
 }
 
@@ -183,7 +184,7 @@
   background: var(--assign-band-bg);
   border: 1px solid var(--assign-band-border);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--assign-band-text);
 }
 
