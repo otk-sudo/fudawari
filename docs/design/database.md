@@ -156,8 +156,13 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 
 1. `publish_definition` が `published_definitions` に行を入れる。
 2. Supabase の Database Webhook（`published_definitions` の INSERT）が Cloudflare Pages の Deploy Hook を呼ぶ（アカウント操作 ⑦）。
-3. Cloudflare Pages が再ビルドする。ビルドの最初に `scripts/` の取得処理が anon キーで最新イベントの公開版を読み、`public/data/` に静的 JSON を書き出す。
-4. Supabase が停止していて取得できないときは、理由を表示してビルドを失敗させる（古い JSON のまま公開しない）。
+3. Cloudflare Pages が再ビルドする（ビルドコマンドは `npm run build`）。prebuild の `npm run fetch:latest-definition`（`scripts/fetch-latest-definition.ts`。処理は `src/lib/definition/generateLatestDefinition.ts`）が、環境変数 `NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`（anon の publishable key。ヘッダー `apikey` と `Authorization: Bearer`）で PostgREST を読む。
+   - `GET /rest/v1/app_state?select=latest_event_id&id=eq.true` で最新イベントの ID を読む。
+   - `GET /rest/v1/published_definitions?select=content,version_label,published_at&event_id=eq.{ID}&order=published_at.desc&limit=1` で最新の公開版を 1 件読む。
+   - 公開版の `content` を `validatePublicDefinition` で検証し、`content.event.id` が最新イベントの ID と一致することを確かめてから、検証済みの値を `public/data/latest-definition.json` に書き出す（DB の列は入れない）。
+4. 最新のイベントがない（`latest_event_id` が null）か、最新のイベントに公開版がないときは、`public/data/latest-definition.json` を消して成功する（一般の画面は定義の読み込みの失敗を表示する。テスト用の定義を本番に出さない）。
+5. 次のときは理由を表示して終了コード 1 でビルドを失敗させ、ファイルは書き出さず消さない（古い JSON・テスト用の定義のまま公開しない）：接続先（URL・キー）が空か URL として読めない、通信の失敗・ok でない応答（一時的な失敗は 2 秒待って取得ごとに 3 回まで再試行。408・429 以外の 4xx は再試行しない。1 回の取得は 30 秒で打ち切る）、JSON として読めない応答、応答の形の誤り（`app_state` の行がないなど）、公開版が検証に通らない、イベント ID が一致しない。通信の失敗などの文には、Supabase が停止していないかの確認の案内を入れる。
+6. 取得するのは環境変数 `FETCH_LATEST_DEFINITION` が `1` のときだけ。手元と CI では付けず、追跡しているテスト用の定義（`public/data/latest-definition.json`）をそのまま使う。本番では、Cloudflare Pages の本番（Production）の環境変数に `FETCH_LATEST_DEFINITION=1` を足す（アカウント操作。ユーザーが行う。`NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` は、ログインの画面と同じくアカウント操作 ⑥ で設定するもの）。
 
 ## 7. テスト（U20）
 

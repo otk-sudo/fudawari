@@ -438,6 +438,26 @@ describe("generateLatestDefinition：公開版が検証に通らない（壊れ�
   });
 });
 
+describe("generateLatestDefinition：公開版のイベント ID が最新のイベントと違う（別のイベントの定義を配らない）", () => {
+  it("公開版の event.id が latest_event_id と違えば、両方の ID を入れた Error で失敗し、書き出さず消さない", async () => {
+    // 準備：検証には通るが、event.id が最新のイベントの ID と違う公開版（publish_definition は event.id をイベント ID に書き直すので、ふつうは一致する）
+    const otherEventId = "5d2a9e47-1c3b-4f80-8e6d-7a9b0c1d2e3f";
+    const content = publishedContent();
+    content.event.id = otherEventId;
+    expect(validatePublicDefinition(content).ok, "前提：ID を変えた定義も検証には通る").toBe(true);
+    const { deps, writeFile, removeFile } = setup(publishedRoutes(content));
+
+    // 実行
+    const message = await rejectionMessage(generateLatestDefinition(deps));
+
+    // 検証
+    expect(message).toContain(EVENT_ID);
+    expect(message).toContain(otherEventId);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(removeFile).not.toHaveBeenCalled();
+  });
+});
+
 describe("generateLatestDefinition：接続先がない", () => {
   it.each<[string, Partial<Omit<GenerateLatestDefinitionDeps, "fetch">>]>([
     ["URL が空", { supabaseUrl: "" }],
