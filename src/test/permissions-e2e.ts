@@ -21,10 +21,15 @@ import { summer2026Definition } from "./fixtures";
 
 // ---- 接続先 ----
 
-/** ビルドのときに入れた Supabase の接続先（なければ null。協力者・管理者の画面は確かめられない） */
+/**
+ * ビルドのときに入れた Supabase の接続先。URL と公開キー（NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY）の両方があるときだけ返し、
+ * どちらかがなければ null（画面はクライアントを作らないので、協力者・管理者の画面は確かめられない。src/lib/supabase/config.ts と同じ条件）
+ */
 export function configuredSupabaseUrl(): string | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return url === undefined || url === "" ? null : url.replace(/\/+$/, "");
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (url === undefined || url === "" || key === undefined || key === "") return null;
+  return url.replace(/\/+$/, "");
 }
 
 /** supabase-js がセッションを保存する localStorage のキー（supabase-js の既定：sb-（ホスト名の最初の区切り）-auth-token） */
@@ -238,8 +243,8 @@ function initialTables(options: FakeSupabaseOptions): Record<string, Row[]> {
   };
 }
 
-/** PostgREST の問い合わせ文字列のうち、絞り込みでないもの */
-const NON_FILTER_PARAMS = new Set(["select", "order", "limit", "offset"]);
+/** PostgREST の問い合わせ文字列のうち、絞り込みでないもの（offset は答え方を作っていないので含めない＝知らない絞り込みとして失敗させる） */
+const NON_FILTER_PARAMS = new Set(["select", "order", "limit"]);
 
 /** 絞り込み（eq.・in.()）を 1 つ当てる */
 function matchesFilter(row: Row, column: string, expression: string): boolean {
@@ -257,6 +262,11 @@ function matchesFilter(row: Row, column: string, expression: string): boolean {
 
 /** 表の行を、問い合わせ文字列（絞り込み・並び・件数・列）に従って選ぶ */
 function selectRows(rows: readonly Row[], params: URLSearchParams): Row[] {
+  const select = params.get("select");
+  // 埋め込み（別の表の列。例 "*, profiles(display_name)"）・列の別名・型の変換は答え方を作っていないので、黙って無視せず失敗させる
+  if (select !== null && /[():]/.test(select)) {
+    throw new Error(`偽物の PostgREST が知らない列の指定です：select=${select}`);
+  }
   let result = [...rows];
   for (const [column, expression] of params) {
     if (NON_FILTER_PARAMS.has(column)) continue;
@@ -282,7 +292,6 @@ function selectRows(rows: readonly Row[], params: URLSearchParams): Row[] {
   }
   const limit = params.get("limit");
   if (limit !== null) result = result.slice(0, Number(limit));
-  const select = params.get("select");
   if (select !== null && select !== "*") {
     const columns = select.split(",").map((column) => column.trim());
     result = result.map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? null])));
@@ -357,18 +366,26 @@ function fakeSession(account: FakeAccount): Row {
 
 // ---- ログイン済みの状態 ----
 
+/** ログイン済みの状態を入れたことの目印（sessionStorage。同じタブで開き直しても残る） */
+const SIGNED_IN_MARK = "fudawari-e2e.signed-in";
+
 /**
- * ログイン済みの協力者・管理者の状態をブラウザに入れる（ページを開く前に呼ぶ。開くたびに入れ直す）。
+ * ログイン済みの協力者・管理者の状態をブラウザに入れる（ページを開く前に呼ぶ）。
+ * 入れるのはそのタブで最初に開いたときの 1 回だけ（sessionStorage の目印で見分ける）。
+ * 開き直しや画面の移動のたびに入れ直すと、アプリが権限を消してしまう不具合を見逃すため。
  * - "fudawari.account"：アプリが権限・表示名・ID を覚える値（src/features/auth/account.ts。版 1）
  * - supabase-js のセッション：定義画面・協力者画面が Auth に問い合わせる（auth.getUser）ときに使う
  */
 export async function signInAs(page: Page, account: FakeAccount, supabaseUrl: string): Promise<void> {
   await page.addInitScript(
-    ({ accountValue, sessionKey, sessionValue }) => {
+    ({ mark, accountValue, sessionKey, sessionValue }) => {
+      if (window.sessionStorage.getItem(mark) !== null) return;
+      window.sessionStorage.setItem(mark, "1");
       window.localStorage.setItem("fudawari.account", accountValue);
       window.localStorage.setItem(sessionKey, sessionValue);
     },
     {
+      mark: SIGNED_IN_MARK,
       accountValue: JSON.stringify({
         version: 1,
         role: account.role,
@@ -382,6 +399,9 @@ export async function signInAs(page: Page, account: FakeAccount, supabaseUrl: st
 }
 
 // ---- 偽物の Supabase ----
+
+/** 管理者だけが呼べる RPC（docs/design/database.md 4.2） */
+const ADMIN_ONLY_RPCS: ReadonlySet<string> = new Set(["create_event", "register_collaborator", "remove_collaborator"]);
 
 /** 受けた RPC の呼び出し */
 export interface RpcCall {
@@ -406,6 +426,8 @@ export class FakeSupabase {
   readonly unexpected: string[] = [];
   /** 受けた Realtime（WebSocket）の接続の URL（本物にはつながずに閉じる） */
   readonly realtimeConnections: string[] = [];
+  /** 協力者の発行（auth.signUp）で送られたパスワード */
+  readonly signUpPasswords: string[] = [];
   private readonly tables: Record<string, Row[]>;
   private draftVersion = SUMMER_DRAFT_VERSION;
 
@@ -455,7 +477,7 @@ export class FakeSupabase {
     this.requests.push({ method, path });
     try {
       if (path.startsWith("/auth/v1/")) {
-        await this.handleAuth(route, method, path.slice("/auth/v1/".length));
+        await this.handleAuth(route, method, path.slice("/auth/v1/".length), request);
         return;
       }
       if (path.startsWith("/rest/v1/rpc/")) {
@@ -478,7 +500,7 @@ export class FakeSupabase {
     await fulfillJson(route, 500, { message: "偽物の Supabase が知らない通信です" });
   }
 
-  private async handleAuth(route: Route, method: string, endpoint: string): Promise<void> {
+  private async handleAuth(route: Route, method: string, endpoint: string, request: Request): Promise<void> {
     if (method === "GET" && endpoint === "user") {
       await fulfillJson(route, 200, authUser(this.signedInAs));
       return;
@@ -488,6 +510,8 @@ export class FakeSupabase {
       return;
     }
     if (method === "POST" && endpoint === "signup") {
+      const body = (request.postDataJSON() ?? {}) as Record<string, unknown>;
+      this.signUpPasswords.push(String(body.password));
       const created: FakeAccount = {
         userId: "00000000-0000-4000-8000-00000000c002",
         role: "collab",
@@ -506,6 +530,13 @@ export class FakeSupabase {
   private async handleRpc(route: Route, name: string, request: Request): Promise<void> {
     const args = (request.postDataJSON() ?? {}) as Record<string, unknown>;
     this.rpcCalls.push({ name, args });
+    // 管理者だけの RPC を協力者が呼んだ：本物の DB は FD001 で断る。画面が呼んではいけないので unexpected にも入れる
+    const adminOnly = ADMIN_ONLY_RPCS.has(name) || (name === "publish_definition" && args.p_make_latest === true);
+    if (adminOnly && this.signedInAs.role !== "admin") {
+      this.unexpected.push(`協力者が管理者だけの RPC を呼んだ：${name}`);
+      await fulfillJson(route, 403, { code: "FD001", message: "権限がありません", details: null, hint: null });
+      return;
+    }
     switch (name) {
       case "save_draft":
         this.draftVersion += 1;

@@ -3,6 +3,7 @@ import {
   ADMIN,
   COLLAB,
   configuredSupabaseUrl,
+  CREATED_EVENT_ID,
   FakeSupabase,
   type FakeAccount,
   type FakeSupabaseOptions,
@@ -16,32 +17,27 @@ import {
   SUMMER_EVENT_ID,
   SUMMER_EVENT_NAME,
 } from "../src/test/permissions-e2e";
+import type { PublicDefinition } from "../src/domain/definition/types";
 import { summer2026Definition } from "../src/test/fixtures";
+import { isSupabaseUrl } from "../src/test/supabase-request-e2e";
 
 // 要件 2.3「画面と操作の可否」の表の各行を、一般・協力者・管理者の 3 つの立場で確かめる（roadmap T4-1、plan-v1 の PR-13）
 //
-// - 一般利用者：ログインしていない状態。Supabase には通信しない（CLAUDE.md・e2e/no-supabase.spec.ts と同じ守り）
-// - 協力者・管理者：ログイン済みの状態を localStorage に入れ（signInAs）、Supabase の Auth・表・RPC を page.route の偽物で答える
+// - 一般利用者：ログインしていない状態。Supabase には通信しない（CLAUDE.md・e2e/no-supabase.spec.ts と同じ守り）。
+//   万一の通信は記録したうえで止める（HTTP は abort、WebSocket は本物につながない）
+// - 協力者・管理者：ログイン済みの状態を localStorage に入れ（signInAs。タブで最初に開いたときの 1 回だけ）、
+//   Supabase の Auth・表・RPC を page.route の偽物で答える
 //   （FakeSupabase。src/test/permissions-e2e.ts）。権限の強制（要件 2.4・RLS）は pgTAP（supabase/tests/database）で確かめ済みなので、
 //   ここでは画面の出し分けと、画面が呼ぶ RPC を確かめる
 // - 「保存の記録を見る」の行（PR-12）は、ウィンドウ「共有の下書きの記録」が開いて記録が出ることを確かめる（終了したイベントでも見られる）
 // - 定義画面の Realtime（編集中の表示）は偽物が受けて閉じる（つながらない）。編集中の表示は出なくてよい
 //
-// 協力者・管理者の画面はビルドのときの接続先（NEXT_PUBLIC_SUPABASE_URL・NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY）が要る。
-// CI の e2e のジョブはダミーの接続先でビルドする。手元で接続先なしにビルドしたときは、協力者・管理者のテストを飛ばす（CI では飛ばさず失敗させる）
+// 協力者・管理者の画面はビルドのときの接続先（NEXT_PUBLIC_SUPABASE_URL・NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY の両方）が要る。
+// CI の e2e のジョブはダミーの接続先でビルドする。手元でどちらかがないまま実行したときは、協力者・管理者のテストを飛ばす（CI では飛ばさず失敗させる）
 
 const SUPABASE_URL = configuredSupabaseUrl();
 const MISSING_SUPABASE_URL =
-  "NEXT_PUBLIC_SUPABASE_URL・NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY を入れてビルド・実行してください（例 https://example.supabase.co と sb_publishable_dummy）";
-
-/** 一般の画面（パスと h1） */
-const GENERAL_SCREENS = [
-  { path: "/", heading: "札割りプランナー" },
-  { path: "/list", heading: "札割り一覧" },
-  { path: "/assign", heading: "割り振り" },
-  { path: "/import", heading: "艦娘の取り込み" },
-  { path: "/drift", heading: "計画と実際の札" },
-] as const;
+  "NEXT_PUBLIC_SUPABASE_URL・NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY の両方を入れてビルド・実行してください（例 https://example.supabase.co と sb_publishable_dummy）";
 
 const DEFINITION_PATH = "/definition";
 const COLLABORATORS_PATH = "/collaborators";
@@ -95,29 +91,67 @@ async function openSettings(page: Page): Promise<Locator> {
 
 /** 左メニューの「管理」の区切りの下の項目 */
 const MANAGEMENT_LINKS = ["定義", "協力者"] as const;
+type ManagementLink = (typeof MANAGEMENT_LINKS)[number];
+
+/** 左メニューで移る一般の画面（項目名・パス・h1） */
+const GENERAL_NAV = [
+  { label: "一覧", path: "/list", heading: "札割り一覧" },
+  { label: "割振", path: "/assign", heading: "割り振り" },
+  { label: "取込", path: "/import", heading: "艦娘の取り込み" },
+  { label: "差分", path: "/drift", heading: "計画と実際の札" },
+] as const;
 
 /**
- * 一般の画面を順に開き、見出しが出て、拒否の表示が出ないことを確かめる。
- * 各画面で、左メニューの「管理」の下に managementLinks の項目だけがあることも確かめる（要件 2.2：一般の画面でも管理メニューを出し続ける）。
+ * 左メニューを確かめる（要件 2.2）：一般の項目（札〔ホームへ〕・一覧・割振・取込・差分・設定）は全員にあり、
+ * 「管理」の区切りとその下の項目は managementLinks があるときだけ、その項目だけを出す
+ */
+async function expectSideNav(page: Page, managementLinks: readonly ManagementLink[]): Promise<void> {
+  const nav = sideNav(page);
+  await expect(nav.getByRole("link", { name: "ホームへ", exact: true })).toBeVisible();
+  for (const { label } of GENERAL_NAV) {
+    await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
+  }
+  await expect(button(nav, "設定")).toBeVisible();
+  await expect(nav.getByRole("separator", { name: "管理" })).toHaveCount(managementLinks.length > 0 ? 1 : 0);
+  for (const label of MANAGEMENT_LINKS) {
+    await expect(nav.getByRole("link", { name: label, exact: true })).toHaveCount(managementLinks.includes(label) ? 1 : 0);
+  }
+}
+
+/** 一般の画面の見出しが出て、拒否の表示が出ていないことを確かめる */
+async function expectGeneralScreen(page: Page, name: string): Promise<void> {
+  await expect(heading(page, name)).toBeVisible();
+  await expect(page.getByText(DEFINITION_DENIED)).toHaveCount(0);
+  await expect(page.getByText(ADMIN_ONLY)).toHaveCount(0);
+}
+
+/**
+ * ホームを開き、左メニューのリンクで一般の画面を順に移ってホームへ戻り、最後に開き直す。
+ * 各画面と開き直した後で、見出し・拒否の表示がないこと・左メニュー（managementLinks の管理メニューを出し続けること。要件 2.2）を確かめる。
  * 最後に設定のウィンドウを開く（開いている間は後ろの左メニューが読み上げから外れるので、左メニューはその前に確かめる）
  */
-async function expectGeneralScreensOpen(
-  page: Page,
-  managementLinks: readonly (typeof MANAGEMENT_LINKS)[number][],
-): Promise<void> {
-  for (const { path, heading: name } of GENERAL_SCREENS) {
-    await test.step(`${path} を開ける`, async () => {
-      await page.goto(path);
-      await expect(heading(page, name)).toBeVisible();
-      await expect(page.getByText(DEFINITION_DENIED)).toHaveCount(0);
-      await expect(page.getByText(ADMIN_ONLY)).toHaveCount(0);
-      for (const label of MANAGEMENT_LINKS) {
-        await expect(sideNav(page).getByRole("link", { name: label, exact: true })).toHaveCount(
-          managementLinks.includes(label) ? 1 : 0,
-        );
-      }
+async function expectGeneralScreensOpen(page: Page, managementLinks: readonly ManagementLink[]): Promise<void> {
+  await test.step("ホームを開ける", async () => {
+    await page.goto("/");
+    await expectGeneralScreen(page, "札割りプランナー");
+    await expectSideNav(page, managementLinks);
+  });
+  for (const { label, path, heading: name } of GENERAL_NAV) {
+    await test.step(`左メニューの「${label}」で ${path} へ移れる`, async () => {
+      await sideNav(page).getByRole("link", { name: label, exact: true }).click();
+      await expect(page).toHaveURL(path);
+      await expectGeneralScreen(page, name);
+      await expectSideNav(page, managementLinks);
     });
   }
+  await test.step("「札」でホームへ戻り、開き直しても左メニューが変わらない", async () => {
+    await sideNav(page).getByRole("link", { name: "ホームへ", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expectGeneralScreen(page, "札割りプランナー");
+    await page.reload();
+    await expectGeneralScreen(page, "札割りプランナー");
+    await expectSideNav(page, managementLinks);
+  });
   await test.step("設定のウィンドウを開ける", async () => {
     const dialog = await openSettings(page);
     await expect(dialog.getByRole("heading", { name: "表示" })).toBeVisible();
@@ -154,25 +188,27 @@ async function expectSaveLogsShown(page: Page, fake: FakeSupabase): Promise<void
   await expect(dialog).toBeHidden();
 }
 
-// ---- Supabase への通信 ----
+// ---- Supabase への通信（一般利用者） ----
 
-const SUPABASE_API_PATHS = ["/auth/v1/", "/rest/v1/", "/realtime/v1/", "/storage/v1/", "/functions/v1/"];
-
-function isSupabaseRequest(url: string): boolean {
-  if (SUPABASE_URL !== null && url.startsWith(SUPABASE_URL)) return true;
-  const { hostname, pathname } = new URL(url);
-  return hostname.endsWith(".supabase.co") || SUPABASE_API_PATHS.some((path) => pathname.startsWith(path));
-}
-
-/** ページが出した Supabase への通信（HTTP・WebSocket）の URL を記録し始める */
-function recordSupabaseRequests(page: Page): string[] {
+/**
+ * ページが出した Supabase への通信（判定は src/test/supabase-request-e2e.ts。e2e/no-supabase.spec.ts と共通）を記録し、止める。
+ * HTTP は abort し、WebSocket は本物の接続先につながない（connectToServer を呼ばない）。記録した URL の一覧を返す
+ */
+async function blockSupabase(page: Page): Promise<string[]> {
   const urls: string[] = [];
-  page.on("request", (request) => {
-    if (isSupabaseRequest(request.url())) urls.push(request.url());
-  });
-  page.on("websocket", (socket) => {
-    if (isSupabaseRequest(socket.url())) urls.push(socket.url());
-  });
+  await page.route(
+    (url) => isSupabaseUrl(url.href),
+    (route) => {
+      urls.push(route.request().url());
+      return route.abort();
+    },
+  );
+  await page.routeWebSocket(
+    (url) => isSupabaseUrl(url.href),
+    (socket) => {
+      urls.push(socket.url());
+    },
+  );
   return urls;
 }
 
@@ -216,13 +252,96 @@ async function makeSelectedStageHard(page: Page): Promise<void> {
   await expect(hard).toHaveAttribute("aria-pressed", "true");
 }
 
-/** 送った文書のうち、テスト用データから大事さが変わった段階 */
-function stagesWithChangedImportance(content: unknown): { id: string; importance: string }[] {
-  const stages = (content as { stages: { id: string; importance: string }[] }).stages;
-  return stages.filter((stage) => {
-    const original = summer2026Definition.stages.find((s) => s.id === stage.id);
-    return original !== undefined && original.importance !== stage.importance;
-  });
+/** 定義画面で足す札・段階・特効の値 */
+const NEW_FUDA = "試験部隊";
+const NEW_STAGE = "試験ボス";
+const NEW_GROUP = "試験特効";
+const NEW_SHIP = "雪風";
+
+/**
+ * 札・段階・大事さ・特効をそれぞれ画面で編集する（要件 2.3 の「札・段階・大事さ・特効を編集し」）。
+ * - 札：「＋ 札を追加」で NEW_FUDA を足す
+ * - 段階：E1 の「＋」で第六艦隊の段階を足し、選んで名前を NEW_STAGE に、使う札を NEW_FUDA に変える
+ * - 大事さ：その段階を「難所」にする
+ * - 特効：その段階に特効グループを足し、名前 NEW_GROUP・倍率 1.3・艦名 NEW_SHIP にする
+ */
+async function editFudaStageImportanceAndBoost(page: Page): Promise<void> {
+  // 札
+  await button(page, "＋ 札を追加").click();
+  const fudaForm = page.getByRole("form", { name: "札を追加" });
+  await fudaForm.getByLabel("札の名前").fill(NEW_FUDA);
+  await button(fudaForm, "追加する").click();
+  await expect(fudaForm).toHaveCount(0);
+
+  // 段階
+  const e1 = page.getByRole("group", { name: "E1", exact: true });
+  await e1.getByRole("button", { name: "段階を追加" }).click();
+  await page.getByRole("menu", { name: "追加する札" }).getByRole("menuitem", { name: "第六艦隊" }).click();
+  await e1.getByRole("button", { name: /新しい段階/ }).click();
+  const detail = page.getByRole("region", { name: "段階の詳細" });
+  await expect(detail.getByRole("heading", { name: "E1 新しい段階" })).toBeVisible();
+  await detail.getByLabel("段階の名前").fill(NEW_STAGE);
+  // 札の選択肢の丸は見た目では隠し、札の名前の札（ラベル）を押して選ぶ作り
+  const fudaChoices = detail.getByRole("radiogroup", { name: "この段階で使う札" });
+  await fudaChoices.getByText(NEW_FUDA, { exact: true }).click();
+  await expect(fudaChoices.getByRole("radio", { name: NEW_FUDA })).toBeChecked();
+  await expect(detail.getByRole("heading", { name: `E1 ${NEW_STAGE}` })).toBeVisible();
+
+  // 大事さ
+  await makeSelectedStageHard(page);
+
+  // 特効
+  await expect(detail.getByText("この段階の特効は未入力です")).toBeVisible();
+  await button(detail, "＋ 特効グループを追加").click();
+  const group = detail.getByRole("group", { name: /^特効グループ 1：/ });
+  await group.getByRole("textbox", { name: "グループ名" }).fill(NEW_GROUP);
+  const multiplier = group.getByRole("spinbutton", { name: "倍率" });
+  await multiplier.fill("1.3");
+  await multiplier.press("Enter");
+  await button(group, "＋ 艦名").click();
+  const ship = group.getByRole("textbox", { name: "追加する艦名" });
+  await ship.fill(NEW_SHIP);
+  await ship.press("Enter");
+  await ship.press("Escape");
+  await expect(group.getByRole("list", { name: "艦名" })).toContainText(NEW_SHIP);
+}
+
+/** 送った文書に、editFudaStageImportanceAndBoost の編集がそのまま入り、元の札・段階は変わっていないことを確かめる */
+function expectEditedContent(content: unknown): void {
+  const doc = content as PublicDefinition;
+  const original = JSON.parse(JSON.stringify(summer2026Definition)) as PublicDefinition;
+  const fuda = doc.fudas.find((f) => f.name === NEW_FUDA);
+  expect(fuda).toBeDefined();
+  expect(doc.fudas.filter((f) => f.name !== NEW_FUDA)).toEqual(original.fudas);
+  const added = doc.stages.filter((stage) => !original.stages.some((o) => o.id === stage.id));
+  expect(added).toEqual([
+    expect.objectContaining({
+      areaId: "E1",
+      name: NEW_STAGE,
+      fudaId: fuda?.id,
+      importance: "hard",
+      boosts: [expect.objectContaining({ name: NEW_GROUP, multiplier: 1.3, shipNames: [NEW_SHIP] })],
+    }),
+  ]);
+  // 足した段階は E1 の最後
+  expect(doc.stages.filter((stage) => stage.areaId === "E1").at(-1)?.name).toBe(NEW_STAGE);
+  expect(doc.stages.filter((stage) => stage.name !== NEW_STAGE)).toEqual(original.stages);
+}
+
+/**
+ * 終了したイベントで、選ばれていない段階（E2「ゲージ1 輸送」）を押しても選ばれず、段階の詳細も変わらないことを確かめる。
+ * 本文は inert なので、Playwright の操作できるかの確認を飛ばして（force）押す
+ */
+async function expectStageNotSelectable(page: Page): Promise<void> {
+  // inert の中は読み上げの木から外れるため、役割ではなく要素で探す
+  const detailTitle = page.locator('section[aria-label="段階の詳細"] h2');
+  const firstStage = summer2026Definition.stages[0];
+  await expect(detailTitle).toHaveText(`E1 ${firstStage?.name ?? ""}`);
+  const other = page.locator("button[aria-pressed]").filter({ hasText: "ゲージ1 輸送" });
+  await expect(other).toHaveAttribute("aria-pressed", "false");
+  await other.click({ force: true });
+  await expect(other).toHaveAttribute("aria-pressed", "false");
+  await expect(detailTitle).toHaveText(`E1 ${firstStage?.name ?? ""}`);
 }
 
 /** 日時の文字列の時刻（ミリ秒） */
@@ -235,12 +354,13 @@ function timeOf(value: unknown): number {
 // =====================================================================
 
 test.describe("一般利用者（ログインしていない）", () => {
-  test("【ホーム・一覧・割り振り・取り込み・差分・設定：○】すべて開け、Supabase に通信しない", async ({ page }) => {
+  test("【ホーム・一覧・割り振り・取り込み・差分・設定：○】左メニューで回れ、管理メニューはなく、Supabase に通信しない", async ({ page }) => {
     // 準備
-    const supabaseRequests = recordSupabaseRequests(page);
+    const supabaseRequests = await blockSupabase(page);
 
     // 実行・検証
     await expectGeneralScreensOpen(page, []);
+    await page.waitForLoadState("networkidle");
     expect(supabaseRequests).toEqual([]);
   });
 
@@ -263,7 +383,7 @@ test.describe("一般利用者（ログインしていない）", () => {
     page,
   }) => {
     // 準備
-    const supabaseRequests = recordSupabaseRequests(page);
+    const supabaseRequests = await blockSupabase(page);
     await page.goto("/");
     await expect(sideNav(page)).toBeVisible();
     await expect(sideNav(page).getByRole("link", { name: "定義", exact: true })).toHaveCount(0);
@@ -289,7 +409,7 @@ test.describe("一般利用者（ログインしていない）", () => {
     page,
   }) => {
     // 準備
-    const supabaseRequests = recordSupabaseRequests(page);
+    const supabaseRequests = await blockSupabase(page);
 
     // 実行
     await page.goto(DEFINITION_PATH);
@@ -306,7 +426,7 @@ test.describe("一般利用者（ログインしていない）", () => {
     page,
   }) => {
     // 準備
-    const supabaseRequests = recordSupabaseRequests(page);
+    const supabaseRequests = await blockSupabase(page);
     await page.goto("/");
     await expect(sideNav(page)).toBeVisible();
     await expect(sideNav(page).getByRole("link", { name: "協力者", exact: true })).toHaveCount(0);
@@ -333,7 +453,7 @@ test.describe("一般利用者（ログインしていない）", () => {
 test.describe("協力者（ログイン済み）", () => {
   skipWithoutSupabase();
 
-  test("【ホーム・一覧・割り振り・取り込み・差分・設定：○】すべて開け、左メニューに「定義」があり「協力者」はなく、一般の画面では Supabase に通信しない", async ({
+  test("【ホーム・一覧・割り振り・取り込み・差分・設定：○】左メニューで回れ、開き直しても管理メニュー「定義」が残り（「協力者」はない）、一般の画面では Supabase に通信しない", async ({
     page,
   }) => {
     // 準備
@@ -341,7 +461,10 @@ test.describe("協力者（ログイン済み）", () => {
 
     // 実行・検証
     await expectGeneralScreensOpen(page, ["定義"]);
+    await page.waitForLoadState("networkidle");
     expect(fake.requests).toEqual([]);
+    expect(fake.realtimeConnections).toEqual([]);
+    expect(fake.unexpected).toEqual([]);
   });
 
   test("【設定の「アカウント」欄：○】ログイン中の名前・権限「協力者」・ログアウトが出て、ログアウトすると一般利用者に戻る", async ({
@@ -388,25 +511,25 @@ test.describe("協力者（ログイン済み）", () => {
     expect(fake.unexpected).toEqual([]);
   });
 
-  test("【札・段階・大事さ・特効を編集し、下書きを保存する：○】大事さを変えて「下書きを保存」すると save_draft を開いたときの版で呼ぶ", async ({
+  test("【札・段階・大事さ・特効を編集し、下書きを保存する：○】札・段階・大事さ・特効を編集して「下書きを保存」すると、その内容で save_draft を開いたときの版で呼ぶ", async ({
     page,
   }) => {
     // 準備
     const fake = await prepareSignedIn(page, COLLAB);
     await openDefinition(page, COLLAB);
+    expect(await isDefinitionWorkLocked(page)).toBe(false);
 
     // 実行
-    await makeSelectedStageHard(page);
+    await editFudaStageImportanceAndBoost(page);
     await button(eventPanel(page), "下書きを保存").click();
 
     // 検証
     await expect(page.getByRole("status").filter({ hasText: "下書きを保存しました" })).toBeVisible();
-    const [call] = fake.rpcCallsNamed("save_draft");
-    expect(call?.args.p_event_id).toBe(SUMMER_EVENT_ID);
-    expect(call?.args.p_base_version).toBe(SUMMER_DRAFT_VERSION);
-    expect(stagesWithChangedImportance(call?.args.p_content)).toEqual([
-      expect.objectContaining({ importance: "hard" }),
-    ]);
+    const calls = fake.rpcCallsNamed("save_draft");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args.p_event_id).toBe(SUMMER_EVENT_ID);
+    expect(calls[0]?.args.p_base_version).toBe(SUMMER_DRAFT_VERSION);
+    expectEditedContent(calls[0]?.args.p_content);
     expect(fake.unexpected).toEqual([]);
   });
 
@@ -516,6 +639,7 @@ test.describe("協力者（ログイン済み）", () => {
     await expect(button(page, "変更を公開する")).toHaveCount(0);
     await expect(page.getByLabel("終了日時")).toHaveCount(0);
     expect(await isDefinitionWorkLocked(page)).toBe(true);
+    await expectStageNotSelectable(page);
     expect(fake.rpcCalls).toEqual([]);
     expect(fake.unexpected).toEqual([]);
   });
@@ -565,7 +689,7 @@ test.describe("協力者（ログイン済み）", () => {
 test.describe("管理者（ログイン済み）", () => {
   skipWithoutSupabase();
 
-  test("【ホーム・一覧・割り振り・取り込み・差分・設定：○】すべて開け、左メニューに「定義」「協力者」があり、一般の画面では Supabase に通信しない", async ({
+  test("【ホーム・一覧・割り振り・取り込み・差分・設定：○】左メニューで回れ、開き直しても管理メニュー「定義」「協力者」が残り、一般の画面では Supabase に通信しない", async ({
     page,
   }) => {
     // 準備
@@ -573,7 +697,10 @@ test.describe("管理者（ログイン済み）", () => {
 
     // 実行・検証
     await expectGeneralScreensOpen(page, ["定義", "協力者"]);
+    await page.waitForLoadState("networkidle");
     expect(fake.requests).toEqual([]);
+    expect(fake.realtimeConnections).toEqual([]);
+    expect(fake.unexpected).toEqual([]);
   });
 
   test("【設定の「アカウント」欄：○】ログイン中の名前・権限「管理者」・ログアウトが出る", async ({ page }) => {
@@ -592,7 +719,7 @@ test.describe("管理者（ログイン済み）", () => {
     expect(fake.unexpected).toEqual([]);
   });
 
-  test("【イベント定義画面を開く／編集し下書きを保存する／公開する：○】大事さを変えて保存・公開すると save_draft・publish_definition を呼ぶ", async ({
+  test("【イベント定義画面を開く／札・段階・大事さ・特効を編集し下書きを保存する／公開する：○】編集して保存・公開すると、その内容で save_draft・publish_definition を呼ぶ", async ({
     page,
   }) => {
     // 準備
@@ -602,15 +729,18 @@ test.describe("管理者（ログイン済み）", () => {
     await expect(page.getByText(`ログイン中：${ADMIN.displayName}（管理者）`)).toBeVisible();
     await expect(eventPanel(page)).toContainText(`更新するイベント：${SUMMER_EVENT_NAME}（最新）`);
 
-    // 実行：編集して下書きを保存する
-    await makeSelectedStageHard(page);
+    expect(await isDefinitionWorkLocked(page)).toBe(false);
+
+    // 実行：札・段階・大事さ・特効を編集して下書きを保存する
+    await editFudaStageImportanceAndBoost(page);
     await button(eventPanel(page), "下書きを保存").click();
 
     // 検証
     await expect(page.getByRole("status").filter({ hasText: "下書きを保存しました" })).toBeVisible();
-    const [save] = fake.rpcCallsNamed("save_draft");
-    expect(save?.args.p_base_version).toBe(SUMMER_DRAFT_VERSION);
-    expect(stagesWithChangedImportance(save?.args.p_content)).toEqual([expect.objectContaining({ importance: "hard" })]);
+    const saves = fake.rpcCallsNamed("save_draft");
+    expect(saves).toHaveLength(1);
+    expect(saves[0]?.args.p_base_version).toBe(SUMMER_DRAFT_VERSION);
+    expectEditedContent(saves[0]?.args.p_content);
 
     // 実行：公開する
     await button(eventPanel(page), "変更を公開する").click();
@@ -673,7 +803,7 @@ test.describe("管理者（ログイン済み）", () => {
     expect(fake.unexpected).toEqual([]);
   });
 
-  test("【イベントの新規作成：○】「新規作成」に切り替え、過去のイベントを元に選んで「下書きを保存」すると create_event を写した札・段階で呼ぶ", async ({
+  test("【イベントの新規作成：○】「新規作成」に切り替え、過去のイベントを元に選んで「下書きを保存」すると create_event を写した札・段階で呼び、「公開して最新にする」で最新にして公開する", async ({
     page,
   }) => {
     // 準備
@@ -707,6 +837,15 @@ test.describe("管理者（ログイン済み）", () => {
     expect(content.fudas).toEqual(springDoc().fudas);
     expect(content.stages.map((stage) => stage.id)).toEqual(springDoc().stages.map((stage) => stage.id));
     expect(content.stages.every((stage) => stage.boosts.length === 0)).toBe(true);
+
+    // 実行：公開して最新にする
+    await button(eventPanel(page), "公開して最新にする").click();
+
+    // 検証：作ったイベントの版 1 を、最新にして公開する
+    await expect(page.getByRole("status").filter({ hasText: "公開して、2026秋イベを最新のイベントにしました" })).toBeVisible();
+    expect(fake.rpcCallsNamed("publish_definition").map((publish) => publish.args)).toEqual([
+      { p_event_id: CREATED_EVENT_ID, p_base_version: 1, p_make_latest: true },
+    ]);
     expect(fake.unexpected).toEqual([]);
   });
 
@@ -731,6 +870,7 @@ test.describe("管理者（ログイン済み）", () => {
     await expect(eventPanel(page).getByRole("textbox", { name: "イベント名" })).toHaveCount(0);
     await expect(eventPanel(page).getByLabel("終了日時")).toHaveCount(0);
     expect(await isDefinitionWorkLocked(page)).toBe(true);
+    await expectStageNotSelectable(page);
 
     // 実行：終了後も新規作成はできる
     await button(banner, "新しいイベントを作成").click();
@@ -783,7 +923,17 @@ test.describe("管理者（ログイン済み）", () => {
     // 検証
     await expect(page.getByText("発行しました。次の ID とパスワードを相手に伝えてください")).toBeVisible();
     await expect(page.locator("code").filter({ hasText: "jiro-02" })).toBeVisible();
-    expect(fake.requests.some((r) => r.method === "POST" && r.path === "/auth/v1/signup")).toBe(true);
+    // パスワードは画面に見えていて、画面が作る形（英数字 16 文字で、英大文字・英小文字・数字を含む。src/features/collaborators/password.ts）。
+    // 送ったパスワード（auth.signUp）と同じもの
+    const password = page.locator('dt:text-is("パスワード") + dd code');
+    await expect(password).toBeVisible();
+    const shown = (await password.textContent()) ?? "";
+    expect(shown).toMatch(/^[A-Za-z0-9]{16}$/);
+    expect(shown).toMatch(/[A-Z]/);
+    expect(shown).toMatch(/[a-z]/);
+    expect(shown).toMatch(/[0-9]/);
+    expect(fake.signUpPasswords).toEqual([shown]);
+    await expect(page.getByText("パスワードはこの画面を閉じると二度と表示できません")).toBeVisible();
     expect(fake.rpcCallsNamed("register_collaborator").map((call) => call.args.p_display_name)).toEqual(["協力 次郎"]);
 
     // 実行：協力者を外す（確認のチェックを入れてから）
