@@ -1,0 +1,181 @@
+# DB 設計（Supabase / Postgres）
+
+roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 イベント定義、3.8 協力者、5 データの流れ、13.1 決定事項）。作成：2026-10-16 親。
+
+**定義の文書**（`drafts.content`・`published_definitions.content` の jsonb）は、PR-02 の型 `PublicDefinition`（`src/domain/definition/types.ts`）と同じ形にする：`{ schemaVersion: 1, event: { id, name, startAt, endAt, versionDate }, areas: [{ id, name }], fudas: [{ id, name, color, gameNumber }], stages: [{ id, areaId, name, fudaId, importance, boosts: [{ id, name, multiplier, shipNames }] }] }`。並び順は配列の順。
+- イベントの名前・開始日時・終了日時の正は `events` 表。下書きの `content.event` は表示用の写しで、`create_event` が `event.id` を作ったイベントの ID に書き直し、`publish_definition` が公開するときに `events` 表の値と版の日付（`versionDate`）で書き直してから公開版に保存する。
+- 画面は保存・公開の前に `validatePublicDefinition` で検証する。DB 側では `schemaVersion = 1` とオブジェクトであることだけを確かめる。
+
+## 1. 方針
+
+- **DB を使うのは管理者・協力者だけ**。一般利用者の画面は Supabase に通信しない（静的 JSON とブラウザ内保存）。
+- **定義の中身（海域・段階・札・特効グループ）は、テーブルに分けず JSON 文書（jsonb）として持つ**。
+  - 理由：共有の下書きの 3 方向マージを画面側で文書単位に行う（B 案）、公開版をそのまま静的 JSON に書き出す、締め切りまでの作業量を減らす。
+  - 文書の形は公開定義 JSON の型（`src/domain/definition/`）と同じにし、画面側で検証してから保存する。DB 側では最低限の形（オブジェクトであること、版の整合）だけを確かめる。
+- **表への書き込みは、すべて RPC（`security definer` の Postgres 関数）を通す**。表には直接の INSERT／UPDATE／DELETE の権限を与えない。RPC の中で、呼び出した人の権限と業務の制限（最新・未終了のイベントだけ、など）を確かめる。読み取りは RLS で権限ごとに絞る。
+- 日時は `timestamptz` で持ち、画面では日本時間で表示する。
+
+## 2. 表
+
+### 2.1 `profiles`（管理者・協力者）
+| 列 | 型 | 説明 |
+|---|---|---|
+| user_id | uuid PK（auth.users.id） | |
+| display_name | text not null | 表示名（管理者が協力者を登録するときに決める） |
+| role | text not null check (role in ('admin','collab')) | |
+| created_at | timestamptz not null default now() | 追加した日 |
+| last_edited_at | timestamptz | 最後に定義を編集した日時（下書きの保存・公開で更新） |
+| last_edited_note | text | 例「特効を更新」 |
+
+- 行がない人＝一般利用者（ログインしていても権限なし）。
+- 協力者を外す＝行を削除し、`removed_accounts`（user_id、removed_at。RLS 有効・anon と authenticated は読めない）に記録する。外した ID は登録し直せない（古いパスワードでまた編集できるようにしない）。これまでの編集の記録は `save_logs` に残る（名前は記録側に複写しておく）。
+- 表示名は管理者が登録のときに決め、本人は変えられない（なりすましを防ぐため、表示名を変える RPC は作らない）。
+- 最初の管理者は、Supabase の管理画面（Authentication → Users → Add user）で ID のアカウント（`ID@fudawari.invalid` とパスワード、Auto Confirm）を作り、SQL で行を入れる（運用手順書）。
+
+### 2.1.1 ログイン（U3。2026-10-17 にユーザーの指示で Discord から変更）
+- 管理者が ID とパスワードを発行して相手に伝える。個人情報（メールアドレス・外部のアカウント）は使わない。
+- Supabase Auth のメール＋パスワードを使い、ID は内部で `ID@fudawari.invalid`（予約済みのドメイン。メールは送らない）にする。ID に使える文字は英小文字・数字・ハイフン（3〜32 文字）。
+- アカウントは管理者の協力者画面が作る：保存しない別の Supabase クライアントで `auth.signUp` を呼び（管理者のログインは変わらない）、返った user ID を `register_collaborator` に渡す。
+- Supabase の設定（アカウント操作）：Email のプロバイダーを有効、「Confirm email」を OFF、「Allow new users to sign up」は ON（画面からアカウントを作るため）。だれでもアカウントを作れるが、`profiles` に行がない人は RLS で何も読めず、RPC も FD001 になる。
+- パスワードの再発行は v1 では作らない（外して新しい ID を発行する）。
+
+### 2.2 `events`（イベント）
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | uuid PK default gen_random_uuid() | |
+| name | text not null | 例「2026夏イベ」 |
+| starts_at | timestamptz not null | 開始日時（分まで） |
+| ends_at | timestamptz | 終了日時（任意。null は未定） |
+| created_by | uuid not null | |
+| created_at | timestamptz not null default now() | |
+
+- **終了**＝`ends_at` が null でなく、`ends_at <= now()`。終了したイベントは RPC で更新を拒否する。
+
+### 2.3 `app_state`（1 行だけ）
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | boolean PK default true check (id) | 1 行に限る |
+| latest_event_id | uuid references events | 最新＝最後に「公開して最新にした」イベント（U18） |
+
+### 2.4 `drafts`（共有の下書き。イベントごとに 1 つ）
+| 列 | 型 | 説明 |
+|---|---|---|
+| event_id | uuid PK references events on delete cascade | |
+| version | integer not null default 1 | 保存のたびに 1 増える（衝突の確認に使う） |
+| content | jsonb not null | 定義の文書（公開定義 JSON と同じ形） |
+| updated_by | uuid not null | |
+| updated_at | timestamptz not null default now() | |
+
+### 2.5 `published_definitions`（公開版）
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | uuid PK | |
+| event_id | uuid not null references events | |
+| version_label | text not null | 版の日付の表示（例「2026/08/04 版」） |
+| content | jsonb not null | 公開した時点の定義の文書（イベント名・期間も含めて書き出す） |
+| draft_version | integer not null | 公開したときの下書きの版 |
+| published_by | uuid not null | |
+| published_at | timestamptz not null default now() | |
+
+- 一般向けの静的 JSON は「`app_state.latest_event_id` のイベントの、最新の `published_definitions`」1 つ。
+
+### 2.6 `save_logs`（保存の記録）
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | bigint PK generated always as identity | |
+| event_id | uuid not null references events | |
+| user_id | uuid | 外された人でも残すため FK にしない |
+| user_name | text not null | 記録した時点の表示名 |
+| kind | text not null check (kind in ('save','publish')) | 下書き保存／公開 |
+| map_label | text | 絞り込み用の海域（例「E2」）。公開は null |
+| summary | text not null | 例「E2 ゲージ3 の大事さを「難所」→「重要」」 |
+| created_at | timestamptz not null default now() | |
+
+- 記録の文は、保存時の差分から画面側で作って RPC に渡す（要件 3.7 の【提案】）。
+- 「保存の記録を見る」は新しい順に 8 件ずつ取る（`created_at desc, id desc` のカーソル）。
+
+## 3. RLS（読み取り）
+
+すべての表で RLS を有効にする。書き込みのポリシーは作らない（RPC だけが書く）。
+
+| 表 | anon（未ログイン） | 権限なしのログイン利用者 | 協力者 | 管理者 |
+|---|---|---|---|---|
+| profiles | × | 自分の行だけ（権限の確認用） | 全行（「編集できる人」の表示） | 全行 |
+| events | × | × | 全行 | 全行 |
+| app_state | ○（最新イベントの ID） | ○ | ○ | ○ |
+| drafts | × | × | 全行 | 全行 |
+| published_definitions | ○（公開済みのデータ。ビルド時の取得に使う） | ○ | ○ | ○ |
+| save_logs | × | × | 全行 | 全行 |
+
+- 判定には `public.app_role()`（`profiles` から自分の role を返す `security definer` 関数）を使う。`current_role` は SQL の予約語と重なるため使わない。
+- 表の権限：`anon`・`authenticated` には、上の表で読める表の SELECT だけを与える（Supabase のクラウドの既定では public の新しい表・関数に anon・authenticated の権限が自動で付くため、マイグレーションで明示に REVOKE してから GRANT する。CI の config.toml も `auto_expose_new_tables = true` にして、本番と同じ条件でテストする）。public の表のシーケンス（`save_logs_id_seq`）の既定の権限も外す。
+- ビルド時の取得は anon キーで `app_state` と `published_definitions` を読む。サーバー専用のキー（service_role）はビルドにも画面にも置かない。
+
+## 4. RPC（書き込み）
+
+すべて `security definer`、`set search_path = public`。最初に `app_role()` で権限を確かめ、条件に合わなければ例外を返す。実行の権限は `authenticated` だけに与える（`public`・`anon`・`authenticated` からいったん取り消してから `authenticated` に与える）。
+
+### 4.1 例外のコード（SQLSTATE）
+
+画面は supabase-js の `error.code` で出し分ける。`message` は日本語の説明。
+
+| コード | 意味 |
+|---|---|
+| FD001 | 権限がない（未ログイン、一般利用者、協力者が管理者だけの操作をした、協力者が名前・開始日時を変えようとした） |
+| FD002 | イベントが終了している（`ends_at <= now()`） |
+| FD003 | 更新できるイベントではない（協力者：最新のイベント以外。管理者：最新でも未公開でもないイベント。最新でないイベントを `p_make_latest = false` で公開しようとした） |
+| FD004 | 版が違う（`publish_definition` の `p_base_version` が今の下書きの版と違う） |
+| FD005 | 入力が不正（文書がオブジェクトでない・`schemaVersion` が 1 でない、日時の前後、終了日時が今以前、表示名が空、ID の形でないアカウント、記録が配列でない など） |
+| FD006〜FD008 | （欠番。招待をやめたため） |
+| FD009 | 見つからない（イベント・アカウント・協力者） |
+| FD010 | すでに権限がある人を協力者に登録しようとした |
+| FD011 | 管理者は外せない（自分自身も） |
+
+### 4.2 関数
+
+| 関数 | 呼べる人 | 内容と戻り値 |
+|---|---|---|
+| `app_role() returns text` | だれでも（anon も） | 自分の `profiles.role`（'admin'／'collab'）。行がない・未ログインなら null。RLS の判定に使う |
+| `save_draft(p_event_id uuid, p_base_version integer, p_content jsonb, p_logs jsonb) returns jsonb` | 協力者・管理者 | `p_base_version` が今の版と同じなら `content` を保存して版を 1 増やし、`p_logs`（`[{ "mapLabel": "E2" または null, "summary": "…" }]`。空の配列も可）を 1 件ずつ `save_logs`（kind 'save'）に入れ、`{ "status": "saved", "version": 新しい版 }` を返す。違えば保存せず `{ "status": "conflict", "version": 今の版, "content": 今の内容, "updatedByName": 保存した人の表示名（外された人なら "不明"）, "updatedAt": 日時 }` を返す（画面で 3 方向マージする）。終了 → FD002、更新できない → FD003、文書の形 → FD005 |
+| `publish_definition(p_event_id uuid, p_base_version integer, p_make_latest boolean) returns jsonb` | 協力者・管理者（`p_make_latest = true` は管理者だけ。協力者なら FD001） | 下書きの版が `p_base_version` と同じなら、下書きの `content` の `event` を `events` 表の値で書き直して（`id`＝イベント ID の文字列、`name`、`startAt`・`endAt`＝日本時間の "YYYY-MM-DDTHH:MI:SS+09:00"（未定は null）、`versionDate`＝公開した日の日本時間の "YYYY-MM-DD"）`published_definitions` に保存し（`version_label`＝"YYYY/MM/DD 版"）、記録（kind 'publish'、`map_label` は null、文「公開（YYYY/MM/DD 版）」）を入れる。`p_make_latest` なら `app_state.latest_event_id` を切り替える。戻り値 `{ "status": "published", "id": 公開版の ID, "versionLabel": "…", "versionDate": "YYYY-MM-DD" }`。版が違う → FD004、終了 → FD002、最新でないのに `p_make_latest = false` → FD003 |
+| `create_event(p_name text, p_starts_at timestamptz, p_ends_at timestamptz, p_content jsonb) returns uuid` | 管理者 | イベントと下書き（版 1、`content` は `p_content`）を作り、イベント ID を返す。初期の文書（元にするイベントからのコピー・E1 だけの空の文書）は画面が `createDefinition`（PR-09）で作り、`content.event.id` は作ったイベントの ID に書き直して保存する。名前が空・`p_ends_at <= p_starts_at`・終了日時が今以前・文書の形 → FD005 |
+| `update_event_meta(p_event_id uuid, p_name text, p_starts_at timestamptz, p_ends_at timestamptz) returns void` | 協力者（終了日時だけ）・管理者 | 名前・開始日時・終了日時を更新する。終了 → FD002、更新できない → FD003、協力者が名前か開始日時を今と違う値にした → FD001、名前が空・終了日時が開始日時以前・終了日時が今以前（誤ってロックしない） → FD005。終了日時の null（未定）は可 |
+| `register_collaborator(p_user_id uuid, p_display_name text) returns void` | 管理者 | 管理者の画面が作ったアカウント（auth.users にいる人）を協力者にする。表示名が空・外したアカウント（`removed_accounts` にいる）・メールが `@fudawari.invalid` で終わらない（ID の形のアカウントでない。実在のメールアドレスのアカウントを入れないため。発行した本人のアカウントかどうかは、画面が自分の signUp で返った user ID を渡すことで決まる） → FD005、auth.users にいない → FD009、すでに profiles に行がある（管理者を含む） → FD010 |
+| `remove_collaborator(p_user_id uuid) returns void` | 管理者 | 協力者の行を消し、`removed_accounts` に記録する（外した ID は登録し直せない）。ない → FD009、相手が管理者（自分を含む） → FD011 |
+
+- **更新できるイベント**：協力者は `app_state.latest_event_id` のイベントだけ。管理者は、最新のイベントと、まだ公開していない（`published_definitions` に行がない）イベント（U18）。どちらも終了していないこと。
+- 保存・公開をしたら、`profiles.last_edited_at` を今に、`last_edited_note` を「下書きを保存」か「公開」にする。
+- 新規作成は管理者だけ。
+- **ロックの順**：どの RPC でも「自分の profiles（FOR NO KEY UPDATE。最後の「最後に編集」の更新で格上げしない）→ app_state → イベント → 下書き」。他人の profiles の行（remove_collaborator）は自分の行の後に取る。`_require_role` が自分の行をロックするので、協力者を外す操作は実行中の保存・公開が終わるまで待つ。`_check_editable_event` は app_state とイベントを共有ロックし、`publish_definition` は app_state を、`update_event_meta` はイベントを最初に排他ロックする。新しい RPC もこの順に従う。
+
+## 5. リアルタイム（編集中の表示）
+
+- 表は使わず、Supabase Realtime の Presence で「イベント ID ごとのチャンネル」に、表示名と表示中の海域を載せる（T3-9）。
+- チャンネル名は `plan-editor:（イベント ID）`。画面は **private** のチャンネル（`config: { private: true }`）で参加し、Presence の読み取り・送信は realtime.messages の RLS（`editor_presence_select`・`editor_presence_insert`。マイグレーション `20261017120000_editor_presence.sql`）で管理者・協力者だけに許す。判定は `can_use_editor_presence(topic)`（authenticated だけが実行できる）。
+- 公開のチャンネルは RLS を通らず誰でも参加できるため、本番では Realtime の設定「Allow public access」を切る（ユーザーのアカウント操作。plan-v1 6.5 の ⑨）。テストは `supabase/tests/database/08_editor_presence.test.sql`。
+
+## 6. 公開から一般の画面への反映（U7）
+
+1. `publish_definition` が `published_definitions` に行を入れる。
+2. Supabase の Database Webhook（`published_definitions` の INSERT）が Cloudflare Pages の Deploy Hook を呼ぶ（アカウント操作 ⑦）。
+3. Cloudflare Pages が再ビルドする（ビルドコマンドは `npm run build`）。prebuild の `npm run fetch:latest-definition`（`scripts/fetch-latest-definition.ts`。処理は `src/lib/definition/generateLatestDefinition.ts`）が、環境変数 `NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`（anon の publishable key。ヘッダー `apikey` だけ。JWT ではないため `Authorization: Bearer` には入れない）で PostgREST を読む。
+   - `GET /rest/v1/app_state?select=latest_event_id&id=eq.true` で最新イベントの ID を読む。
+   - `GET /rest/v1/published_definitions?select=content&event_id=eq.{ID}&order=published_at.desc&limit=1` で最新の公開版を 1 件読む（使うのは `content` だけ）。
+   - 公開版の `content` を `validatePublicDefinition` で検証し、`content.event.id` が最新イベントの ID と一致することを確かめてから、検証済みの値を `public/data/latest-definition.json` に書き出す（DB の列は入れない）。
+4. 最新のイベントがない（`latest_event_id` が null。まだ公開して最新にしたイベントがない）ときだけ、`public/data/latest-definition.json` を消して成功する（一般の画面は定義の読み込みの失敗を表示する。テスト用の定義を本番に出さない）。
+5. 次のときは理由を表示して終了コード 1 でビルドを失敗させ、ファイルは書き出さず消さない（古い JSON・テスト用の定義のまま公開しない）：接続先（URL・キー）が空か URL として読めない、通信の失敗・ok でない応答（一時的な失敗は 2 秒待って取得ごとに 3 回まで再試行。408・429 以外の 4xx は再試行しない。1 回の取得は 30 秒で打ち切る）、JSON として読めない応答、応答の形の誤り（`app_state` の行がないなど）、最新のイベントの公開版が 0 件（最新のイベントは公開して最新にしたものなので正常な DB では起きない。RLS の設定の誤り・データの不整合とみなし、本番を空のサイトにしない）、公開版が検証に通らない、イベント ID が一致しない。通信の失敗などの文には、Supabase が停止していないかの確認の案内を入れる。
+6. 取得するかは環境変数で決める（`src/lib/definition/decideDefinitionFetch.ts`）。`FETCH_LATEST_DEFINITION` は未設定・`0`・`1` だけを認め、`1` なら取得する。未設定・`0` なら取得を飛ばし、追跡しているテスト用の定義（`public/data/latest-definition.json`）をそのまま使う（手元・CI）。それ以外の値（`true` など）は、理由を表示して終了コード 1 で止める。Cloudflare Pages の本番のビルド（`CF_PAGES` が `1` かつ `CF_PAGES_BRANCH` が本番のブランチ `release`。要件 13.1 の D2）で `1` でなければ、テスト用の定義を本番に出さないよう、理由を表示して終了コード 1 で止める（プレビューのビルドは未設定なら飛ばす）。本番では、Cloudflare Pages の本番（Production）の環境変数に `FETCH_LATEST_DEFINITION=1` を足す（アカウント操作。ユーザーが行う。`NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` は、ログインの画面と同じくアカウント操作 ⑥ で設定するもの）。
+
+## 7. テスト（U20）
+
+- CI（GitHub Actions）でローカルの Supabase を起動し、マイグレーションを空の DB に適用してから（`supabase db reset`）、権限ごとの可否を pgTAP で確かめる（`supabase test db`。テストは `supabase/tests/database/*.test.sql`）。ログインした人は `auth.users` にテスト用の行を入れ、`set local role authenticated` と `request.jwt.claims` の `sub` で演じる。
+- 確かめること：roadmap T3-3 の受入条件（未ログインは公開版の読み取りだけ、協力者の制限、版の衝突、協力者の登録は管理者だけ、外された協力者はすぐ更新できない）。
+- ID とパスワードでのアカウントの作成とログインは、CI の db ジョブでローカルの Auth に `ID@fudawari.invalid` の形で signUp・ログインして確かめる。
+- 手元の PC に Docker がないため、手元では DB のテストを動かさず CI で確かめる。
+
+## 8. 決めたこと（2026-10-17 親）
+
+- DB のテストは pgTAP で書く。
+- ログインは ID とパスワード（2.1.1）。招待は作らない。
+- 新規作成の初期の文書は画面で作り、`create_event` に渡す（元にするイベントの読み取りは RLS で協力者・管理者に許している）。
+- 版の日付は公開した日（日本時間）。画面からは渡さない。

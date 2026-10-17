@@ -1,0 +1,69 @@
+/* 割り振りの画面の読み込み中・失敗・未取り込みの表示（ヘッダー帯の下の本文） */
+
+.body {
+  padding: 16px 14px;
+}
+
+.text {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+/* 艦娘を取り込んでいないときの案内 */
+.notImported {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border-radius: var(--radius-md);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/*
+ * 読み込めなかったときの警告。公開定義の警告（DefinitionLoadAlert.module.css）と同じ見た目にする
+ * （赤系の色に当たる CSS 変数がまだないため、既存の変数で枠と強調の線を付けて目立たせる）
+ */
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  font-size: calc(13px * var(--font-scale));
+  color: var(--color-text);
+}
+
+.alertTitle {
+  margin: 0;
+  font-weight: 700;
+}
+
+.alertReason {
+  margin: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* 次の行動（再読み込み） */
+.alertAdvice {
+  margin: 0;
+}

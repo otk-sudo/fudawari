@@ -1,0 +1,105 @@
+/*
+ * 札の列（モック Assign.dc.html の札ごとの <section>）。
+ * 見出しの下地は札の色（style で渡す）。文字の色は札の色に合わせて暗い文字か白い文字を選ぶ（ship-view.ts の inkOn）
+ */
+
+.column {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+/* 選んだ艦に特効がない札の列 */
+.column[data-dimmed="true"] {
+  opacity: 0.55;
+}
+
+/* ドラッグ中の落とす先の強調 */
+.column[data-drop-highlight="true"] {
+  border-color: var(--assign-highlight);
+  box-shadow: 0 0 0 2px var(--assign-highlight-ring);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+}
+
+/* 札の色の上の文字（テーマで変えない。下地が札の色のため） */
+.darkInk {
+  color: #101114;
+}
+
+.lightInk {
+  color: #ffffff;
+}
+
+.name {
+  margin: 0;
+  font-size: calc(14px * var(--font-scale));
+  font-weight: 700;
+}
+
+.meta {
+  font-size: calc(11px * var(--font-scale));
+  opacity: 0.9;
+}
+
+/* 「ここに置く」 */
+.place {
+  display: block;
+  width: calc(100% - 16px);
+  min-height: 40px;
+  margin: 8px 8px 0;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.place:focus-visible {
+  outline: 2px solid var(--assign-highlight);
+  outline-offset: 2px;
+}
+
+.placeBoost {
+  background: var(--assign-place-boost-bg);
+  color: var(--assign-place-boost-text);
+  border: 1px solid var(--assign-place-boost-border);
+}
+
+.placeNoBoost {
+  background: transparent;
+  color: var(--assign-faint-text);
+  border: 1px dashed var(--color-border-strong);
+  font-weight: 400;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+}
+
+/* ドラッグ中に列の最後に出す「ここに移動」（ドラッグ中はどの列にも置き、出さない列では見えなくする） */
+.moveHint {
+  padding: 12px;
+  border: 2px dashed var(--assign-highlight);
+  border-radius: 5px;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--assign-band-text);
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 場所だけ取って見えなくする（ドラッグ中に列の大きさを変えないため） */
+.moveHintReserved {
+  visibility: hidden;
+}

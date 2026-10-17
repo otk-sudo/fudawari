@@ -1,0 +1,51 @@
+/*
+ * 編集中の人の表示（モック PlanEditor.dc.html の「[協力者A]も編集中（E3 を表示中）」）。
+ * 色はこの部品の変数（--presence-*）。ダークはモックの値、ライトはモックにないため同じ役割で読みやすい値（仮）。
+ * ライトの値は theme.css と同じく「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる
+ */
+
+/* 読み上げの入れ物（誰もいないときも描く）。空のときは、上部の欄の行の間隔（gap 4px）を詰めて、空の行が見えないようにする */
+.live:empty {
+  margin-top: -4px;
+}
+
+.list {
+  --presence-text: #cfe0ff; /* 編集中の文 */
+  --presence-dot: #3fb37f; /* 開いている印の緑 */
+
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:global(:root[data-theme="light"]) .list {
+  --presence-text: #24467f; /* 仮 */
+  --presence-dot: #1f8a5a; /* 仮 */
+}
+
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .list {
+    --presence-text: #24467f; /* 仮 */
+    --presence-dot: #1f8a5a; /* 仮 */
+  }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--presence-text);
+  overflow-wrap: anywhere;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--presence-dot);
+}

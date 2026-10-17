@@ -1,17 +1,9 @@
 import type { Metadata } from "next";
-import { ScreenHeader } from "@/components/ScreenHeader";
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { DRIFT_SCREEN_TITLE, DriftPageContent } from "@/features/drift";
 
-const TITLE = "計画と実際の札";
+export const metadata: Metadata = { title: DRIFT_SCREEN_TITLE };
 
-export const metadata: Metadata = { title: TITLE };
-
-// 差分（要件 3.5、モック Drift.dc.html）。中身は PR-08 で作る
+// 差分（要件 3.5、モック Drift.dc.html）。読み込み・出し分け・中身は DriftPageContent
 export default function DriftPage() {
-  return (
-    <>
-      <ScreenHeader title={TITLE} />
-      <ScreenPlaceholder />
-    </>
-  );
+  return <DriftPageContent />;
 }

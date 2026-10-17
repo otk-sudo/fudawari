@@ -1,0 +1,352 @@
+/*
+ * 画像で保存のウィンドウ（モック Main.dc.html の画像で保存）。枠の作りは設定のウィンドウ（SettingsDialog.module.css）と同じ。
+ *
+ * このウィンドウだけで使う色は、.content に CSS 変数（--export-*）として置く。ほかの画面と共通の色は theme.css の変数をそのまま使う。
+ * ダークの値はモックの値、ライトの値はモックにないため同じ役割で読みやすい値を仮に置いている（theme.css と同じ扱い）。
+ * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow-y: auto;
+  background: var(--color-overlay);
+}
+
+/* ダーク（既定。モックの値） */
+.content {
+  --export-note-text: #f2c98a; /* 枚数の表示・「画像をコピー」の文字 */
+  --export-success-text: #a8ddb5; /* コピーした知らせ */
+  --export-faint-text: #6b717c; /* 押せない「画像をコピー」の文字 */
+  --export-on-accent: #101114; /* 強調の金の上の文字（「PNGで保存」） */
+  --export-save-disabled-bg: #3a3426; /* 押せない「PNGで保存」の下地 */
+  --export-save-disabled-text: #8a7f66; /* 押せない「PNGで保存」の文字 */
+
+  width: 100%;
+  max-width: 1320px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  color: var(--color-text);
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:global(:root[data-theme="light"]) .content {
+  --export-note-text: #7a5200;
+  --export-success-text: #1f7a3d;
+  --export-faint-text: #737a85;
+  --export-on-accent: #ffffff;
+  --export-save-disabled-bg: #e9e1cf;
+  --export-save-disabled-text: #8a7f66;
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .content {
+    --export-note-text: #7a5200;
+    --export-success-text: #1f7a3d;
+    --export-faint-text: #737a85;
+    --export-on-accent: #ffffff;
+    --export-save-disabled-bg: #e9e1cf;
+    --export-save-disabled-text: #8a7f66;
+  }
+}
+
+/* ---- 上部 ---- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.description {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.cross {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ---- 本文（左：入れる札、右：見本） ---- */
+
+.body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+}
+
+.options {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.optionsLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.radios {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.radio {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--color-surface);
+  border-radius: 6px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+/* 札の色の印（色は style で入れる） */
+.dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+}
+
+.explain {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.pageNote {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--export-note-text);
+}
+
+/* 見本（1 枚目） */
+.preview {
+  display: flex;
+  flex: 999 1 560px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.caption {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* 16:9 の枠。中の 1600×900 の画像を枠の幅に縮小する（倍率は style で入れる） */
+.frame {
+  width: 960px;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--color-menu-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.scaler {
+  width: 1600px;
+  height: 900px;
+  transform-origin: 0 0;
+}
+
+/*
+ * PNG にする画像（等倍）を画面の外に置く入れ物。
+ * visibility や display で隠すと、写した画像も見えなくなるため、位置だけを画面の外にずらす
+ */
+.captureArea {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  width: 1600px;
+  pointer-events: none;
+}
+
+/* ---- 下部 ---- */
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+/*
+ * PNG を作れなかった・コピーできなかったときの知らせ。
+ * 赤系の色に当たる CSS 変数がまだないため、ほかの画面の警告と同じく、既存の変数で枠と強調の線を付けて目立たせる
+ */
+.error {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* コピーした知らせ・作っている途中の知らせ（左に寄せる） */
+.status {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 12px;
+  color: var(--export-success-text);
+}
+
+.status:empty {
+  flex-basis: 0;
+}
+
+.cancel {
+  min-height: 36px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.copyPage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.select {
+  min-height: 36px;
+  padding: 0 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.copy {
+  min-height: 36px;
+  padding: 0 16px;
+  background: transparent;
+  color: var(--export-note-text);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.copy:disabled {
+  color: var(--export-faint-text);
+  border-color: var(--color-border-strong);
+  cursor: not-allowed;
+}
+
+.save {
+  min-height: 36px;
+  padding: 0 18px;
+  background: var(--color-accent);
+  color: var(--export-on-accent);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save:disabled {
+  background: var(--export-save-disabled-bg);
+  color: var(--export-save-disabled-text);
+  cursor: not-allowed;
+}
+
+.cross:focus-visible,
+.cancel:focus-visible,
+.copy:focus-visible,
+.save:focus-visible,
+.select:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}

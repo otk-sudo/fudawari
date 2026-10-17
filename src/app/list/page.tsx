@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { ScreenHeader } from "@/components/ScreenHeader";
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { ListPageContent } from "@/features/list/ListPageContent";
+import { LIST_SCREEN_TITLE } from "@/features/list/title";
 
-const TITLE = "札割り一覧";
+export const metadata: Metadata = { title: LIST_SCREEN_TITLE };
 
-export const metadata: Metadata = { title: TITLE };
-
-// 一覧（要件 3.2、モック Main.dc.html）。中身は PR-07 で作る
+// 一覧（要件 3.2、モック Main.dc.html）と画像で保存（要件 3.9）。読み込み・出し分け・中身は ListPageContent
 export default function ListPage() {
-  return (
-    <>
-      <ScreenHeader title={TITLE} />
-      <ScreenPlaceholder />
-    </>
-  );
+  return <ListPageContent />;
 }

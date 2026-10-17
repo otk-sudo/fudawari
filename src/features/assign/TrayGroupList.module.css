@@ -1,0 +1,89 @@
+/*
+ * 控えの艦の一覧（区切りの見出しと艦カード。モック Assign.dc.html）。
+ * 行は仮想スクロールで描くので、外側の箱（.rows。高さは全行の分）を基準に position: absolute で縦に置く（位置は style）
+ */
+
+.rows {
+  position: relative;
+  width: 100%;
+}
+
+/* 行（区切りの見出しの行・艦カードの li）。縦の位置は style の top で決める */
+.row {
+  left: 0;
+  width: 100%;
+}
+
+/* 区切りの見出しの行（艦カードより上に重ねる） */
+.headerRow {
+  z-index: 1;
+  background: var(--color-surface);
+}
+
+/* 一覧の一番上に固定する見出しの行（style で position: sticky にする。下から来る次の見出しより上に重ねる） */
+.stickyRow {
+  z-index: 2;
+}
+
+/* 行の下の間隔（TrayGroupList.tsx の ROW_SPACE_ESTIMATE と同じ値） */
+.spaceItem {
+  padding-bottom: 6px;
+}
+
+/* 一行表示はカードの間を詰める */
+.dense .spaceItem {
+  padding-bottom: 2px;
+}
+
+.spaceHeader {
+  padding-bottom: 4px;
+}
+
+.spaceGroup {
+  padding-bottom: 6px;
+}
+
+/* 区切りごとの艦の li を入れる ul（li は .rows を基準に置くので、ul 自身は高さを持たない） */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 区切りの見出し */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 4px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  font-family: inherit;
+  font-size: calc(12px * var(--font-scale));
+  text-align: left;
+  cursor: pointer;
+}
+
+.header:focus-visible {
+  outline: 2px solid var(--assign-highlight);
+  outline-offset: -2px;
+}
+
+.chevron {
+  width: 10px;
+  color: var(--color-text-muted);
+}
+
+.title {
+  flex: 1;
+}
+
+.count {
+  font-family: Consolas, monospace;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--color-text-muted);
+}

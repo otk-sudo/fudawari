@@ -1,0 +1,301 @@
+/*
+ * 一覧の本文（モック Main.dc.html）：攻略の流れ、表示の切り替え、札ごとの行。
+ *
+ * 一覧だけで使う色は、.board に CSS 変数（--list-*）として置く。ほかの画面と共通の色は theme.css の変数をそのまま使う。
+ * ダークの値はモックの値、ライトの値はモックにないため同じ役割で読みやすい値を仮に置いている（theme.css と同じ扱い）。
+ * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
+ * 札の色（段階・色帯の下地、艦の左端の線）は定義の値なので、部品の style で入れる。
+ * 文字の大きさは calc(Npx * var(--font-scale)) で書く（設定の「文字の大きさ」。--font-scale は theme.css）。
+ */
+
+/* ダーク（既定。モックの値） */
+.board {
+  --list-ship-bg: #2c2f36; /* 艦の下地 */
+  --list-faint-text: #6b717c; /* 薄い文字（「まだ割り当てがありません」、特効なしの「–」） */
+  --list-on-accent: #101114; /* 強調の金の上の文字（倍率のバッジ） */
+  --list-toggle-on-bg: #22304a; /* 押してある表示の切り替えの下地 */
+  --list-toggle-on-border: #6aa8ff; /* 押してある表示の切り替えの枠 */
+  --list-toggle-on-text: #ffffff; /* 押してある表示の切り替えの文字 */
+  --list-ink-dark: #101114; /* 札の色の上の暗い文字（札の色は定義の値なので、画面モードで変えない） */
+  --list-ink-light: #ffffff; /* 札の色の上の白い文字 */
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:global(:root[data-theme="light"]) .board {
+  --list-ship-bg: #eceef2;
+  --list-faint-text: #737a85;
+  --list-on-accent: #ffffff;
+  --list-toggle-on-bg: #dce8fb;
+  --list-toggle-on-border: #2f6fd6;
+  --list-toggle-on-text: #1c1e22;
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .board {
+    --list-ship-bg: #eceef2;
+    --list-faint-text: #737a85;
+    --list-on-accent: #ffffff;
+    --list-toggle-on-bg: #dce8fb;
+    --list-toggle-on-border: #2f6fd6;
+    --list-toggle-on-text: #1c1e22;
+  }
+}
+
+/* 札の色の上の文字 */
+.inkDark {
+  color: var(--list-ink-dark);
+}
+
+.inkLight {
+  color: var(--list-ink-light);
+}
+
+/* ---- 攻略の流れ ---- */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 4px;
+}
+
+.areaRow {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.areaName {
+  display: flex;
+  flex: 0 0 36px;
+  align-items: center;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.steps {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.stepStage {
+  font-size: calc(11px * var(--font-scale));
+  opacity: 0.85;
+}
+
+.stepFuda {
+  overflow: hidden;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stepBoost {
+  font-size: calc(11px * var(--font-scale));
+}
+
+/* 難所の印（管理の橙。モックの値と同じ） */
+.hard {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 0 4px;
+  background: var(--color-admin);
+  border-radius: var(--radius-sm);
+  font-size: calc(10px * var(--font-scale));
+  font-weight: 700;
+  color: var(--color-on-admin);
+}
+
+/* ---- 表示の切り替え ---- */
+
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+
+.togglesLabel {
+  font-size: calc(12px * var(--font-scale));
+  color: var(--color-text-muted);
+}
+
+.toggle {
+  min-height: 30px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 15px;
+  font-family: inherit;
+  font-size: calc(12px * var(--font-scale));
+  cursor: pointer;
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--list-toggle-on-bg);
+  color: var(--list-toggle-on-text);
+  border-color: var(--list-toggle-on-border);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--list-toggle-on-border);
+  outline-offset: 2px;
+}
+
+/* ---- 札ごとの行 ---- */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 18px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+/* 左端の色帯（下地は札の色） */
+.rowHead {
+  display: flex;
+  flex: 0 0 180px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.rowName {
+  font-size: calc(15px * var(--font-scale));
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.rowStages {
+  font-size: calc(11px * var(--font-scale));
+  opacity: 0.9;
+}
+
+.rowCount {
+  margin-top: 4px;
+  font-size: calc(12px * var(--font-scale));
+}
+
+.rowBody {
+  display: flex;
+  flex: 999 1 480px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.empty {
+  padding: 8px 4px;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--list-faint-text);
+}
+
+/* 艦種のまとまり */
+.group {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.groupLabel {
+  flex: 0 0 32px;
+  padding-top: 6px;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--color-text-muted);
+}
+
+.ships {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 艦（左端の線は札の色。style で入れる） */
+.ship {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--list-ship-bg);
+  border-radius: 3px;
+}
+
+/* その札で特効がない艦は少し薄くする */
+.ship[data-dimmed="true"] {
+  opacity: 0.7;
+}
+
+.shipName {
+  overflow: hidden;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shipMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: calc(10px * var(--font-scale));
+}
+
+.shipStats {
+  color: var(--color-text-muted);
+}
+
+/* その札での最大倍率のバッジ */
+.badge {
+  padding: 0 4px;
+  background: var(--color-accent);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  color: var(--list-on-accent);
+}
+
+.badgeNone {
+  color: var(--list-faint-text);
+}

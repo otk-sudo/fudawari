@@ -1,0 +1,229 @@
+/*
+ * 割り振り画面の中身（モック Assign.dc.html）。
+ *
+ * 割り振り画面だけで使う色は、.screen に CSS 変数（--assign-*）として置き、画面の部品（ShipCard・TrayPanel・FudaColumn・
+ * SelectedShipPanel など）から使う。ほかの画面と共通の色は theme.css の変数をそのまま使う。
+ * ダークの値はモックの値、ライトの値はモックにないため同じ役割で読みやすい値を仮に置いている（theme.css と同じ扱い）。
+ * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
+ * ほかの画面でも使うようになったら theme.css へ移す。
+ * 文字の大きさは calc(Npx * var(--font-scale)) で書く（設定の「文字の大きさ」。--font-scale は theme.css。割り振りの部品の CSS も同じ）。
+ */
+
+/* ダーク（既定。モックの値） */
+.screen {
+  --assign-highlight: #6aa8ff; /* 選択中の枠・強調の青（選択中のカード・いまいる札・検索欄の虫眼鏡） */
+  --assign-highlight-ring: #2b4a7a; /* 選択中のカードの外側の輪 */
+  --assign-on-highlight: #101114; /* 強調の青の上の文字（「絞り込み」のバッジ） */
+  --assign-selected-bg: #22304a; /* 選択中のカード・パネルの見出し・選んだ艦種タブの下地 */
+  --assign-card-bg: #1a1c20; /* 艦カード・パネルの札のブロックの下地 */
+  --assign-card-border: #2e3138; /* 艦カード・札のブロック・絞り込みの枠 */
+  --assign-card-open-bg: #1e2128; /* 特効を開いたカードの下地 */
+  --assign-card-open-border: #3a4250; /* 特効を開いたカードの枠 */
+  --assign-banner-bg: #2c2f36; /* 艦カードの艦名の帯 */
+  --assign-banner-text: #f2f3f5; /* 艦名の帯の文字 */
+  --assign-stripe-none: #4a4f58; /* 特効のない控えの艦の左端（灰色） */
+  --assign-flag-muted: #8a9099; /* 特効の印「－」「特効なし」の文字 */
+  --assign-on-accent: #101114; /* 強調の金の上の文字（特効の印・倍率） */
+  --assign-band-bg: #1e2633; /* 「特効を表示中」の帯・お知らせの下地 */
+  --assign-band-border: #34507a; /* 「特効を表示中」の帯・お知らせ・パネルの枠 */
+  --assign-band-text: #cfe0ff; /* 「特効を表示中」の帯・お知らせの文字 */
+  --assign-band-button-border: #4a6a9a; /* 「すべて閉じる」・パネルの「×」の枠、検索欄の下線 */
+  --assign-panel-sub: #b9c8e0; /* パネルの「艦種 ・ Lv ・ いま：」 */
+  --assign-faint-text: #6b717c; /* 薄い文字（「条件に合う艦はいません」「特効なし：」「ここに置く（特効なし）」） */
+  --assign-select-underline: #5a606a; /* 並び順のプルダウンの下線 */
+  --assign-place-boost-bg: #3a3220; /* 「ここに置く（特効あり）」の下地 */
+  --assign-place-boost-text: #f6e2b3; /* 「ここに置く（特効あり）」の文字 */
+  --assign-place-boost-border: #6e5520; /* 「ここに置く（特効あり）」の枠 */
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
+:global(:root[data-theme="light"]) .screen {
+  --assign-highlight: #2f6fd6;
+  --assign-highlight-ring: #c5d8f7;
+  --assign-on-highlight: #ffffff;
+  --assign-selected-bg: #dce8fb;
+  --assign-card-bg: #f7f8fa;
+  --assign-card-border: #d5d8de;
+  --assign-card-open-bg: #eef2f8;
+  --assign-card-open-border: #b9c3d3;
+  --assign-banner-bg: #eceef2;
+  --assign-banner-text: #1c1e22;
+  --assign-stripe-none: #b9bec7;
+  --assign-flag-muted: #5c6370;
+  --assign-on-accent: #ffffff;
+  --assign-band-bg: #e8f0fc;
+  --assign-band-border: #a9c1e8;
+  --assign-band-text: #1f3a66;
+  --assign-band-button-border: #7f9fd6;
+  --assign-panel-sub: #4a5a75;
+  --assign-faint-text: #737a85;
+  --assign-select-underline: #9aa0aa;
+  --assign-place-boost-bg: #fbf1dc;
+  --assign-place-boost-text: #6b4a00;
+  --assign-place-boost-border: #e0c58a;
+}
+
+/* ライト（data-theme がなく、端末の設定がライトのとき）。上のライトと同じ値にする */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .screen {
+    --assign-highlight: #2f6fd6;
+    --assign-highlight-ring: #c5d8f7;
+    --assign-on-highlight: #ffffff;
+    --assign-selected-bg: #dce8fb;
+    --assign-card-bg: #f7f8fa;
+    --assign-card-border: #d5d8de;
+    --assign-card-open-bg: #eef2f8;
+    --assign-card-open-border: #b9c3d3;
+    --assign-banner-bg: #eceef2;
+    --assign-banner-text: #1c1e22;
+    --assign-stripe-none: #b9bec7;
+    --assign-flag-muted: #5c6370;
+    --assign-on-accent: #ffffff;
+    --assign-band-bg: #e8f0fc;
+    --assign-band-border: #a9c1e8;
+    --assign-band-text: #1f3a66;
+    --assign-band-button-border: #7f9fd6;
+    --assign-panel-sub: #4a5a75;
+    --assign-faint-text: #737a85;
+    --assign-select-underline: #9aa0aa;
+    --assign-place-boost-bg: #fbf1dc;
+    --assign-place-boost-text: #6b4a00;
+    --assign-place-boost-border: #e0c58a;
+  }
+}
+
+/* ---- ヘッダー ---- */
+
+.headerNote {
+  font-size: calc(12px * var(--font-scale));
+  color: var(--color-text-muted);
+}
+
+.headerSpacer {
+  flex: 1 1 40px;
+}
+
+.undoButton {
+  min-height: 34px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: calc(12px * var(--font-scale));
+  cursor: pointer;
+}
+
+.undoButton:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.listLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border-radius: var(--radius-md);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.undoButton:focus-visible,
+.listLink:focus-visible {
+  outline: 2px solid var(--assign-highlight);
+  outline-offset: 2px;
+}
+
+/* ---- お知らせ（保存の失敗・控えに戻した割り当て） ---- */
+
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+/* 保存の失敗（公開定義の読み込みの失敗の警告〔DefinitionLoadAlert〕と同じ形） */
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  font-size: calc(13px * var(--font-scale));
+  color: var(--color-text);
+}
+
+.alertTitle {
+  margin: 0;
+  font-weight: 700;
+}
+
+.alertReason {
+  margin: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--assign-band-bg);
+  border: 1px solid var(--assign-band-border);
+  border-radius: var(--radius-md);
+  font-size: calc(12px * var(--font-scale));
+  color: var(--assign-band-text);
+}
+
+/* ---- 本文（控え・札の列・選択中の艦のパネル） ---- */
+
+.body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px 16px;
+}
+
+.columns {
+  display: grid;
+  flex: 999 1 420px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.side {
+  display: flex;
+  flex: 1 1 300px;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 340px;
+}
+
+/* ---- ドラッグ中にポインターにつける艦カードの写し ---- */
+
+/* 写しを入れる箱（DragOverlay。ポインターの下に来るので、つかんでいる形のカーソルにする） */
+.dragOverlay {
+  cursor: grabbing;
+}
+
+.dragPreview {
+  border-radius: 5px;
+  box-shadow: var(--shadow-dialog);
+  opacity: 0.8;
+}

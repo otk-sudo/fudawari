@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { ScreenHeader } from "@/components/ScreenHeader";
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { ASSIGN_SCREEN_TITLE, AssignPageContent } from "@/features/assign";
 
-const TITLE = "割り振り";
+export const metadata: Metadata = { title: ASSIGN_SCREEN_TITLE };
 
-export const metadata: Metadata = { title: TITLE };
-
-// 割り振り（要件 3.3、モック Assign.dc.html）。中身は PR-05・PR-06 で作る
+// 割り振り（要件 3.3、モック Assign.dc.html）。読み込み・出し分け・中身は AssignPageContent。
+// ドラッグ＆ドロップと 600 隻の仮想スクロールは PR-06 で足す
 export default function AssignPage() {
-  return (
-    <>
-      <ScreenHeader title={TITLE} />
-      <ScreenPlaceholder />
-    </>
-  );
+  return <AssignPageContent />;
 }

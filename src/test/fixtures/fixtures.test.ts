@@ -56,6 +56,23 @@ describe("テスト用データの点検", () => {
     expect(Object.isFrozen(summer2026Ships[0])).toBe(true);
   });
 
+  it("定義の複製は、型（Mutable）でも実行時でも、入れ子の配列まで書き換えられる", () => {
+    // 準備
+    const copy = cloneSummer2026Definition();
+
+    // 実行：公開定義の型は読み取り専用だが、複製は書き換えられる型なので型の誤りにならない
+    copy.areas.push({ id: "E4", name: "E4" });
+    copy.stages[0].boosts[0].shipNames.push("時雨");
+    copy.stages[0].boosts[0].multiplier = 2;
+
+    // 検証：複製だけが変わり、共有のデータは変わらない
+    expect(copy.areas.map((a) => a.id)).toEqual(["E1", "E2", "E3", "E4"]);
+    expect(copy.stages[0].boosts[0].shipNames).toContain("時雨");
+    expect(copy.stages[0].boosts[0].multiplier).toBe(2);
+    expect(summer2026Definition.areas).toHaveLength(3);
+    expect(summer2026Definition.stages[0].boosts[0].shipNames).not.toContain("時雨");
+  });
+
   it("仮マスタ：艦 ID が重複しない", () => {
     expect(masterIds.size).toBe(summer2026MasterEntries.length);
   });
@@ -70,12 +87,13 @@ describe("テスト用データの点検", () => {
   });
 
   it("割り当て：所持艦の個体と、定義の札だけを参照する", () => {
-    const uids = new Set(summer2026Ships.map((s) => s.uid));
-    const fudaIds = new Set(summer2026Definition.fudas.map((f) => f.id));
+    const uids = summer2026Ships.map((s) => s.uid);
+    const fudaIds = summer2026Definition.fudas.map((f) => f.id);
 
+    // 割り当ての値の型は「キーがないことがある」ため string | undefined になる。toContain なら絞り込まずに比べられる
     for (const [uid, fudaId] of Object.entries(summer2026Assignments)) {
-      expect(uids.has(uid)).toBe(true);
-      expect(fudaIds.has(fudaId)).toBe(true);
+      expect(uids).toContain(uid);
+      expect(fudaIds).toContain(fudaId);
     }
   });
 

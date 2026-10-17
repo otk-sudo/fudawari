@@ -8,7 +8,9 @@
 //   段階ごとに「艦名 → 倍率（当てはまるグループの積）」の索引を、初めて使うときに 1 回だけ作って覚えておく。
 //   以後の呼び出しは、段階の全探索や艦名の配列の走査をせずに索引を引くだけで済む。
 // - 覚えておく先は WeakMap（定義・段階のオブジェクトが不要になれば一緒に捨てられる）。
-// - そのため、定義（PublicDefinition）とその中身は書き換えない不変の値として扱うこと。
+// - そのため、定義（PublicDefinition）とその中身は不変の値であることを前提にしている。
+//   この前提は型と凍結で守られる：型は入れ子まで読み取り専用（readonly・readonly T[]）で書き換えは型の誤りになり、
+//   validatePublicDefinition で検証した値は実行時にも深く凍結してある。
 //   内容を変えるときは新しいオブジェクトを作る（React・Zustand の更新の作法と同じ）。
 import { importanceWeight } from "@/domain/definition/importance";
 import type { PublicDefinition, Stage } from "@/domain/definition/types";
@@ -150,8 +152,11 @@ export function countBoostedShipsByStage(
   const counts: Record<string, number> = Object.fromEntries(definition.stages.map((stage) => [stage.id, 0]));
   // 一覧の個体から割り当てを引く（割り当て側から引かないので、一覧にない個体への割り当ては数えない）
   for (const ship of ships) {
+    // 自分自身のキーだけを見る（Object.prototype の項目を拾わない）。値が undefined の個体も控えとして飛ばす
     if (!Object.hasOwn(assignments, ship.uid)) continue;
-    const stages = stagesByFuda.get(assignments[ship.uid]);
+    const fudaId = assignments[ship.uid];
+    if (fudaId === undefined) continue;
+    const stages = stagesByFuda.get(fudaId);
     if (stages === undefined) continue;
     const baseName = baseNameOf(master, ship.shipId);
     if (baseName === null) continue;
