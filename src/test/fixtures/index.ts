@@ -15,6 +15,10 @@
 //   テスト用の海外艦・国籍の分からない艦と、E2 ゲージ3 に「米艦」×1.20（国籍 アメリカ）を足した定義（nationality.ts）。
 //   既存のデータには混ぜていない
 //
+// - shipTypeMasterEntries／shipTypeShips／summer2026DefinitionWithUsaDestroyerBoost／USA_DESTROYER_BOOST_GROUP_ID：
+//   国籍の特効を艦種で絞る（v1.1）のテスト用の米駆逐艦 Johnston改と、E2 ゲージ3 に「米駆逐」×1.20
+//   （国籍 アメリカ・艦種 駆逐）を足した定義（shipType.ts）。既存のデータには混ぜていない
+//
 // - Mutable<T>：読み取り専用の型を入れ子まで書き換えられる型にする（mutable.ts）。
 //   cloneSummer2026Definition() の戻り値の型で、壊した例を作る補助の引数の型にも使う
 //
@@ -29,6 +33,12 @@ export {
   summer2026DefinitionWithUsaBoost,
   USA_BOOST_GROUP_ID,
 } from "./nationality";
+export {
+  shipTypeMasterEntries,
+  shipTypeShips,
+  summer2026DefinitionWithUsaDestroyerBoost,
+  USA_DESTROYER_BOOST_GROUP_ID,
+} from "./shipType";
 export {
   createBulkShips,
   shipByUid,

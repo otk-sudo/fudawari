@@ -1291,3 +1291,217 @@ describe("mergeDefinitions：特効グループの国籍（v1.1）", () => {
     expect(result.merged.stages.flatMap((s) => s.boosts).some((g) => Object.hasOwn(g, "nationalities"))).toBe(false);
   });
 });
+
+describe("mergeDefinitions：特効グループの艦種（v1.1。国籍の条件を絞る shipTypes）", () => {
+  /** 艦種の場所（E2 ゲージ3 の連合艦隊C） */
+  const SHIP_TYPES_AT: ChangeLocation = {
+    kind: "boostGroup",
+    stageId: "E2-3",
+    groupId: "E2-3-C",
+    field: "shipTypes",
+  };
+
+  /**
+   * E2 ゲージ3 の連合艦隊C の国籍・艦種を変えた文書（undefined なら項目を消す。null ならその項目は変えない）
+   */
+  function withGroupC(
+    from: DefinitionDoc,
+    fields: { nationalities?: string[] | undefined | null; shipTypes?: number[] | undefined | null },
+  ): DefinitionDoc {
+    return editDoc(from, (d) => {
+      const group = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+      for (const key of ["nationalities", "shipTypes"] as const) {
+        if (!Object.hasOwn(fields, key)) continue;
+        const value = fields[key];
+        if (value === null) continue;
+        if (value === undefined) {
+          delete group[key];
+        } else {
+          group[key] = value;
+        }
+      }
+    });
+  }
+
+  /** 連合艦隊C を国籍 アメリカ にした base */
+  const usaBase = withGroupC(base, { nationalities: ["usa"] });
+
+  /** 合わせた文書の連合艦隊C の項目（項目がなければ undefined） */
+  function mergedField(doc: DefinitionDoc, key: "nationalities" | "shipTypes"): unknown {
+    const group = groupOf(doc, "E2-3-C") as unknown as Record<string, unknown>;
+    return Object.hasOwn(group, key) ? group[key] : undefined;
+  }
+
+  /** 自動で合わせた所のうち、艦種の場所のもの */
+  function shipTypesAutoMerged(autoMerged: readonly { location: ChangeLocation }[]): unknown[] {
+    return autoMerged.filter((c) => c.location.kind === "boostGroup" && c.location.field === "shipTypes");
+  }
+
+  it("2 人がそれぞれ足した艦種は、集合として合わせる（衝突にしない）。並びは正規の順（軽巡 3 が駆逐 2 より先）", () => {
+    // 準備：自分は駆逐、相手は軽巡を足す
+    const mine = withGroupC(usaBase, { shipTypes: [2] });
+    const theirs = withGroupC(usaBase, { shipTypes: [3] });
+
+    // 実行
+    const { result } = run(mine, theirs, usaBase);
+
+    // 検証
+    expect(result.conflicts).toEqual([]);
+    expect(mergedField(result.merged, "shipTypes")).toEqual([3, 2]);
+  });
+
+  it("相手が足した艦種を取り込んだら、自動で合わせた所に field \"shipTypes\" で入れる（表示名は「…の艦種」）", () => {
+    const mine = withGroupC(usaBase, { shipTypes: [2] });
+    const theirs = withGroupC(usaBase, { shipTypes: [3] });
+
+    const { result } = run(mine, theirs, usaBase);
+
+    expect(result.autoMerged).toContainEqual({
+      location: SHIP_TYPES_AT,
+      change: "modified",
+      label: "E2 ゲージ3 の特効「連合艦隊C」の艦種",
+      stageId: "E2-3",
+    });
+  });
+
+  it("base ＋ 2 人が足した艦種 − 2 人が外した艦種（自分が軽巡を外し、相手が戦艦 8・9 を足す）", () => {
+    // 準備：base は軽巡・駆逐
+    const from = withGroupC(usaBase, { shipTypes: [3, 2] });
+    const mine = withGroupC(from, { shipTypes: [2] });
+    const theirs = withGroupC(from, { shipTypes: [8, 9, 3, 2] });
+
+    // 実行
+    const { result } = run(mine, theirs, from);
+
+    // 検証
+    expect(result.conflicts).toEqual([]);
+    expect(mergedField(result.merged, "shipTypes")).toEqual([8, 9, 2]);
+  });
+
+  it("相手が外した艦種は、自分が残していても外す（自動で合わせた所に入れる）", () => {
+    const from = withGroupC(usaBase, { shipTypes: [3, 2] });
+    const mine = withGroupC(from, { shipTypes: [3, 2, 1] });
+    const theirs = withGroupC(from, { shipTypes: [2] });
+
+    const { result } = run(mine, theirs, from);
+
+    expect(mergedField(result.merged, "shipTypes")).toEqual([2, 1]);
+    expect(result.autoMerged).toContainEqual(expect.objectContaining({ location: SHIP_TYPES_AT, change: "modified" }));
+  });
+
+  it("結果が空なら、shipTypes の項目を持たない（2 人がそれぞれ外して空になった。国籍はそのまま）", () => {
+    const from = withGroupC(usaBase, { shipTypes: [3, 2] });
+    const mine = withGroupC(from, { shipTypes: [3] });
+    const theirs = withGroupC(from, { shipTypes: [2] });
+
+    const { result } = run(mine, theirs, from);
+
+    expect(result.conflicts).toEqual([]);
+    expect(mergedField(result.merged, "shipTypes")).toBeUndefined();
+    expect(mergedField(result.merged, "nationalities")).toEqual(["usa"]);
+  });
+
+  it("省略は空として扱う（相手が項目を消し、自分は空の配列にした：項目を持たず、自動で合わせた所にも入れない）", () => {
+    const from = withGroupC(usaBase, { shipTypes: [2] });
+    const mine = withGroupC(from, { shipTypes: [] });
+    const theirs = withGroupC(from, { shipTypes: undefined });
+
+    const { result } = run(mine, theirs, from);
+
+    expect(mergedField(result.merged, "shipTypes")).toBeUndefined();
+    expect(shipTypesAutoMerged(result.autoMerged)).toEqual([]);
+  });
+
+  it("自分だけが艦種を変えたら、その艦種のまま（自動で合わせた所には入れない）", () => {
+    const mine = withGroupC(usaBase, { shipTypes: [2] });
+
+    const { result } = run(mine, usaBase, usaBase);
+
+    expect(mergedField(result.merged, "shipTypes")).toEqual([2]);
+    expect(result.autoMerged).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("相手だけが艦種を変えたら、その艦種を取り込み、自動で合わせた所に入れる", () => {
+    const theirs = withGroupC(usaBase, { shipTypes: [2] });
+
+    const { result } = run(usaBase, theirs, usaBase);
+
+    expect(mergedField(result.merged, "shipTypes")).toEqual([2]);
+    expect(result.autoMerged).toContainEqual(expect.objectContaining({ location: SHIP_TYPES_AT, change: "modified" }));
+  });
+
+  it("艦種の変更と国籍の変更は別々に合わせる（相手が艦種、自分が国籍を足したら両方を取り込む）", () => {
+    const mine = withGroupC(usaBase, { nationalities: ["usa", "uk"] });
+    const theirs = withGroupC(usaBase, { shipTypes: [8, 9] });
+
+    const { result } = run(mine, theirs, usaBase);
+
+    expect(result.conflicts).toEqual([]);
+    expect(mergedField(result.merged, "nationalities")).toEqual(["usa", "uk"]);
+    expect(mergedField(result.merged, "shipTypes")).toEqual([8, 9]);
+  });
+
+  it("合わせた国籍が空なら、艦種も持たない（自分が国籍を全部外し、相手が艦種を足した。艦種だけのグループを作らない）", () => {
+    // 準備
+    const mine = withGroupC(usaBase, { nationalities: undefined });
+    const theirs = withGroupC(usaBase, { shipTypes: [2] });
+
+    // 実行
+    const { result } = run(mine, theirs, usaBase);
+
+    // 検証
+    expect(result.conflicts).toEqual([]);
+    expect(mergedField(result.merged, "nationalities")).toBeUndefined();
+    expect(mergedField(result.merged, "shipTypes")).toBeUndefined();
+  });
+
+  it("合わせた国籍が空なら、艦種も持たない（2 人がそれぞれ国籍を外して空になった。base の艦種は残さない）", () => {
+    const from = withGroupC(base, { nationalities: ["usa", "uk"], shipTypes: [2] });
+    const mine = withGroupC(from, { nationalities: ["usa"] });
+    const theirs = withGroupC(from, { nationalities: ["uk"] });
+
+    const { result } = run(mine, theirs, from);
+
+    expect(result.conflicts).toEqual([]);
+    expect(mergedField(result.merged, "nationalities")).toBeUndefined();
+    expect(mergedField(result.merged, "shipTypes")).toBeUndefined();
+  });
+
+  it("特効グループ：相手が削除し、自分が艦種だけを変えたら衝突（相手「削除」、自分「変更」）", () => {
+    // 準備：base の連合艦隊A は国籍 アメリカ
+    const from = editDoc(base, (d) => {
+      groupOf(d, "E2-3-A").nationalities = ["usa"];
+    });
+    const mine = editDoc(from, (d) => {
+      (groupOf(d, "E2-3-A") as unknown as Record<string, unknown>).shipTypes = [2];
+    });
+    const theirs = editDoc(from, (d) => {
+      const stage = stageOf(d, "E2-3");
+      stage.boosts = stage.boosts.filter((g) => g.id !== "E2-3-A");
+    });
+
+    // 実行
+    const { result } = run(mine, theirs, from);
+
+    // 検証
+    const conflict = conflictAt(result.conflicts, {
+      kind: "boostGroup",
+      stageId: "E2-3",
+      groupId: "E2-3-A",
+      field: null,
+    });
+    expect(result.conflicts).toHaveLength(1);
+    expect(conflict).toMatchObject({ theirsText: "削除", mineText: "変更", stageId: "E2-3" });
+  });
+
+  it("艦種のない文書どうしのマージでは、どのグループも shipTypes の項目を持たない", () => {
+    const mine = editDoc(usaBase, (d) => {
+      stageOf(d, "E2-3").importance = "important";
+    });
+
+    const { result } = run(mine, usaBase, usaBase);
+
+    expect(result.merged.stages.flatMap((s) => s.boosts).some((g) => Object.hasOwn(g, "shipTypes"))).toBe(false);
+  });
+});
