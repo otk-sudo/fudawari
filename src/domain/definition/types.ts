@@ -7,8 +7,9 @@
 //   内容を変えるときは新しいオブジェクトを作る。
 // - 並び順は配列の順で表す（areas・fudas は配列の順がそのまま並び順。
 //   stages は同じ海域の段階どうしの配列の中での前後が、その海域の中の並び順）。
-// - 特効は「段階のボスで効く艦名グループ × 倍率」だけを持つ（U11）。
-//   艦種補正・国籍・装備・道中・海域全体の倍率は持たない。
+// - 特効は「段階のボスで効く艦名・国籍のグループ × 倍率」だけを持つ（U11。国籍は v1.1 で足した）。
+//   艦種補正・装備・道中・海域全体の倍率は持たない。
+import type { BoostNationality } from "@/domain/nationality";
 
 /** 公開定義 JSON の形式の版。形を変えるときに上げる */
 export type DefinitionSchemaVersion = 1;
@@ -56,7 +57,10 @@ export interface Fuda {
   readonly gameNumber: number | null;
 }
 
-/** 特効グループ（この段階のボスで効く艦名の集合 × 倍率） */
+/**
+ * 特効グループ（この段階のボスで効く艦名・国籍の集合 × 倍率）。
+ * shipNames に艦の baseName がある、または nationalities に艦の国籍があるグループが、その艦に効く
+ */
 export interface BoostGroup {
   /** グループ ID（定義全体で重複しない） */
   readonly id: string;
@@ -66,6 +70,11 @@ export interface BoostGroup {
   readonly multiplier: number;
   /** 艦名（改装段階を問わない艦名。例「時雨」は 時雨改二・時雨改三 にも効く） */
   readonly shipNames: readonly string[];
+  /**
+   * 国籍（任意。v1.1）。この国籍の艦に効く（国籍が "unknown" の艦には効かない）。
+   * 検証後の値では、省略・空の配列なら項目を持たない。編集（setGroupNationalities）・マージは BOOST_NATIONALITIES の順に並べる
+   */
+  readonly nationalities?: readonly BoostNationality[];
 }
 
 /** 攻略段階（段階） */

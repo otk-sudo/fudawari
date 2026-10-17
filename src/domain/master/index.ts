@@ -8,7 +8,7 @@ export type {
   ShipMasterEntry,
 } from "./types";
 export type { InvalidFriendlyRow, InvalidFriendlyRowField, Start2Like } from "./fromStart2";
-export { baseNameOf, createShipMaster, lookupShip } from "./master";
+export { baseNameOf, boostTargetOf, createShipMaster, lookupShip } from "./master";
 export { baseNameOfShipName } from "./nameIndex";
 export { buildShipMasterEntries, findInvalidFriendlyRows, readStart2 } from "./fromStart2";
 export { deriveRemodelInfo } from "./remodel";

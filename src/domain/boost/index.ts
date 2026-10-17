@@ -1,5 +1,5 @@
 // 特効の計算の入口
-export type { FudaBoost, ShipBoostSummary, StageBoost } from "./types";
+export type { BoostTarget, FudaBoost, ShipBoostSummary, StageBoost } from "./types";
 export {
   countBoostedShipsByStage,
   fudaBoost,

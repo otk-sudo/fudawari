@@ -3,10 +3,10 @@
 // 対応が必要な 1 件の表示（艦名・Lv・計画の札・実際の札・説明文）、札の色の上に置く文字の色、日時・倍率の書き方を、
 // 差分の判定（@/domain/drift）・定義・艦船マスタから組み立てる。画面・保存に依存しない。
 // 代わりの艦の提案は作らない（U23）。説明文の特効は「段階の表示名 ×倍率」（stageLabel。例「E2 ゲージ3 ×1.24」）。
-import { fudaBoost, stageLabel } from "@/domain/boost";
+import { type BoostTarget, fudaBoost, stageLabel } from "@/domain/boost";
 import type { Fuda, PublicDefinition } from "@/domain/definition/types";
 import type { DriftEntry, FudaProgress } from "@/domain/drift";
-import { baseNameOf, lookupShip } from "@/domain/master";
+import { boostTargetOf, lookupShip } from "@/domain/master";
 import type { ShipMaster } from "@/domain/master/types";
 import type { OwnedShip } from "@/domain/ship/types";
 
@@ -120,8 +120,8 @@ export function fudaMapOf(definition: PublicDefinition): ReadonlyMap<string, Fud
  * 艦のその札での特効を「段階の表示名 ×倍率」で並べた文（例「E2 ゲージ2 ×1.19・E2 ゲージ3 ×1.24」）。
  * 段階の順は特効の計算（@/domain/boost）と同じ。特効がなければ（マスタにない艦を含む）null
  */
-export function boostText(definition: PublicDefinition, fudaId: string, baseName: string | null): string | null {
-  const boost = fudaBoost(definition, fudaId, baseName);
+export function boostText(definition: PublicDefinition, fudaId: string, target: BoostTarget | null): string | null {
+  const boost = fudaBoost(definition, fudaId, target);
   if (!boost.hasBoost) return null;
   return boost.stages
     .map((stage) => `${stageLabel(definition, stage.stageId)} ${formatMultiplier(stage.multiplier)}`)
@@ -137,18 +137,18 @@ export function boostText(definition: PublicDefinition, fudaId: string, baseName
 function describeIssue(
   definition: PublicDefinition,
   entry: DriftEntry,
-  baseName: string | null,
+  target: BoostTarget | null,
   planned: Fuda | undefined,
   actual: Fuda | undefined,
 ): string {
   if (entry.kind === "unplanned") {
     const actualName = actual?.name ?? unknownFudaLabel(entry.actualGameNumber);
-    const boost = actual === undefined ? null : boostText(definition, actual.id, baseName);
+    const boost = actual === undefined ? null : boostText(definition, actual.id, target);
     const boostNote = boost === null ? "" : `この艦は${actualName}で特効があります（${boost}）。`;
     return `計画になかった艦に${actualName}の札が付きました。${boostNote}`;
   }
   const plannedName = planned?.name ?? UNPLANNED_FUDA_LABEL;
-  const boost = planned === undefined ? null : boostText(definition, planned.id, baseName);
+  const boost = planned === undefined ? null : boostText(definition, planned.id, target);
   const loss = boost === null ? `${plannedName}の枠が1つ空きました` : `${plannedName}の特効艦が1隻減りました（${boost}）`;
   if (actual === undefined) {
     return `${unknownFudaLabel(entry.actualGameNumber)}が付いたため、${loss}。計画を実際に合わせると、この艦は控えに戻ります。`;
@@ -187,6 +187,6 @@ export function issueViewOf(
     level: ship?.level ?? null,
     planned: chipOf(fudas, entry.plannedFudaId, UNPLANNED_FUDA_LABEL),
     actual: chipOf(fudas, entry.actualFudaId, unknownFudaLabel(entry.actualGameNumber)),
-    description: describeIssue(definition, entry, baseNameOf(master, entry.shipId), planned, actual),
+    description: describeIssue(definition, entry, boostTargetOf(master, entry.shipId), planned, actual),
   };
 }

@@ -8,8 +8,9 @@
 // - 取得の一時的な失敗（通信の失敗、5xx など）は、少し待って再試行する。
 // - 壊れたマスタを配らないよう、味方艦の隻数の下限と、味方艦の行の数の項目（図鑑番号・艦種・艦型・運の初期値）を確かめる。
 import { buildShipMasterEntries, findInvalidFriendlyRows, readStart2 } from "@/domain/master/fromStart2";
-import { SHIP_CLASS_NAMES } from "@/domain/master/shipClassNames";
+import { SHIP_CLASS_NAMES, SHIP_CLASS_NATIONALITIES } from "@/domain/master/shipClassNames";
 import type { ShipMasterEntry } from "@/domain/master/types";
+import type { BoostNationality } from "@/domain/nationality";
 
 /** start2.json の取得元 */
 export const START2_URL = "https://raw.githubusercontent.com/Tibowl/api_start2/master/start2.json";
@@ -17,7 +18,10 @@ export const START2_URL = "https://raw.githubusercontent.com/Tibowl/api_start2/m
 /** 書き出し先（プロジェクトのルートからの相対パス） */
 export const SHIP_MASTER_OUTPUT_PATH = "public/data/ship-master.json";
 
-/** 艦船マスタのファイルの形式の版。形を変えるときに上げる */
+/**
+ * 艦船マスタのファイルの形式の版。形を変えるときに上げる。
+ * v1.1 の国籍（nationality）は項目を足すだけなので 1 のまま（読み込みは、国籍のない古い行を unknown として読む）
+ */
 export const SHIP_MASTER_FILE_SCHEMA_VERSION = 1;
 
 /** 味方艦の隻数の下限の既定値（2026-10 の実データは 866 隻） */
@@ -51,6 +55,8 @@ export interface GenerateShipMasterDeps {
   writeFile: (path: string, content: string) => Promise<void>;
   /** 艦型の名前の対応表。省略すると SHIP_CLASS_NAMES（src/domain/master/shipClassNames.ts） */
   classNames?: ReadonlyMap<number, string>;
+  /** 艦型の国籍の対応表（v1.1）。省略すると SHIP_CLASS_NATIONALITIES（src/domain/master/shipClassNames.ts） */
+  classNationalities?: ReadonlyMap<number, BoostNationality>;
   /** 書き出し先。省略すると SHIP_MASTER_OUTPUT_PATH */
   outputPath?: string;
   /**
@@ -90,6 +96,7 @@ export interface GenerateShipMasterResult {
 export async function generateShipMaster(deps: GenerateShipMasterDeps): Promise<GenerateShipMasterResult> {
   const outputPath = deps.outputPath ?? SHIP_MASTER_OUTPUT_PATH;
   const classNames = deps.classNames ?? SHIP_CLASS_NAMES;
+  const classNationalities = deps.classNationalities ?? SHIP_CLASS_NATIONALITIES;
   const minShipCount = deps.minShipCount ?? DEFAULT_MIN_SHIP_COUNT;
 
   // 取得（一時的な失敗は再試行する）
@@ -118,7 +125,7 @@ export async function generateShipMaster(deps: GenerateShipMasterDeps): Promise<
   }
 
   // 変換（味方艦が 1 隻もない・下限に満たなければ、壊れたマスタを配らないよう止める）
-  const ships = buildShipMasterEntries(start2, classNames);
+  const ships = buildShipMasterEntries(start2, classNames, classNationalities);
   if (ships.length === 0) {
     throw new Error("start2.json の api_mst_ship に味方艦が 1 隻もありません");
   }

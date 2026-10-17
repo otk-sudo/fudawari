@@ -54,7 +54,7 @@ export function shipTypeLabel(info: ShipLookup): string {
 /** 画面に出す艦の情報（控えの組み立て〔buildTray〕の TrayEntry と同じ形：個体・マスタで引いた情報・特効のまとめ） */
 export function shipEntryOf(definition: PublicDefinition, master: ShipMaster, ship: OwnedShip): TrayEntry {
   const info = lookupShip(master, ship.shipId);
-  return { ship, info, boost: shipBoostSummary(definition, info.known ? info.baseName : null) };
+  return { ship, info, boost: shipBoostSummary(definition, info.known ? info : null) };
 }
 
 /** 艦が札で特効を持つか（倍率が 1 より大きい段階がある） */

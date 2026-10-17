@@ -5,6 +5,7 @@
 //   艦 ID から引ける形にして返す。
 // - 例外は投げず、結果（ShipMasterLoadResult）で返す。取得の失敗と形の誤りは kind で区別する（src/lib/definition/load.ts と同じ粒度）。
 import { createShipMaster, type RemodelStage, type ShipMaster, type ShipMasterEntry } from "@/domain/master";
+import { isNationality, type Nationality } from "@/domain/nationality";
 
 /** 艦船マスタの置き場所（ファイルは public/data/ship-master.json。generateShipMaster.ts の SHIP_MASTER_OUTPUT_PATH と対応する） */
 export const SHIP_MASTER_PATH = "/data/ship-master.json";
@@ -14,6 +15,7 @@ export const SHIP_MASTER_PATH = "/data/ship-master.json";
  * - "invalid_json"：JSON として読めない
  * - "unsupported_version"：形式の版（schemaVersion）が 1 でない（ない・数でないを含む）
  * - "invalid_shape"：形が違う（ルートがオブジェクトでない、ships が配列でない・空、項目が欠けた行・型の違う行がある）
+ *   国籍（nationality。v1.1）は欠けていてもよい（unknown として読む）。あって国籍でない値は誤り
  */
 export type ShipMasterInvalidReason = "invalid_json" | "unsupported_version" | "invalid_shape";
 
@@ -98,7 +100,8 @@ function readEntry(value: unknown, path: string): EntryReadResult {
   if (!isRecord(value)) return { ok: false, path };
   const at = (field: keyof ShipMasterEntry): EntryReadResult => ({ ok: false, path: `${path}.${field}` });
 
-  const { id, name, yomi, baseName, shipTypeId, shipClassId, shipClassName, remodelStage, sortNo, luckBase } = value;
+  const { id, name, yomi, baseName, shipTypeId, shipClassId, shipClassName, nationality, remodelStage, sortNo, luckBase } =
+    value;
   // 艦 ID は索引のキーなので整数に限る（生成は正の整数だけを書き出す）
   if (typeof id !== "number" || !Number.isSafeInteger(id)) return at("id");
   if (typeof name !== "string") return at("name");
@@ -107,13 +110,28 @@ function readEntry(value: unknown, path: string): EntryReadResult {
   if (!isFiniteNumber(shipTypeId)) return at("shipTypeId");
   if (!isFiniteNumber(shipClassId)) return at("shipClassId");
   if (typeof shipClassName !== "string") return at("shipClassName");
+  // 国籍は v1.1 で足した項目。ない行（それより前に生成したファイル）は unknown として読み、あって国籍でない値は誤り
+  if (nationality !== undefined && !isNationality(nationality)) return at("nationality");
+  const readNationality: Nationality = nationality ?? "unknown";
   if (!isRemodelStage(remodelStage)) return at("remodelStage");
   if (!isFiniteNumber(sortNo)) return at("sortNo");
   if (!isFiniteNumber(luckBase)) return at("luckBase");
 
   return {
     ok: true,
-    entry: { id, name, yomi, baseName, shipTypeId, shipClassId, shipClassName, remodelStage, sortNo, luckBase },
+    entry: {
+      id,
+      name,
+      yomi,
+      baseName,
+      shipTypeId,
+      shipClassId,
+      shipClassName,
+      nationality: readNationality,
+      remodelStage,
+      sortNo,
+      luckBase,
+    },
   };
 }
 

@@ -9,6 +9,7 @@ import {
   parseShipNameList,
   type StagePatch,
 } from "@/domain/definition-edit";
+import type { BoostNationality } from "@/domain/nationality";
 import { BoostGroupEditor } from "./BoostGroupEditor";
 import { inkFor } from "./colors";
 import controls from "./controls.module.css";
@@ -24,6 +25,8 @@ export interface StageActions {
   removeGroup: (groupId: string) => void;
   addShips: (groupId: string, shipNames: readonly string[]) => void;
   removeShip: (groupId: string, shipName: string) => void;
+  /** 特効グループの国籍を選び直す（渡した国籍だけにする。v1.1） */
+  setNationalities: (groupId: string, nationalities: readonly BoostNationality[]) => void;
 }
 
 export type StageDetailProps = {

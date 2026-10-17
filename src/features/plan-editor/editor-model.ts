@@ -235,7 +235,12 @@ const STAGE_FIELD_LABELS: Readonly<Record<string, string>> = {
   importance: "大事さ",
   areaId: "海域",
 };
-const GROUP_FIELD_LABELS: Readonly<Record<string, string>> = { name: "名前", multiplier: "倍率", shipNames: "艦名" };
+const GROUP_FIELD_LABELS: Readonly<Record<string, string>> = {
+  name: "名前",
+  multiplier: "倍率",
+  shipNames: "艦名",
+  nationalities: "国籍",
+};
 const FUDA_FIELD_LABELS: Readonly<Record<string, string>> = { name: "名前", color: "色", gameNumber: "札番号" };
 const EVENT_FIELD_LABELS: Readonly<Record<string, string>> = {
   "event.name": "イベント名",

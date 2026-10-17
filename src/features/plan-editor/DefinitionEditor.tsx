@@ -26,6 +26,7 @@ import {
   moveStage,
   removeArea,
   removeShipName,
+  setGroupNationalities,
   type StagePatch,
   type StagePosition,
   toDateTimeLocalValue,
@@ -45,6 +46,7 @@ import {
   mergeDefinitions,
   resolveMerge,
 } from "@/domain/merge";
+import type { BoostNationality } from "@/domain/nationality";
 import { ConflictDialog, type MergedItem, MergedItemLine } from "./ConflictDialog";
 import { EditorDndProvider, type DragItem, type DropTarget } from "./editor-dnd";
 import {
@@ -553,6 +555,9 @@ export function DefinitionEditor({
     },
     removeShip: (groupId: string, shipName: string): void => {
       edit((doc) => removeShipName(doc, groupId, shipName));
+    },
+    setNationalities: (groupId: string, nationalities: readonly BoostNationality[]): void => {
+      edit((doc) => setGroupNationalities(doc, groupId, nationalities));
     },
   };
 
