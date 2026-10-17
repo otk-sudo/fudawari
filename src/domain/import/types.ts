@@ -1,8 +1,9 @@
 // 取り込みデータの解析（roadmap T2-1、要件 3.4、U8・U9）の型
 //
-// - 受け付ける形式は制空権シミュと同じ 2 種類（docs/research/import-and-master.md）
+// - 受け付ける形式（要件 3.4・U8、docs/research/import-and-master.md）
 //   ① `svdata=` で始まるゲームの API 応答（api_data.api_ship の配列）
 //   ② 短縮形式の JSON 配列（id・ship_id・lv・exp・st・area）。ship_id がない古い形式は id が艦の ID で、個体 ID はない
+//   ③ api_ship の配列（① の要素を svdata=・api_data なしで並べた JSON 配列。2026-10-17 追加）
 // - 解析は通信しない純粋な関数（parse.ts の parseImportText）。壊れた入力でも例外を投げず、理由を返す。
 import type { OwnedShip } from "@/domain/ship/types";
 
@@ -19,8 +20,9 @@ export interface ImportFilter {
  * - "svdata"：`svdata=` で始まる文字列（ロックの情報あり、個体 ID あり）
  * - "compact"：短縮形式で ship_id がある新しい形式（個体 ID あり、ロックの情報なし）
  * - "compactLegacy"：短縮形式で ship_id がない古い形式（個体 ID なし、ロックの情報なし）
+ * - "apiShipArray"：api_ 付きの項目の艦を並べた JSON 配列（svdata= も api_data もない。個体 ID あり、ロックの情報は読めた艦のすべてに api_locked があるときだけ）
  */
-export type ImportFormat = "svdata" | "compact" | "compactLegacy";
+export type ImportFormat = "svdata" | "compact" | "compactLegacy" | "apiShipArray";
 
 /**
  * 解析に失敗した理由
@@ -39,7 +41,7 @@ export interface ImportSuccess {
   format: ImportFormat;
   /**
    * 取り込む艦の個体の一覧（入力の順）
-   * - uid：svdata は api_id、新しい短縮形式は id を文字列にしたもの（同じ艦はどちらの形式でも同じ uid になる）。
+   * - uid：svdata・api_ship の配列は api_id、新しい短縮形式は id を文字列にしたもの（同じ艦はどの形式でも同じ uid になる）。
    *   古い短縮形式は連番で振る（重複しない。同じ入力なら同じ値）
    * - luck：艦船マスタの運の初期値＋近代化改修の運（api_kyouka[4]／st[4]）。マスタにない艦は近代化改修の運だけ（なければ 0）
    * - sallyArea：api_sally_area／area の値そのまま（ない・偽の値は 0）
@@ -52,7 +54,7 @@ export interface ImportSuccess {
   taggedShipCount: number;
   /** 個体 ID があるか。false（古い短縮形式）のときは、前の割り当てを引き継げない（U9） */
   hasUid: boolean;
-  /** ロックの情報があるか（svdata 形式だけ true） */
+  /** ロックの情報があるか（svdata 形式と、読めた艦のすべてに api_locked がある api_ship の配列で true） */
   hasLockInfo: boolean;
   /** 「ロック済みだけ」を選んだが、ロックの情報がない形式のため絞り込まなかった（すべての艦を対象にした） */
   lockFilterIgnored: boolean;
