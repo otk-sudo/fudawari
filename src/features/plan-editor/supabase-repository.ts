@@ -118,14 +118,26 @@ export function requireClient(): SupabaseClient {
 const SESSION_EXPIRED_AUTH_CODES: ReadonlySet<string> = new Set(["bad_jwt", "session_not_found"]);
 
 /**
+ * Auth の失敗のうち、状態コードによらずセッションが切れていることを表すコード
+ * （リフレッシュトークンがない・使い済み、セッションの期限切れ。Auth は 400 で返すことがある）
+ */
+const SESSION_GONE_AUTH_CODES: ReadonlySet<string> = new Set([
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "session_expired",
+]);
+
+/**
  * auth.getUser の失敗を Error にする。SessionExpiredError にするのは、セッションが切れていると分かるときだけ
- * （AuthSessionMissingError、AuthApiError の 401、403 の bad_jwt・session_not_found）。
+ * （AuthSessionMissingError、AuthApiError の 401、403 の bad_jwt・session_not_found、
+ * 状態コードによらない refresh_token_not_found・refresh_token_already_used・session_expired）。
  * 回数の上限（429）は「しばらくしてから」の失敗、届かなかった・Auth のサーバーの障害は通信の失敗にする
  */
 function authError(error: AuthError): Error {
   if (isAuthSessionMissingError(error)) return new SessionExpiredError();
   if (isAuthApiError(error)) {
     if (error.status === 401) return new SessionExpiredError();
+    if (error.code !== undefined && SESSION_GONE_AUTH_CODES.has(error.code)) return new SessionExpiredError();
     if (error.status === 403 && error.code !== undefined && SESSION_EXPIRED_AUTH_CODES.has(error.code)) {
       return new SessionExpiredError();
     }
@@ -404,7 +416,7 @@ async function load(): Promise<PlanEditorData> {
 
   const members: EditorMember[] = [...profiles]
     .sort(compareMembers)
-    .map((profile) => ({ displayName: profile.displayName, role: profile.role }));
+    .map((profile) => ({ userId: profile.userId, displayName: profile.displayName, role: profile.role }));
   // 元にするイベントの候補：既存のイベントすべてを新しい順（新規作成から見ると、最新のイベントも過去のイベント）
   const baseEventOptions: BaseEventOption[] = [...events]
     .sort(compareNewest)

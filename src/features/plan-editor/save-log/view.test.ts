@@ -15,7 +15,7 @@ import { type SaveLogFilter, type SaveLogMember, type SaveLogUserOption, saveLog
 // そのため、表示名で絞り込んでいた既存のテスト 4 件（誰が・条件を重ねる・どれにも合わない・書き換えない）を filter.user で書き直した。
 // filter.userName は実装担当が消す（そのときは下の ALL の userName: null も消す）
 
-const ALL: SaveLogFilter = { userName: null, user: null, kind: null, mapLabel: null };
+const ALL: SaveLogFilter = { user: null, kind: null, mapLabel: null };
 
 /** 表示名から利用者の ID（テスト用の人） */
 const USER_IDS: Readonly<Record<string, string>> = {

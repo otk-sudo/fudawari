@@ -4,6 +4,11 @@
  * ライトの値は theme.css と同じく「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる
  */
 
+/* 読み上げの入れ物（誰もいないときも描く）。空のときは、上部の欄の行の間隔（gap 4px）を詰めて、空の行が見えないようにする */
+.live:empty {
+  margin-top: -4px;
+}
+
 .list {
   --presence-text: #cfe0ff; /* 編集中の文 */
   --presence-dot: #3fb37f; /* 開いている印の緑 */

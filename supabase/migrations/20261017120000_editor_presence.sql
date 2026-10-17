@@ -1,4 +1,4 @@
--- 定義画面の「編集中」の表示（Realtime の Presence）を、管理者・協力者だけに限る（roadmap T3-9。設計は docs/design/database.md の 3.1）
+-- 定義画面の「編集中」の表示（Realtime の Presence）を、管理者・協力者だけに限る（roadmap T3-9。設計は docs/design/database.md の 5 章）
 --
 -- - 画面は「plan-editor:（イベント ID）」の private チャンネルで参加する。private のチャンネルは realtime.messages の RLS で許可を決める。
 -- - 判定は can_use_editor_presence(topic) にまとめ、ポリシーから呼ぶ（判定の中身を pgTAP で確かめられるようにする）。

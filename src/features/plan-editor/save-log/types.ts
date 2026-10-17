@@ -12,11 +12,8 @@ export interface SaveLogEntry {
   readonly id: number;
   /** 記録した日時（同じ時刻の日本時間の「秒の小数のない時差つき」。例 "2026-10-15T22:52:00+09:00"） */
   readonly createdAt: string;
-  /**
-   * 保存・公開した人の ID（save_logs.user_id。古い記録などで分からなければ null）。「誰が」の絞り込みに使う（PR-12b）。
-   * 【PR-12b の先行テスト用に省略できる形で置いた。実装担当が省略できない形にし、loadSaveLogs で入れる】
-   */
-  readonly userId?: string | null;
+  /** 保存・公開した人の ID（save_logs.user_id。古い記録などで分からなければ null）。「誰が」の絞り込みに使う */
+  readonly userId: string | null;
   /** 誰が（保存・公開した人の表示名） */
   readonly userName: string;
   /** 種類 */

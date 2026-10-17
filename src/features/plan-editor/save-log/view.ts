@@ -23,13 +23,8 @@ export interface SaveLogUserOption {
 
 /** 絞り込みの条件（null は「全員」「すべて」） */
 export interface SaveLogFilter {
-  /**
-   * 誰が（saveLogUserOptions の選択肢。null は全員）。PR-12b で userName の代わりにする。
-   * 【PR-12b の先行テスト用に省略できる形で置いた。実装担当が userName を消し、省略できない形にする】
-   */
-  readonly user?: SaveLogUserOption | null;
-  /** 誰が（記録の userName と同じ表示名。null は全員）【PR-12b で user に置き換える】 */
-  readonly userName: string | null;
+  /** 誰が（saveLogUserOptions の選択肢。null は全員） */
+  readonly user: SaveLogUserOption | null;
   /** 種類（null はすべて） */
   readonly kind: SaveLogKind | null;
   /** 海域の表示名（null はすべて。海域を選ぶと mapLabel が null の記録〔公開など〕は出さない） */
@@ -46,9 +41,15 @@ export interface SaveLogView {
   readonly hasMore: boolean;
 }
 
+/** 記録が「誰が」の選択肢の人のものか（ID があれば ID で、ID の分からない記録は表示名で見分ける） */
+function isByUser(entry: SaveLogEntry, user: SaveLogUserOption): boolean {
+  if (user.userId !== null) return entry.userId === user.userId;
+  return entry.userId === null && entry.userName === user.name;
+}
+
 /** 記録が条件をすべて満たすか（null の条件は問わない） */
 function matches(entry: SaveLogEntry, filter: SaveLogFilter): boolean {
-  if (filter.userName !== null && entry.userName !== filter.userName) return false;
+  if (filter.user !== null && !isByUser(entry, filter.user)) return false;
   if (filter.kind !== null && entry.kind !== filter.kind) return false;
   if (filter.mapLabel !== null && entry.mapLabel !== filter.mapLabel) return false;
   return true;
@@ -74,21 +75,29 @@ export function saveLogUserOptions(
   entries: readonly SaveLogEntry[],
   members: readonly SaveLogMember[],
 ): SaveLogUserOption[] {
-  // 【PR-12b の先行テスト用の空の入れ物】中身は実装担当が作る（テスト：view.test.ts の saveLogUserOptions）
-  void entries;
-  void members;
-  throw new Error("未実装（PR-12b）");
-}
+  const memberIds = new Set(members.map((member) => member.userId));
+  const recordedIds = new Set(entries.flatMap((entry) => (entry.userId === null ? [] : [entry.userId])));
 
-/**
- * 「誰が」の選択肢に出す表示名（記録に現れる人だけ）。
- * 編集できる人の並び（memberNames。管理者を先に、追加した順）に並べ、そこにいない人（外された協力者など）は
- * 記録に現れた順（新しい順）で後ろに足す。同じ名前は 1 つにする
- */
-export function saveLogUserNames(entries: readonly SaveLogEntry[], memberNames: readonly string[]): string[] {
-  const appeared = new Set(entries.map((entry) => entry.userName));
-  const members = memberNames.filter((name, index) => appeared.has(name) && memberNames.indexOf(name) === index);
-  const memberSet = new Set(members);
-  const others = [...appeared].filter((name) => !memberSet.has(name));
-  return [...members, ...others];
+  // 編集できる人のうち記録に現れる人（編集できる人の並び・今の表示名。同じ ID は 1 つ）
+  const options: SaveLogUserOption[] = [];
+  const added = new Set<string>();
+  for (const member of members) {
+    if (!recordedIds.has(member.userId) || added.has(member.userId)) continue;
+    added.add(member.userId);
+    options.push({ userId: member.userId, name: member.displayName });
+  }
+
+  // 編集できる人にいない人（外された人は ID ごと、ID の分からない記録は表示名ごと）を、記録に現れた順で後ろに足す
+  const addedNames = new Set<string>();
+  for (const entry of entries) {
+    if (entry.userId === null) {
+      if (addedNames.has(entry.userName)) continue;
+      addedNames.add(entry.userName);
+      options.push({ userId: null, name: entry.userName });
+    } else if (!memberIds.has(entry.userId) && !added.has(entry.userId)) {
+      added.add(entry.userId);
+      options.push({ userId: entry.userId, name: entry.userName });
+    }
+  }
+  return options;
 }
