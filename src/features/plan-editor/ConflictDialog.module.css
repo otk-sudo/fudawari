@@ -1,0 +1,182 @@
+/*
+ * 保存の確認（モック PlanEditor.dc.html の role="alertdialog"）と、自動で合わせた所の行。
+ * 色は PlanEditor.module.css の .root に置いた変数（--pe-merge-*・--pe-conflict など。ダーク・ライト）を使う
+ */
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--pe-merge-bg);
+  border: 1px solid var(--pe-merge-border);
+  border-radius: 6px;
+}
+
+.dialog:focus-visible {
+  outline: 3px solid var(--pe-drop);
+  outline-offset: 2px;
+}
+
+.title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--pe-pending);
+}
+
+.note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pe-merge-text);
+}
+
+.noteConflict {
+  color: var(--pe-danger);
+}
+
+.noteMerged {
+  color: var(--pe-merge-accent);
+}
+
+.mergedList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mergedItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--pe-merge-text);
+}
+
+.mergedPlace,
+.conflictPlace {
+  min-height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mergedPlace {
+  color: var(--pe-merge-accent);
+  border: 1px solid var(--pe-merge-border);
+}
+
+.conflictPlace {
+  color: var(--pe-danger);
+  border: 1px solid var(--pe-danger-border);
+}
+
+.conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 5px;
+}
+
+.conflictText {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.choice {
+  min-height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.choiceOn {
+  background: var(--pe-choice-bg);
+  color: var(--pe-choice-text);
+  border-color: var(--pe-link);
+}
+
+.choice:disabled {
+  cursor: not-allowed;
+}
+
+.problem {
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--pe-danger-bg);
+  border: 1px solid var(--pe-danger-border);
+  border-radius: var(--radius-md);
+  color: var(--pe-danger-text);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.confirm {
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--color-accent);
+  color: var(--pe-on-accent);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.confirm:disabled {
+  background: var(--pe-disabled-bg);
+  color: var(--pe-disabled-text);
+  cursor: not-allowed;
+}
+
+.cancel {
+  min-height: 34px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cancel:disabled {
+  cursor: not-allowed;
+}
+
+.choice:focus-visible,
+.confirm:focus-visible,
+.cancel:focus-visible,
+.mergedPlace:focus-visible,
+.conflictPlace:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 2px;
+}

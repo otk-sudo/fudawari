@@ -26,7 +26,18 @@ export type FlowSectionProps = {
   /** 「＋ E4 を追加」：海域を追加し、追加した海域の ID を返す（追加できなければ null） */
   onAddArea: () => string | null;
   onRemoveArea: (areaId: string) => void;
+  /** 段階の印（保存の衝突の確認。段階の ID → 印）。省略なら付けない */
+  marks?: ReadonlyMap<string, StageMark>;
 };
+
+/**
+ * 段階の印（要件 3.7「同時編集」）
+ * - conflict：2 人とも変えた段階（赤く光らせ「要選択」）
+ * - merged：相手だけが変えた段階（橙の枠と「（名前）が変更」）
+ */
+export type StageMark = { readonly kind: "conflict" } | { readonly kind: "merged"; readonly name: string };
+
+const NO_MARKS: ReadonlyMap<string, StageMark> = new Map();
 
 /**
  * 攻略の流れ（要件 3.7「攻略の流れ」）。海域ごとに 1 行で、段階を左から順に札の色で並べる。
@@ -62,6 +73,7 @@ export function FlowSection(props: FlowSectionProps): ReactNode {
           selectedStageId={props.selectedStageId}
           disabled={props.disabled}
           canRemove={canRemoveArea(doc, area.id)}
+          marks={props.marks ?? NO_MARKS}
           menuOpen={menuAreaId === area.id}
           onToggleMenu={(open) => setMenuAreaId(open ? area.id : null)}
           onSelectStage={props.onSelectStage}
@@ -96,6 +108,7 @@ type AreaRowProps = {
   selectedStageId: string | null;
   disabled: boolean;
   canRemove: boolean;
+  marks: ReadonlyMap<string, StageMark>;
   menuOpen: boolean;
   onToggleMenu: (open: boolean) => void;
   onSelectStage: (stageId: string) => void;
@@ -140,6 +153,7 @@ function AreaRow(props: AreaRowProps): ReactNode {
           areaName={area.name}
           fuda={fudaById.get(stage.fudaId)}
           selected={stage.id === props.selectedStageId}
+          mark={props.marks.get(stage.id)}
           disabled={props.disabled}
           onSelect={() => props.onSelectStage(stage.id)}
         />
@@ -188,12 +202,14 @@ type StageChipProps = {
   areaName: string;
   fuda: Fuda | undefined;
   selected: boolean;
+  /** 段階の印（なければ undefined） */
+  mark: StageMark | undefined;
   disabled: boolean;
   onSelect: () => void;
 };
 
 /** 攻略の流れの段階のボタン（押すと選ぶ。ドラッグで並べ替え・札を落とすとその前に割り込み） */
-function StageChip({ stage, areaName, fuda, selected, disabled, onSelect }: StageChipProps): ReactNode {
+function StageChip({ stage, areaName, fuda, selected, mark, disabled, onSelect }: StageChipProps): ReactNode {
   const color = fuda?.color ?? UNKNOWN_FUDA_COLOR;
   const stageName = stage.name === "" ? "（名前なし）" : stage.name;
   const { setNodeRef, attributes, listeners, isDragging, showDropLine } = useStageDnd(
@@ -205,6 +221,8 @@ function StageChip({ stage, areaName, fuda, selected, disabled, onSelect }: Stag
     selected ? styles.stageSelected : "",
     isDragging ? styles.stageDragging : "",
     showDropLine ? styles.stageDropBefore : "",
+    mark?.kind === "conflict" ? styles.stageConflict : "",
+    mark?.kind === "merged" ? styles.stageMerged : "",
   ].join(" ");
 
   return (
@@ -221,6 +239,11 @@ function StageChip({ stage, areaName, fuda, selected, disabled, onSelect }: Stag
     >
       <span className={styles.stageName}>{stageName}</span>
       <span className={styles.stageFuda}>{fuda?.name ?? "（札なし）"}</span>
+      {mark !== undefined && (
+        <span className={mark.kind === "conflict" ? styles.markConflict : styles.markMerged}>
+          {mark.kind === "conflict" ? "要選択" : `${mark.name}が変更`}
+        </span>
+      )}
     </button>
   );
 }

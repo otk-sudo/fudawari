@@ -109,6 +109,59 @@
   opacity: 0.4;
 }
 
+/* 保存の衝突の確認（要件 3.7「同時編集」）：2 人とも変えた段階は赤く光らせ、相手だけが変えた段階は橙の枠 */
+.stageConflict {
+  animation: pe-conflict-pulse 1.4s ease-in-out infinite;
+}
+
+.stageMerged {
+  box-shadow: 0 0 0 2px var(--pe-merge-accent);
+}
+
+@keyframes pe-conflict-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px var(--pe-conflict),
+      0 0 0 0 var(--pe-conflict-glow);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 2px var(--pe-conflict),
+      0 0 14px 5px var(--pe-conflict-glow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stageConflict {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--pe-conflict);
+  }
+}
+
+.markConflict,
+.markMerged {
+  position: absolute;
+  top: -9px;
+  right: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.markConflict {
+  background: var(--pe-conflict);
+  color: var(--pe-on-conflict);
+}
+
+.markMerged {
+  background: var(--pe-merge-accent);
+  color: var(--pe-on-merge-accent);
+}
+
 /* 札・段階を落とすと、この段階の前に割り込む（左に線を出す） */
 .stageDropBefore {
   margin-left: 6px;

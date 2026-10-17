@@ -56,6 +56,8 @@ export function StageDetail({
   onGroupInvalidChange,
 }: StageDetailProps): ReactNode {
   const [confirming, setConfirming] = useState(false);
+  // 「この段階を削除」（削除の確認をやめたら、ここへフォーカスを戻す）
+  const deleteButtonRef = useRef<HTMLButtonElement | null>(null);
   const [pasting, setPasting] = useState(false);
   // 追加した直後の特効グループ（グループ名の欄にフォーカスを移す）
   const [focusGroupId, setFocusGroupId] = useState<string | null>(null);
@@ -74,6 +76,7 @@ export function StageDetail({
           <span className={styles.headFuda}>{fuda?.name ?? "（札なし）"}</span>
         </span>
         <button
+          ref={deleteButtonRef}
           type="button"
           className={styles.deleteButton}
           disabled={!canDeleteStage(doc, stage.id)}
@@ -90,7 +93,10 @@ export function StageDetail({
             setConfirming(false);
             actions.remove(stage.id);
           }}
-          onCancel={() => setConfirming(false)}
+          onCancel={() => {
+            setConfirming(false);
+            deleteButtonRef.current?.focus();
+          }}
         />
       )}
 
