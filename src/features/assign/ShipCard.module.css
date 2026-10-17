@@ -53,7 +53,7 @@
   background: var(--assign-banner-bg);
   border-radius: 3px;
   box-shadow: inset 4px 0 0 var(--card-stripe, var(--assign-stripe-none));
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 700;
   color: var(--assign-banner-text);
 }
@@ -70,7 +70,7 @@
 .stats {
   flex: 0 0 auto;
   font-family: Consolas, monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 400;
   color: var(--color-text-muted);
 }
@@ -81,7 +81,7 @@
   flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
 }
 
 .flagOn {
@@ -98,7 +98,7 @@
 
 /* カード表示の 2 行目「艦種 ・ Lv ・ 運」 */
 .meta {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   color: var(--color-text-muted);
 }
 
@@ -116,7 +116,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--color-text);
 }
 
@@ -142,6 +142,6 @@
 }
 
 .noBoost {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   color: var(--color-text-muted);
 }

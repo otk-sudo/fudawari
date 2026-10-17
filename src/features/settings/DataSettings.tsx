@@ -4,13 +4,15 @@
 //
 // - 札割りの書き出し・読み込み：最新イベントの札割りを U21 の JSON（{ formatVersion, eventId, assignments }）の .json ファイルとして
 //   ダウンロードさせる。読み込みはファイルを選ぶ → 確認（「置き換える」）→ 共有の札割りのデータ（setAssignments）で置き換える。
+//   読み込んだ割り当てのうち、今の定義にない札 ID のものは外して控えに戻す（確認に隻数を出す）。置き換えた割り当てを保存できなければ、
+//   共有の札割りのデータの状態（saveError）から知らせる。
 //   読めないファイル・別のイベントのファイルは、確認を出さずに理由を知らせる（札割りできるのは最新のイベントだけ）
 // - 取り込んだ艦娘データを削除：最終取り込みの日時と隻数を出し、確認の後に getPlanStorage().clearImportedShips() で
 //   個体と最終取り込みを消してから、共有の札割りのデータを読み直す（札割りは残る）
 // 札割りのデータは、ほかの画面と同じく最新イベントの定義から読む（usePlanData）。ファイルの読み書きはブラウザの中だけで行う。
 import { type ChangeEvent, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { parsePlanFile, serializePlanFile } from "@/domain/plan/planFile";
-import type { AssignmentMap } from "@/domain/plan/types";
+import { returnOrphanedAssignments, type ReturnOrphanedAssignmentsResult } from "@/domain/plan/orphan";
 import { useLatestDefinition } from "@/lib/definition";
 import { getPlanStorage, type PlanData, usePlanData } from "@/lib/plan";
 import type { ImportRecord } from "@/lib/storage";
@@ -45,7 +47,12 @@ export function DataSettings(): ReactNode {
           {`札割りのデータを読み込めませんでした。${plan.error.message}`}
         </p>
       )}
-      <PlanFileRow plan={plan} eventName={definition?.event.name ?? null} definitionFailed={definitionFailed} />
+      <PlanFileRow
+        plan={plan}
+        fudaIds={fudaIds}
+        eventName={definition?.event.name ?? null}
+        definitionFailed={definitionFailed}
+      />
       <ImportedShipsRow plan={plan} definitionFailed={definitionFailed} />
     </section>
   );
@@ -56,21 +63,28 @@ export function DataSettings(): ReactNode {
 type PlanFileRowProps = {
   /** 共有の札割りのデータ */
   plan: PlanData;
+  /** 今の定義の札 ID の一覧（読み込んだ割り当てのうち、これにない札のものは控えに戻す） */
+  fudaIds: readonly string[];
   /** 最新イベント名（定義を読めていなければ null） */
   eventName: string | null;
   /** 最新イベントの定義を読み込めなかったか（書き出し・読み込みはできない） */
   definitionFailed: boolean;
 };
 
-function PlanFileRow({ plan, eventName, definitionFailed }: PlanFileRowProps): ReactNode {
+function PlanFileRow({ plan, fudaIds, eventName, definitionFailed }: PlanFileRowProps): ReactNode {
   const ready = plan.status === "ready";
   const latestPlan = useLatestRef(plan);
   const download = useDownload();
   const inputRef = useRef<HTMLInputElement>(null);
-  /** 読み込めなかった・保存できなかった理由（なければ null） */
+  /** 読み込めなかった理由（なければ null） */
   const [message, setMessage] = useState<string | null>(null);
-  /** 置き換える割り当て（確認中。確認していなければ null） */
-  const [pending, setPending] = useState<AssignmentMap | null>(null);
+  /**
+   * 置き換える割り当て（今の定義にない札の割り当てを外して控えに戻した後のもの）と、控えに戻した隻数。
+   * 確認していなければ null
+   */
+  const [pending, setPending] = useState<ReturnOrphanedAssignmentsResult | null>(null);
+  /** 置き換えを試したか（試した後は、共有の札割りのデータの保存の失敗を知らせる） */
+  const [replaced, setReplaced] = useState(false);
 
   function exportPlan(): void {
     if (plan.status !== "ready") return;
@@ -98,7 +112,8 @@ function PlanFileRow({ plan, eventName, definitionFailed }: PlanFileRowProps): R
       setMessage(otherEventMessage(parsed.eventId, eventName));
       return;
     }
-    setPending(parsed.assignments);
+    // 定義から消えた札・書き間違いの札 ID の割り当ては外して控えに戻す（U17 と同じ扱い）
+    setPending(returnOrphanedAssignments(parsed.assignments, fudaIds));
   }
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>): void {
@@ -107,6 +122,7 @@ function PlanFileRow({ plan, eventName, definitionFailed }: PlanFileRowProps): R
     // 同じファイルを選び直しても読めるよう、選んだファイルを入力から外しておく
     input.value = "";
     setMessage(null);
+    setReplaced(false);
     if (file !== undefined) void readFile(file);
   }
 
@@ -115,13 +131,14 @@ function PlanFileRow({ plan, eventName, definitionFailed }: PlanFileRowProps): R
     const next = pending;
     setPending(null);
     if (next === null) return;
-    // setAssignments は失敗しても例外にせず、保存の結果を状態（saveError）に入れてから終わる
-    await latestPlan.current.setAssignments(next);
-    const state = latestPlan.current;
-    if (state.status === "ready" && state.saveError !== null) setMessage(state.saveError.message);
+    // setAssignments は失敗しても例外にせず、保存の結果をストアの状態（saveError）に入れる。知らせは描画の時にストアの状態から出す
+    setReplaced(true);
+    await plan.setAssignments(next.assignments);
   }
 
-  const shipCount = pending === null ? 0 : Object.keys(pending).length;
+  // 置き換えた割り当てを保存できなかったら、ストアの状態（saveError）から知らせる（次の保存が成功すると消える）
+  const saveFailure = replaced && plan.status === "ready" && plan.saveError !== null ? plan.saveError.message : null;
+  const alertMessage = message ?? saveFailure;
 
   return (
     <div className={styles.row}>
@@ -150,15 +167,15 @@ function PlanFileRow({ plan, eventName, definitionFailed }: PlanFileRowProps): R
           />
         </label>
       </div>
-      {message !== null && (
+      {alertMessage !== null && (
         <p role="alert" className={styles.rowAlert}>
-          {message}
+          {alertMessage}
         </p>
       )}
       <ConfirmDialog
         open={pending !== null}
         title="札割りを置き換えます"
-        description={`今の札割り${eventName === null ? "" : `（${eventName}）`}を、読み込んだファイルの札割り（${shipCount}隻分）に置き換えます。今の札割りは元に戻せません。`}
+        description={replaceDescription(eventName, pending)}
         confirmLabel="置き換える"
         tone="action"
         onConfirm={() => void replace()}
@@ -167,6 +184,17 @@ function PlanFileRow({ plan, eventName, definitionFailed }: PlanFileRowProps): R
       />
     </div>
   );
+}
+
+/**
+ * 置き換えの確認の文。隻数は定義にない札の割り当てを外した後の数。外した隻数があれば、控えに戻すことを書く
+ */
+function replaceDescription(eventName: string | null, pending: ReturnOrphanedAssignmentsResult | null): string {
+  const target = eventName === null ? "今の札割り" : `今の札割り（${eventName}）`;
+  const shipCount = pending === null ? 0 : Object.keys(pending.assignments).length;
+  const returned =
+    pending !== null && pending.returnedCount > 0 ? `定義にない札の${pending.returnedCount}隻は控えに戻します。` : "";
+  return `${target}を、読み込んだファイルの札割り（${shipCount}隻分）に置き換えます。${returned}今の札割りは元に戻せません。`;
 }
 
 /**

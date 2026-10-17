@@ -15,7 +15,7 @@ export const UNPLANNED_FUDA_LABEL = "札なし（計画外）";
 
 /** 札の表示（札名と札の色）。色が null の札は定義の札ではない（札なし・定義にない札番号） */
 export interface FudaChip {
-  /** 札名（例「連合艦隊」「札なし（計画外）」「定義にない札（番号 9）」） */
+  /** 札名（例「連合艦隊」「札なし（計画外）」「札番号が定義にない札（番号 9）」） */
   readonly label: string;
   /** 札の色（"#RRGGBB"）。定義の札でなければ null */
   readonly color: string | null;
@@ -102,9 +102,9 @@ export function inkOn(color: string): "dark" | "light" {
 
 // ---- 札・特効 ----
 
-/** 定義のどの札番号にも当たらない札の表示（例「定義にない札（番号 9）」） */
+/** 定義のどの札番号にも当たらない札の表示（例「札番号が定義にない札（番号 9）」） */
 function unknownFudaLabel(gameNumber: number): string {
-  return `定義にない札（番号 ${gameNumber}）`;
+  return `札番号が定義にない札（番号 ${gameNumber}）`;
 }
 
 /** 札 ID → 札（ID が重複していたら定義の順で先の札） */

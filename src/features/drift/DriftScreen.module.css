@@ -167,7 +167,8 @@
 .bulkButton:focus-visible,
 .bulkApply:focus-visible,
 .undoButton:focus-visible,
-.bulk:focus-visible {
+.bulk:focus-visible,
+.heading:focus-visible {
   outline: 2px solid var(--color-action);
   outline-offset: 2px;
 }

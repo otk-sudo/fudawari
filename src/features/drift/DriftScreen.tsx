@@ -86,6 +86,8 @@ export function DriftScreen({ definition, master, plan }: DriftScreenProps): Rea
   const [record, setRecord] = useState<AppliedRecord | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkButtonRef = useRef<HTMLButtonElement>(null);
+  /** 見出し「対応が必要 n件」（tabIndex=-1。押したボタンが消えたときのフォーカスの戻り先） */
+  const issuesHeadingRef = useRef<HTMLHeadingElement>(null);
   const undoButtonRef = useRef<HTMLButtonElement>(null);
   /** 反映の後に「元に戻す」へフォーカスを移すか（押したボタンが一覧から消えるため） */
   const focusUndoAfterApply = useRef(false);
@@ -131,12 +133,17 @@ export function DriftScreen({ definition, master, plan }: DriftScreenProps): Rea
     const { undo: change } = activeRecord;
     void setAssignments((prev) => undoDriftApply(prev, change));
     setRecord(null);
+    // 「元に戻す」は消えるので、一覧の見出しへフォーカスを移す
+    issuesHeadingRef.current?.focus();
   }
 
-  /** まとめての確認を「やめる」で閉じる（フォーカスを開いたボタンへ戻す） */
+  /**
+   * まとめての確認を「やめる」（Esc）で閉じる。フォーカスを開いたボタンへ戻す。開いている間に件数が減って
+   * ボタンが消えていたら（外れた ref は null）、一覧の見出しへ移す
+   */
   function cancelBulk(): void {
     setBulkOpen(false);
-    bulkButtonRef.current?.focus();
+    (bulkButtonRef.current ?? issuesHeadingRef.current)?.focus();
   }
 
   return (
@@ -152,7 +159,7 @@ export function DriftScreen({ definition, master, plan }: DriftScreenProps): Rea
 
       <section aria-labelledby={issuesHeadingId} className={styles.section}>
         <div className={styles.issuesHead}>
-          <h2 id={issuesHeadingId} className={styles.heading}>
+          <h2 ref={issuesHeadingRef} id={issuesHeadingId} tabIndex={-1} className={styles.heading}>
             対応が必要 {issues.length}件
           </h2>
           <span className={styles.spacer} aria-hidden="true" />
@@ -293,7 +300,8 @@ type BulkConfirmProps = {
 };
 
 /**
- * 「計画をまとめて実際に合わせる」の確認の枠（モックどおり、一覧の上に開く role="alertdialog"）。
+ * 「計画をまとめて実際に合わせる」の確認の枠（モックどおり一覧の上に開く枠。role="group"、名前「まとめて合わせる確認」。
+ * 画面の操作を止めない枠なので、確認のウィンドウ（モーダル）にはしない）。開いたら枠へフォーカスを移す。
  * 開くたびに作り直すので、チェックは全部 ON から始まる。チェックを外した件だけを覚える（開いている間に増えた件は ON）
  */
 function BulkConfirm({ issues, onApply, onCancel }: BulkConfirmProps): ReactNode {
@@ -322,7 +330,7 @@ function BulkConfirm({ issues, onApply, onCancel }: BulkConfirmProps): ReactNode
   return (
     <div
       ref={rootRef}
-      role="alertdialog"
+      role="group"
       aria-label="まとめて合わせる確認"
       aria-describedby={descriptionId}
       tabIndex={-1}

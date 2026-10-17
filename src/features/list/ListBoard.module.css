@@ -5,6 +5,7 @@
  * ダークの値はモックの値、ライトの値はモックにないため同じ役割で読みやすい値を仮に置いている（theme.css と同じ扱い）。
  * ライトの値は「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
  * 札の色（段階・色帯の下地、艦の左端の線）は定義の値なので、部品の style で入れる。
+ * 文字の大きさは calc(Npx * var(--font-scale)) で書く（設定の「文字の大きさ」。--font-scale は theme.css）。
  */
 
 /* ダーク（既定。モックの値） */
@@ -101,20 +102,20 @@
 }
 
 .stepStage {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   opacity: 0.85;
 }
 
 .stepFuda {
   overflow: hidden;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .stepBoost {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 
 /* 難所の印（管理の橙。モックの値と同じ） */
@@ -125,7 +126,7 @@
   padding: 0 4px;
   background: var(--color-admin);
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   font-weight: 700;
   color: var(--color-on-admin);
 }
@@ -141,7 +142,7 @@
 }
 
 .togglesLabel {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--color-text-muted);
 }
 
@@ -153,7 +154,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: 15px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   cursor: pointer;
 }
 
@@ -196,19 +197,19 @@
 }
 
 .rowName {
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale));
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .rowStages {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   opacity: 0.9;
 }
 
 .rowCount {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .rowBody {
@@ -222,7 +223,7 @@
 
 .empty {
   padding: 8px 4px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--list-faint-text);
 }
 
@@ -236,7 +237,7 @@
 .groupLabel {
   flex: 0 0 32px;
   padding-top: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   color: var(--color-text-muted);
 }
 
@@ -269,7 +270,7 @@
 
 .shipName {
   overflow: hidden;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -279,7 +280,7 @@
   display: flex;
   justify-content: space-between;
   gap: 4px;
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
 }
 
 .shipStats {
