@@ -4,9 +4,31 @@ import type { SaveLogEntry, SaveLogKind } from "./types";
 /** 1 ページに出す件数（「さらに古い記録を表示」で足す件数） */
 export const SAVE_LOG_PAGE_SIZE = 8;
 
+/** 編集できる人（「誰が」の選択肢の並びと表示名に使う。PR-12b） */
+export interface SaveLogMember {
+  readonly userId: string;
+  readonly displayName: string;
+}
+
+/**
+ * 「誰が」の選択肢の 1 つ（PR-12b）。
+ * userId があれば、その ID の記録を選ぶ（同じ表示名の 2 人は別の選択肢）。
+ * userId が null なら、ID の分からない記録のうち userName が name のものをまとめて選ぶ
+ */
+export interface SaveLogUserOption {
+  readonly userId: string | null;
+  /** 表示名（選択肢の文字） */
+  readonly name: string;
+}
+
 /** 絞り込みの条件（null は「全員」「すべて」） */
 export interface SaveLogFilter {
-  /** 誰が（記録の userName と同じ表示名。null は全員） */
+  /**
+   * 誰が（saveLogUserOptions の選択肢。null は全員）。PR-12b で userName の代わりにする。
+   * 【PR-12b の先行テスト用に省略できる形で置いた。実装担当が userName を消し、省略できない形にする】
+   */
+  readonly user?: SaveLogUserOption | null;
+  /** 誰が（記録の userName と同じ表示名。null は全員）【PR-12b で user に置き換える】 */
   readonly userName: string | null;
   /** 種類（null はすべて） */
   readonly kind: SaveLogKind | null;
@@ -40,6 +62,22 @@ export function viewSaveLogs(entries: readonly SaveLogEntry[], filter: SaveLogFi
   const hit = entries.filter((entry) => matches(entry, filter));
   const limit = SAVE_LOG_PAGE_SIZE * Math.max(1, Math.floor(pages));
   return { shown: hit.slice(0, limit), matched: hit.length, hasMore: hit.length > limit };
+}
+
+/**
+ * 「誰が」の選択肢（PR-12b。記録に現れる人だけ。利用者の ID で見分ける）。
+ * - 並びは編集できる人の並び（members。管理者を先に、追加した順）。表示名は members の表示名
+ * - members にいない人（外された協力者など）は、記録に現れた順（新しい順）で後ろに足す（表示名は記録の userName）
+ * - 同じ人（同じ ID）は 1 つ。同じ表示名でも ID が違えば別の選択肢。ID の分からない記録は表示名ごとに 1 つにまとめる
+ */
+export function saveLogUserOptions(
+  entries: readonly SaveLogEntry[],
+  members: readonly SaveLogMember[],
+): SaveLogUserOption[] {
+  // 【PR-12b の先行テスト用の空の入れ物】中身は実装担当が作る（テスト：view.test.ts の saveLogUserOptions）
+  void entries;
+  void members;
+  throw new Error("未実装（PR-12b）");
 }
 
 /**

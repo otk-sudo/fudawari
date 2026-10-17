@@ -13,6 +13,7 @@ import {
   type FakeRealtimeChannel,
   type FakeSupabase,
   installFakeSupabase,
+  profileRow,
   saveLogRow,
   setLatestEvent,
   stubSupabaseEnv,
@@ -41,9 +42,11 @@ const ADMIRAL = {
 
 const SUMMER_ID = "2026-summer";
 
-/** 偽物のサーバーに、最新のイベント（2026夏イベ・下書きは版 7）と保存の記録 2 件を入れる */
+/** 偽物のサーバーに、人（提督・あかね）・最新のイベント（2026夏イベ・下書きは版 7）と保存の記録 2 件を入れる */
 function seed(fake: FakeSupabase): void {
   addManager(fake, ADMIRAL);
+  // PR-12b：編集中の表示は、編集できる人の一覧（profiles）にいる人だけを出すため、他の人（あかね）も協力者として入れておく
+  fake.server.profiles.push(profileRow({ user_id: "user-akane", display_name: "あかね", role: "collab" }));
   fake.server.events.push(
     eventRow({ id: SUMMER_ID, name: "2026夏イベ", starts_at: "2026-08-07T03:00:00+00:00", ends_at: null }),
   );

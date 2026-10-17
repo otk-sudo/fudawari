@@ -59,6 +59,11 @@ export interface EditableEvent {
 
 /** 編集できる人（profiles の行） */
 export interface EditorMember {
+  /**
+   * profiles.user_id（PR-12b。編集中の表示の名前・保存の記録の「誰が」を ID で引くため）。
+   * 【PR-12b の先行テスト用に省略できる形で置いた。実装担当が省略できない形にし、load で入れる】
+   */
+  readonly userId?: string;
   readonly displayName: string;
   readonly role: EditorRole;
 }

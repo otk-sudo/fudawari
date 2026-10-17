@@ -14,7 +14,9 @@
 // createClient（偽物）は、設定が auth.persistSession: false なら issuing（保存しない別のクライアント）を、
 // それ以外なら main（ふだんのクライアント）を返す。2 つのクライアントは同じ「サーバー」（Auth のアカウントと表）を共有する。
 // 表は profiles・events・app_state・drafts・published_definitions・save_logs の読み取りをまねる（行は server に直接入れる。eventRow などの補助を使う）。
-// Realtime のチャンネル（channel・removeChannel）は Presence だけをまねる（FakeRealtimeChannel。他の人の出入りは putPeer・removePeer で起こす）。
+// Realtime のチャンネル（channel・removeChannel）は Presence だけをまねる（FakeRealtimeChannel。他の人の出入りは putPeer・removePeer、
+// 参加の失敗・切断は emitStatus で起こす）。同じ名前のチャンネルは、removeChannel が終わるまで同じものを返す（supabase-js と同じ）。
+// realtime.setAuth（参加の前にトークンを渡す）は呼ばれ方の確認だけ。表の読み取りの range は、max_rows をまねないので ranges で呼び方を確かめる。
 // RPC は register_collaborator・remove_collaborator だけをまねる。ほかの RPC（save_draft など）は、テストで
 // `fake.main.rpc.mockResolvedValueOnce(rpcSuccess(…))`・`rpcFailure("FD002")` のように返し方を決める。
 // エラーの形は supabase-js と同じにする（Auth は AuthApiError など、表と RPC は PostgrestError と code）。
@@ -189,9 +191,21 @@ export class FakeRealtimeChannel {
   private selfMeta: FakePresenceMeta | null = null;
   private refCount = 0;
 
+  /** subscribe に渡された知らせの関数（emitStatus で参加の失敗・切断を知らせるため） */
+  private statusCallback: ((status: string, err?: Error) => void) | null = null;
+
   constructor(name: string, options: unknown) {
     this.name = name;
     this.options = options;
+  }
+
+  /**
+   * テストから：参加の状態の知らせ（CHANNEL_ERROR・TIMED_OUT・CLOSED）を起こす（supabase-js の subscribe の callback と同じ）。
+   * 知らせた後は参加していない状態（closed）になり、以後の出来事を起こさない
+   */
+  emitStatus(status: "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED"): void {
+    this.state = "closed";
+    this.statusCallback?.(status, status === "CHANNEL_ERROR" ? new Error("テスト用の参加の失敗") : undefined);
   }
 
   /** 自分の key（設定の config.presence.key。なければ FAKE_PRESENCE_SELF_KEY_FALLBACK） */
@@ -211,6 +225,7 @@ export class FakeRealtimeChannel {
 
   readonly subscribe = vi.fn<(callback?: (status: string, err?: Error) => void) => FakeRealtimeChannel>((callback) => {
     if (this.state !== "idle") return this;
+    this.statusCallback = callback ?? null;
     void Promise.resolve().then(() => {
       if (this.state !== "idle") return;
       this.state = "joined";
@@ -308,11 +323,16 @@ export type FakeSupabaseClient = {
   };
   from: Mock<(table: string) => FakeQuery>;
   rpc: Mock<(fn: string, args?: Record<string, unknown>) => Promise<FakeQueryResult>>;
-  /** Realtime のチャンネルを作る（作ったものは channels に作った順に入る） */
+  /** Realtime のクライアント（使うのは setAuth だけ。参加の前にセッションのトークンを渡す） */
+  realtime: { setAuth: Mock<(token?: string | null) => Promise<void>> };
+  /**
+   * Realtime のチャンネルを作る（作ったものは channels に作った順に入る）。
+   * supabase-js と同じく、同じ名前のチャンネルがまだ外されていなければ（removeChannel が終わるまでは）、新しく作らずにそれを返す
+   */
   channel: Mock<(name: string, options?: unknown) => FakeRealtimeChannel>;
-  /** チャンネルを外す（そのチャンネルの unsubscribe を呼ぶ） */
+  /** チャンネルを外す（そのチャンネルの unsubscribe を待ってから、同じ名前で channel を呼べば新しく作るようにする） */
   removeChannel: Mock<(channel: unknown) => Promise<string>>;
-  /** このクライアントで作った Realtime のチャンネル（作った順） */
+  /** このクライアントで作った Realtime のチャンネル（作った順。同じ名前で返し直したものは足さない） */
   channels: FakeRealtimeChannel[];
 };
 
@@ -433,6 +453,8 @@ export class FakeQuery implements PromiseLike<FakeQueryResult> {
   private readonly orders: Order[] = [];
   private limitCount: number | null = null;
   private mode: "many" | "maybeSingle" | "single" = "many";
+  /** range(from, to) に渡された値（呼んだ順。PostgREST の max_rows はまねないので、ページの読み方はこれで確かめる） */
+  readonly ranges: Array<readonly [from: number, to: number]> = [];
 
   constructor(source: () => readonly object[], forced: FakeQueryResult | null = null) {
     this.source = source;
@@ -473,6 +495,12 @@ export class FakeQuery implements PromiseLike<FakeQueryResult> {
     return this;
   }
 
+  /** 並べた後の from 番目から to 番目まで（両端を含む。0 から数える）だけを返す（supabase-js の range と同じ） */
+  range(from: number, to: number): this {
+    this.ranges.push([from, to]);
+    return this;
+  }
+
   maybeSingle(): this {
     this.mode = "maybeSingle";
     return this;
@@ -505,6 +533,8 @@ export class FakeQuery implements PromiseLike<FakeQueryResult> {
         return 0;
       });
     }
+    const lastRange = this.ranges.at(-1);
+    if (lastRange !== undefined) rows = rows.slice(lastRange[0], lastRange[1] + 1);
     if (this.limitCount !== null) rows = rows.slice(0, this.limitCount);
     if (this.mode === "many") return okResult(rows);
     if (rows.length === 1) return okResult(rows[0]);
@@ -605,6 +635,8 @@ function createFakeClient(server: FakeSupabaseServer, counter: { users: number }
   let session: FakeSession | null = null;
   // このクライアントで作った Realtime のチャンネル
   const channels: FakeRealtimeChannel[] = [];
+  // まだ外していない（removeChannel が終わっていない）チャンネル
+  const activeChannels: FakeRealtimeChannel[] = [];
   const sessionFor = (account: FakeAccount): FakeSession => ({
     access_token: `fake-access-token-${account.userId}`,
     refresh_token: `fake-refresh-token-${account.userId}`,
@@ -657,13 +689,23 @@ function createFakeClient(server: FakeSupabaseServer, counter: { users: number }
     rpc: vi.fn<(fn: string, args?: Record<string, unknown>) => Promise<FakeQueryResult>>(
       async (fn, args) => runRpc(server, fn, args ?? {}),
     ),
+    realtime: { setAuth: vi.fn<(token?: string | null) => Promise<void>>(async () => {}) },
     channel: vi.fn<(name: string, options?: unknown) => FakeRealtimeChannel>((name, options) => {
+      // supabase-js と同じく、同じ名前のチャンネルがまだ外されていなければそれを返す（抜けている途中のものも返す）
+      const existing = activeChannels.find((candidate) => candidate.name === name);
+      if (existing !== undefined) return existing;
       const created = new FakeRealtimeChannel(name, options);
       channels.push(created);
+      activeChannels.push(created);
       return created;
     }),
     removeChannel: vi.fn<(channel: unknown) => Promise<string>>(async (target) => {
-      if (target instanceof FakeRealtimeChannel) await target.unsubscribe();
+      if (target instanceof FakeRealtimeChannel) {
+        await target.unsubscribe();
+        // 抜け終わってから一覧から外す（以後、同じ名前の channel は新しく作る）
+        const index = activeChannels.indexOf(target);
+        if (index !== -1) activeChannels.splice(index, 1);
+      }
       return "ok";
     }),
     channels,
@@ -798,6 +840,7 @@ function clientMocks(client: FakeSupabaseClient): Array<[string, RecordedMock]> 
     ["auth.onAuthStateChange", client.auth.onAuthStateChange],
     ["from", client.from],
     ["rpc", client.rpc],
+    ["realtime.setAuth", client.realtime.setAuth],
     ["channel", client.channel],
     ["removeChannel", client.removeChannel],
   ];

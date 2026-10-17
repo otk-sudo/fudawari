@@ -6,6 +6,7 @@ import { PlanEditor } from "../PlanEditor";
 import {
   autumn2025Definition,
   COLLAB,
+  MEMBERS,
   createFakeRepository,
   fixClock,
   LATEST_EVENT_ID,
@@ -38,10 +39,15 @@ import type { SaveLogEntry, SaveLogKind, SaveLogLoader } from "./types";
 // テストで決めたこと（親の確認用）
 // - ウィンドウを開くたびに記録を読み直す（保存した直後に開けば、その記録が出るように）
 // - 「誰が」の選択肢は、全員と、記録に出てくる人（ここでは全員が記録を持つので、記録のない人を出すかは決めていない）
+// - PR-12b（Codex #21-4301315082）：「誰が」は利用者の ID（save_logs.user_id）で絞り込む。同じ表示名の 2 人は別の選択肢にする
+//   （記録と編集できる人に利用者の ID を持たせた。既存の記録の補助 log に userId を足しただけで、既存のテストの期待は変えていない）
 
 const EMPTY_TEXT = "条件に合う記録はありません";
 
-/** 記録を 1 件作る */
+/** テストの編集できる人の表示名 → 利用者の ID（test-helpers の MEMBERS と同じ） */
+const USER_IDS: Readonly<Record<string, string>> = { テスト管理者: "user-admin", 協力者A: "user-a", 協力者B: "user-b" };
+
+/** 記録を 1 件作る（利用者の ID は、省略すれば表示名から決める） */
 function log(
   id: number,
   createdAt: string,
@@ -49,8 +55,9 @@ function log(
   kind: SaveLogKind,
   mapLabel: string | null,
   summary: string,
+  userId: string | null = USER_IDS[userName] ?? null,
 ): SaveLogEntry {
-  return { id, createdAt, userName, kind, mapLabel, summary };
+  return { id, createdAt, userId, userName, kind, mapLabel, summary };
 }
 
 /**
@@ -530,6 +537,72 @@ describe("保存の記録のウィンドウ（定義画面）", () => {
       expect(rowSummaries(dialog)).toEqual(summariesOf(LOGS.filter((entry) => entry.kind === "save").slice(0, 8)));
       expectCount(dialog, 8, 11);
       expect(moreButton(dialog)).toBeInTheDocument();
+    });
+
+    describe("「誰が」は利用者の ID で見分ける（PR-12b：Codex #21-4301315082）", () => {
+      /** 同じ表示名「協力者A」の 2 人（user-a・user-a2）が編集できる人にいる */
+      const SAME_NAME_MEMBERS = [...MEMBERS, { userId: "user-a2", displayName: "協力者A", role: "collab" as const }];
+      /** 記録（新しい順）：2 人目の協力者A（user-a2）が 2 件、1 人目（user-a）が 1 件、テスト管理者が 1 件 */
+      const SAME_NAME_LOGS: readonly SaveLogEntry[] = [
+        log(4, "2026-10-15T22:52:00+09:00", "協力者A", "save", "E3", "2 人目の記録（新）", "user-a2"),
+        log(3, "2026-10-15T22:40:00+09:00", "協力者A", "save", "E2", "1 人目の記録", "user-a"),
+        log(2, "2026-10-15T21:40:00+09:00", "協力者A", "save", "E2", "2 人目の記録（旧）", "user-a2"),
+        log(1, "2026-10-14T22:18:00+09:00", "テスト管理者", "save", "E1", "管理者の記録", "user-admin"),
+      ];
+
+      /** 一覧の行の文字 */
+      function rowTexts(dialog: HTMLElement): string[] {
+        return recordRows(dialog).map((row) => row.textContent ?? "");
+      }
+
+      it("同じ表示名の 2 人は、「誰が」の別々の選択肢になり（編集できる人の並び）、2 つ目を選ぶと 2 人目の記録だけを出す", async () => {
+        // 準備
+        const { user } = await renderWithSaveLogs(
+          makeData({ members: SAME_NAME_MEMBERS }),
+          vi.fn<SaveLogLoader>(async () => SAME_NAME_LOGS),
+        );
+        const dialog = await openLoadedDialog(user);
+        const who = filterBox(dialog, "誰が");
+
+        // 検証：協力者A（を含む文字）の選択肢が 2 つ
+        const sameNameOptions = within(who)
+          .getAllByRole("option")
+          .filter((option) => (option.textContent ?? "").includes("協力者A"));
+        expect(sameNameOptions).toHaveLength(2);
+
+        // 実行：2 つ目（編集できる人の並びで後ろ＝user-a2）を選ぶ
+        await user.selectOptions(who, sameNameOptions[1] as HTMLElement);
+
+        // 検証
+        const texts = rowTexts(dialog);
+        expect(texts).toHaveLength(2);
+        expect(texts[0]).toContain("2 人目の記録（新）");
+        expect(texts[1]).toContain("2 人目の記録（旧）");
+        expectCount(dialog, 2, 2);
+      });
+
+      it("1 つ目の協力者A を選ぶと、1 人目の記録だけを出す（もう 1 人の同じ名前の記録は出さない）", async () => {
+        // 準備
+        const { user } = await renderWithSaveLogs(
+          makeData({ members: SAME_NAME_MEMBERS }),
+          vi.fn<SaveLogLoader>(async () => SAME_NAME_LOGS),
+        );
+        const dialog = await openLoadedDialog(user);
+        const who = filterBox(dialog, "誰が");
+        const sameNameOptions = within(who)
+          .getAllByRole("option")
+          .filter((option) => (option.textContent ?? "").includes("協力者A"));
+        expect(sameNameOptions).toHaveLength(2);
+
+        // 実行
+        await user.selectOptions(who, sameNameOptions[0] as HTMLElement);
+
+        // 検証
+        const texts = rowTexts(dialog);
+        expect(texts).toHaveLength(1);
+        expect(texts[0]).toContain("1 人目の記録");
+        expectCount(dialog, 1, 1);
+      });
     });
   });
 });
