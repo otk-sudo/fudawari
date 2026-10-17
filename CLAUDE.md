@@ -38,8 +38,9 @@ e2e/              Playwright
 - Lint：`npm run lint`
 - 単体テスト：`npm test`（Vitest）
 - 画面テスト：`npm run test:e2e`（Playwright。静的書き出しをビルドして serve で配信し、それに対して実行する）。初めて手元で動かすときは先に `npx playwright install chromium`。ポートはワークツリーごとに自動で変わる（`E2E_PORT` で上書きできる）ので、複数のワークツリーで同時に実行してよい
-- ビルド：`npm run build`（`out/` に静的書き出し。直前の prebuild で艦船マスタ `public/data/ship-master.json` を Tibowl/api_start2 から生成するため通信が必要。生成物はコミットしない。のちに最新イベントの公開定義 JSON の取得も含める）。Cloudflare Pages のビルドコマンドも `npm run build`（`npx next build` にするとマスタが生成されない）
+- ビルド：`npm run build`（`out/` に静的書き出し。直前の prebuild で、艦船マスタ `public/data/ship-master.json` を Tibowl/api_start2 から生成し〔通信が必要。生成物はコミットしない〕、続けて最新イベントの公開定義 `public/data/latest-definition.json` を取得する〔`FETCH_LATEST_DEFINITION=1` のときだけ〕）。Cloudflare Pages のビルドコマンドも `npm run build`（`npx next build` にするとマスタの生成も公開定義の取得もされない）
 - 艦船マスタの生成：`npm run generate:ship-master`。通信できないときに既存のファイルを使い回すなら `SKIP_SHIP_MASTER=1` を付ける（CI・Cloudflare Pages では付けない）。`npm run build` と `npm run test:e2e` も通信が必要
+- 公開定義の取得：`npm run fetch:latest-definition`（処理は `src/lib/definition/generateLatestDefinition.ts`、取得するかの判断は `decideDefinitionFetch.ts`。`docs/design/database.md` 6 章）。環境変数 `FETCH_LATEST_DEFINITION` は未設定・`0`・`1` だけを認める。`1` のときだけ、`NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` で Supabase から最新イベントの公開版を読み、検証して書き出す（最新のイベントが決まっていなければファイルを消す。取得・検証に失敗したら終了コード 1 でビルドを止める）。未設定・`0`（手元・CI）は取得を飛ばし、追跡しているテスト用の定義をそのまま使う。それ以外の値と、Cloudflare Pages の本番のビルド（`CF_PAGES=1` かつ `CF_PAGES_BRANCH=release`）で `1` でないときは、終了コード 1 でビルドを止める。本番（Cloudflare Pages の Production）の環境変数に `FETCH_LATEST_DEFINITION=1` を足すのはユーザーのアカウント操作。手元で `1` を付けて実行するとテスト用の定義を書き換える（消す）ので、確かめた後は `git restore public/data/latest-definition.json` で戻す。tsx は `.env*` を読まないので、環境変数はシェルで渡す
 - DB：Supabase CLI のマイグレーション（`supabase/migrations/`。手元に Docker がないため、DB のテストは CI で動かす）
 
 ## このプロジェクト固有の注意
