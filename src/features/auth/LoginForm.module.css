@@ -1,0 +1,64 @@
+/* 管理者・協力者のログインのフォーム（単独の画面の面の中に置く） */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.input {
+  min-height: 36px;
+  padding: 0 10px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+/*
+ * 失敗の理由。モックの赤系の色に当たる CSS 変数がまだないため、
+ * ほかの警告（DefinitionLoadAlert）と同じく既存の変数で枠と強調の線を付けて目立たせる
+ */
+.message {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.submit {
+  min-height: 36px;
+  padding: 0 18px;
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

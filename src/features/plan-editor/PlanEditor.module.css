@@ -1,0 +1,291 @@
+/*
+ * イベント定義の画面（モック PlanEditor.dc.html）の枠・ヘッダー帯・知らせ・本文の並び。
+ *
+ * 色：src/styles/theme.css の変数を使い、そこにない色（モックの赤・緑・青のリンク色など）は、
+ * この画面の変数（--pe-*）として .root に置く。ダークはモックの値、ライトはモックにないため同じ役割で読みやすい値（仮）。
+ * ライトの値は theme.css と同じく「data-theme="light"」と「端末がライト」の 2 か所にあるので、変えるときは両方そろえる。
+ * ほかの画面でも使うようになったら theme.css へ移す。
+ */
+
+.root {
+  --pe-link: #6aa8ff; /* リンク・点線のボタンの文字 */
+  --pe-link-border: #34507a; /* 「＋ E4 を追加」の点線 */
+  --pe-danger: #ff8a80; /* 誤り・削除の文字 */
+  --pe-danger-border: #7a3a36; /* 削除の枠 */
+  --pe-danger-bg: #2a1c1c; /* 削除の確認・文書の問題の下地 */
+  --pe-danger-text: #f2d4d1; /* 削除の確認の文 */
+  --pe-danger-solid: #c9473f; /* 「削除する」・「必須」の下地 */
+  --pe-on-danger-solid: #ffffff;
+  --pe-success-bg: #17291f; /* 保存・公開したときの知らせ */
+  --pe-success-border: #2e6b4a;
+  --pe-success-text: #bfe8d0;
+  --pe-pending: #f2c98a; /* 未公開の変更・知らない艦名の警告 */
+  --pe-chip-bg: #26292f; /* 操作の説明・「＋」のメニューの下地 */
+  --pe-chip-border: #33363d;
+  --pe-inset-bg: #1a1c20; /* 札の行・特効グループの下地 */
+  --pe-inset-border: #2e3138;
+  --pe-tag-bg: #2a2d33; /* 艦名のタグ */
+  --pe-tag-text: #d7dadf;
+  --pe-ended-bg: #24262b; /* 終了したイベントの知らせ */
+  --pe-ended-border: #4a4f58;
+  --pe-ended-accent: #8a909a;
+  --pe-drop: #6aa8ff; /* ドラッグで落とす場所の線・フォーカスの枠 */
+  --pe-drop-bg: #1a2232;
+  --pe-handle: #6b717c; /* ドラッグの持ち手・「＋」 */
+  --pe-badge-border: #4a4f58; /* 「任意」の枠 */
+  --pe-on-accent: #101114; /* 強調の金の上の文字 */
+  --pe-disabled-bg: #3a3426; /* 押せない公開のボタン */
+  --pe-disabled-text: #8a7f66;
+  --pe-menu-shadow: 0 6px 18px rgb(0 0 0 / 50%);
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+:global(:root[data-theme="light"]) .root {
+  --pe-link: #2f5fc4; /* 仮 */
+  --pe-link-border: #9fb6e3; /* 仮 */
+  --pe-danger: #b3261e; /* 仮 */
+  --pe-danger-border: #e3a7a2; /* 仮 */
+  --pe-danger-bg: #fdecea; /* 仮 */
+  --pe-danger-text: #5f1d18; /* 仮 */
+  --pe-danger-solid: #b3261e; /* 仮 */
+  --pe-on-danger-solid: #ffffff;
+  --pe-success-bg: #e7f5ec; /* 仮 */
+  --pe-success-border: #9fd1b4; /* 仮 */
+  --pe-success-text: #1d5a37; /* 仮 */
+  --pe-pending: #8a5a00; /* 仮 */
+  --pe-chip-bg: #f3f4f6; /* 仮 */
+  --pe-chip-border: #d5d8de; /* 仮 */
+  --pe-inset-bg: #f7f8fa; /* 仮 */
+  --pe-inset-border: #dde0e5; /* 仮 */
+  --pe-tag-bg: #e8eaee; /* 仮 */
+  --pe-tag-text: #2b2f36; /* 仮 */
+  --pe-ended-bg: #eef0f3; /* 仮 */
+  --pe-ended-border: #c5c9d0; /* 仮 */
+  --pe-ended-accent: #8a909a; /* 仮 */
+  --pe-drop: #2f5fc4; /* 仮 */
+  --pe-drop-bg: #e3ecfb; /* 仮 */
+  --pe-handle: #8a909a; /* 仮 */
+  --pe-badge-border: #c5c9d0; /* 仮 */
+  --pe-on-accent: #ffffff; /* 仮（暗めの金に白で読めるようにした） */
+  --pe-disabled-bg: #ebe5d8; /* 仮 */
+  --pe-disabled-text: #8a7f66; /* 仮 */
+  --pe-menu-shadow: 0 6px 18px rgb(0 0 0 / 15%); /* 仮 */
+}
+
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .root {
+    --pe-link: #2f5fc4; /* 仮 */
+    --pe-link-border: #9fb6e3; /* 仮 */
+    --pe-danger: #b3261e; /* 仮 */
+    --pe-danger-border: #e3a7a2; /* 仮 */
+    --pe-danger-bg: #fdecea; /* 仮 */
+    --pe-danger-text: #5f1d18; /* 仮 */
+    --pe-danger-solid: #b3261e; /* 仮 */
+    --pe-on-danger-solid: #ffffff;
+    --pe-success-bg: #e7f5ec; /* 仮 */
+    --pe-success-border: #9fd1b4; /* 仮 */
+    --pe-success-text: #1d5a37; /* 仮 */
+    --pe-pending: #8a5a00; /* 仮 */
+    --pe-chip-bg: #f3f4f6; /* 仮 */
+    --pe-chip-border: #d5d8de; /* 仮 */
+    --pe-inset-bg: #f7f8fa; /* 仮 */
+    --pe-inset-border: #dde0e5; /* 仮 */
+    --pe-tag-bg: #e8eaee; /* 仮 */
+    --pe-tag-text: #2b2f36; /* 仮 */
+    --pe-ended-bg: #eef0f3; /* 仮 */
+    --pe-ended-border: #c5c9d0; /* 仮 */
+    --pe-ended-accent: #8a909a; /* 仮 */
+    --pe-drop: #2f5fc4; /* 仮 */
+    --pe-drop-bg: #e3ecfb; /* 仮 */
+    --pe-handle: #8a909a; /* 仮 */
+    --pe-badge-border: #c5c9d0; /* 仮 */
+    --pe-on-accent: #ffffff; /* 仮 */
+    --pe-disabled-bg: #ebe5d8; /* 仮 */
+    --pe-disabled-text: #8a7f66; /* 仮 */
+    --pe-menu-shadow: 0 6px 18px rgb(0 0 0 / 15%); /* 仮 */
+  }
+}
+
+/* ---- ヘッダー帯（ScreenHeader の中に置くもの） ---- */
+
+.adminBadge {
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--color-admin);
+  color: var(--color-on-admin);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.headerNote {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.headerSpacer {
+  flex: 1 1 20px;
+}
+
+.loginName {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+/* ---- 本文 ---- */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.loading,
+.denied {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+/* 読み込みの失敗（src/components/DefinitionLoadAlert と同じ形） */
+.loadError {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--pe-danger);
+  border-radius: var(--radius-md);
+}
+
+.loadError p {
+  margin: 0;
+}
+
+.loadErrorTitle {
+  font-weight: 700;
+}
+
+.loadErrorReason {
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* 協力者で、更新できるイベントがないとき */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.panelMessage {
+  margin: 0;
+  font-weight: 700;
+}
+
+.panelNote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* 終了したイベント（見るだけ） */
+.endedBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 14px;
+  background: var(--pe-ended-bg);
+  border: 1px solid var(--pe-ended-border);
+  border-left: 6px solid var(--pe-ended-accent);
+  border-radius: 6px;
+}
+
+.endedTitle {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.endedNote {
+  flex: 1 1 320px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+/* 操作の結果の知らせ */
+.noticeError,
+.noticeSuccess {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.noticeError {
+  background: var(--pe-danger-bg);
+  border: 1px solid var(--pe-danger-border);
+  color: var(--pe-danger-text);
+}
+
+.noticeSuccess {
+  background: var(--pe-success-bg);
+  border: 1px solid var(--pe-success-border);
+  color: var(--pe-success-text);
+}
+
+/* 攻略の流れ・札・段階の詳細（終了したイベントでは操作できない状態で薄く出す） */
+.workArea {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workArea[inert] {
+  opacity: 0.55;
+  filter: grayscale(0.4);
+  user-select: none;
+}
+
+.lowerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* 段階がまったくないとき（段階の詳細の代わり） */
+.noStage {
+  flex: 999 1 480px;
+  min-width: 0;
+  margin: 0;
+  padding: 40px 20px;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* ドラッグ中に指の下に出す札・段階 */
+.dragChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--pe-menu-shadow);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: grabbing;
+}

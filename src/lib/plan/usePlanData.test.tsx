@@ -2,7 +2,8 @@
 //
 // - 共有のストアはモジュールに残るため、テストごとに resetPlanDataCache({ storage }) で、そのテストだけの保存先
 //   （fake-indexeddb の上の本物の保存。別の DB 名）に差し替える。
-// - 割り当ての保存の途中で取り込む・削除する場面は、saveAssignments を止めておける保存先（holdableStorage）で作る。
+// - 割り当ての保存の途中で取り込む・削除する場面、取り込みの途中で割り当てを変える場面、読み込みの途中で引数が変わる場面は、
+//   saveAssignments・saveImport・loadShips を止めておける保存先（holdableStorage）で作る。
 // - 時刻・乱数には頼らない。
 import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -18,6 +19,8 @@ import {
   failingStorage,
   holdableStorage,
   importInput,
+  legacyImportInput,
+  legacyShips,
   openTestStorage,
 } from "@/test/plan-storage";
 
@@ -31,6 +34,12 @@ const NEXT_EVENT_ID = "2027-winter";
 const FUDA_IDS = summer2026Definition.fudas.map((fuda) => fuda.id);
 /** 割り当てを 1 隻だけ変えた例：初霜改二を第三十一戦隊から連合艦隊へ */
 const MOVED: AssignmentMap = { ...summer2026Assignments, hatsushimo: "rengo" };
+/** 前の取り込みの日時（importInput の既定の値） */
+const FIRST_IMPORTED_AT = "2026-10-16T21:00:00.000+09:00";
+/** 取り込み直したときの日時 */
+const NEXT_IMPORTED_AT = "2026-10-17T09:00:00.000+09:00";
+/** もう一度取り込み直したときの日時 */
+const THIRD_IMPORTED_AT = "2026-10-17T12:00:00.000+09:00";
 
 // ---- 補助 ----
 
@@ -116,6 +125,40 @@ function MoveTwoButton(): ReactNode {
       初霜改二を連合艦隊へ、明石改を第六艦隊へ
     </button>
   );
+}
+
+/** 最新イベントを今の定義の札 ID の一覧で読み、準備完了になるまで待つ */
+async function renderReady() {
+  const hook = renderHook(() => usePlanData(EVENT_ID, FUDA_IDS));
+  await waitFor(() => expect(hook.result.current.status).toBe("ready"));
+  return hook;
+}
+
+/** 割り当ての保存を 1 回だけ失敗させて割り当てを変える（保存に失敗した割り当てを、ストアに残す） */
+async function setAssignmentsFailingOnce(result: { readonly current: PlanData }, next: AssignmentMap): Promise<void> {
+  vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+  await act(async () => {
+    await result.current.setAssignments(next);
+  });
+  // 前提：保存に失敗した
+  expect(expectReady(result.current).saveError).not.toBeNull();
+}
+
+/** 読み直す（reload を呼んで、終わるまで待つ） */
+async function reloadHook(result: { readonly current: PlanData }): Promise<void> {
+  await act(async () => {
+    await result.current.reload();
+  });
+}
+
+/**
+ * 共有のストアに残っている割り当ての保存（読み直しの後の保存し直しを含む）が終わるまで待つ
+ * （getPlanStorage の取り込みの確認は、残っている割り当ての保存がすべて終わってから行うので、それを待つ。保存先は変えない）
+ */
+async function waitForQueuedSaves(): Promise<void> {
+  await act(async () => {
+    await getPlanStorage().previewImport(importInput([]));
+  });
 }
 
 /** 共有のストアに、割り当ての保存を止めておける保存先を渡し、最新イベントを準備完了まで読む */
@@ -292,6 +335,53 @@ describe("札割りのデータのフック（usePlanData）", () => {
       expect(ready.returnedCount).toBe(0);
       expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
     });
+
+    it("札 ID の一覧で読み込んでいる途中でイベント ID が null に変わると、その読み込みを無効にし、次の一覧で読み込んだときに前の一覧で割り当てを控えに戻さない", async () => {
+      // 準備：艦の読み取りを止めておき、第三十一戦隊だけの一覧で読み込みを始める
+      await seedSummer2026(storage);
+      const holding = holdableStorage(storage);
+      resetPlanDataCache({ storage: holding.storage });
+      const held = holding.holdLoadShips();
+      const { result, rerender } = renderHook(
+        ({ eventId, fudaIds }: { eventId: string | null; fudaIds: readonly string[] }) => usePlanData(eventId, fudaIds),
+        { initialProps: { eventId: EVENT_ID as string | null, fudaIds: ["s31"] as readonly string[] } },
+      );
+      await held.reached;
+
+      // 実行：読み込みの途中で定義を読み込み直してイベント ID が null になり、その間に止めていた読み取りを終える
+      rerender({ eventId: null, fudaIds: [] });
+      held.release();
+      await vi.waitFor(() => expect(holding.calls).toContain("loadShips:done"));
+      await flushAsync();
+      // 定義を読み終えて、今の定義の札 ID の一覧になる
+      rerender({ eventId: EVENT_ID, fudaIds: FUDA_IDS });
+
+      // 検証：今の定義の札の割り当ては、返す値にも保存先にも残る
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      const ready = expectReady(result.current);
+      expect(ready.assignments).toEqual(summer2026Assignments);
+      expect(ready.returnedCount).toBe(0);
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(summer2026Assignments);
+    });
+
+    it("イベント ID が null を挟んで、前と同じイベント ID・札 ID の一覧に戻ると、準備完了の割り当てを返す", async () => {
+      // 準備：今の定義の札 ID の一覧で読み込んでおく
+      await seedSummer2026(storage);
+      const { result, rerender } = renderHook(
+        ({ eventId, fudaIds }: { eventId: string | null; fudaIds: readonly string[] }) => usePlanData(eventId, fudaIds),
+        { initialProps: { eventId: EVENT_ID as string | null, fudaIds: FUDA_IDS } },
+      );
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+
+      // 実行：定義を読み込み直す間だけイベント ID が null になり、同じ定義に戻る
+      rerender({ eventId: null, fudaIds: [] });
+      expect(result.current.status).toBe("idle");
+      rerender({ eventId: EVENT_ID, fudaIds: FUDA_IDS });
+
+      // 検証：待機中のまま止まらず、準備完了の割り当てを返す
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      expect(expectReady(result.current).assignments).toEqual(summer2026Assignments);
+    });
   });
 
   describe("複数の部品で共有する", () => {
@@ -456,6 +546,28 @@ describe("札割りのデータのフック（usePlanData）", () => {
       expect(preview).toEqual({ removedAssignmentCount: 0 });
     });
 
+    it("割り当ての保存に失敗したまま取り込みの確認（previewImport）をすると、保存先の古い割り当てではなく、今の割り当てで外れる件数を数える", async () => {
+      // 準備：初霜改二を第三十一戦隊に置いて保存しておき、明石改に置き換えた変更の保存を 1 回だけ失敗させる
+      //       （保存先は「初霜改二→s31」、返す値は「明石改→s31」）
+      await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+      await storage.saveAssignments(EVENT_ID, { hatsushimo: "s31" });
+      const { result } = renderHook(() => usePlanData(EVENT_ID, FUDA_IDS));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      vi.spyOn(storage, "saveAssignments").mockRejectedValueOnce(new Error("QuotaExceededError"));
+      await act(async () => {
+        await result.current.setAssignments({ akashi: "s31" });
+      });
+      // 前提：保存に失敗し、保存先は古い割り当てのまま
+      expect(expectReady(result.current).saveError).not.toBeNull();
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "s31" });
+
+      // 実行：明石改がいない（初霜改二だけの）取り込みで外れる件数を確かめる
+      const preview = await getPlanStorage().previewImport(importInput([shipByUid("hatsushimo")]));
+
+      // 検証：今の割り当ての明石改の分（1 件）が外れる
+      expect(preview).toEqual({ removedAssignmentCount: 1 });
+    });
+
     it("割り当ての保存を待つ間に取り込んだ艦娘データを削除しても、削除は保存が終わってから行う", async () => {
       // 準備：割り当てを変え、その保存を止めておく
       await seedSummer2026(storage);
@@ -481,6 +593,297 @@ describe("札割りのデータのフック（usePlanData）", () => {
       expect(order).toEqual(["saveAssignments:done", "clearImportedShips"]);
       expect(await storage.loadShips()).toEqual([]);
       expect(await storage.loadAssignments(EVENT_ID)).toEqual(MOVED);
+    });
+  });
+
+  describe("取り込みの後のふつうの流れ（取り込みの番号）", () => {
+    it("取り込みを保存して読み直した後に割り当てを変えると、保存先に入り、保存の失敗は出ない", async () => {
+      // 準備：取り込み（31 隻）と割り当てのある状態で読み込み、同じ 31 隻を取り込み直してから読み直す
+      await seedSummer2026(storage);
+      const { result } = await renderReady();
+      await act(async () => {
+        await getPlanStorage().saveImport(importInput(summer2026Ships, { importedAt: NEXT_IMPORTED_AT }));
+      });
+      await reloadHook(result);
+
+      // 実行
+      await act(async () => {
+        await result.current.setAssignments(MOVED);
+      });
+
+      // 検証
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(MOVED);
+      expect(expectReady(result.current).saveError).toBeNull();
+    });
+
+    it("保存に失敗した後に取り込んで読み直すと、失敗した変更が保存先に入り、その後に変えた割り当ても保存先に入る", async () => {
+      // 準備：割り当ての変更の保存を 1 回だけ失敗させてから、同じ 31 隻を取り込み直す
+      await seedSummer2026(storage);
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, MOVED);
+      await act(async () => {
+        await getPlanStorage().saveImport(importInput(summer2026Ships, { importedAt: NEXT_IMPORTED_AT }));
+      });
+
+      // 実行：読み直す
+      await reloadHook(result);
+      await waitForQueuedSaves();
+
+      // 検証：失敗した変更が残り、保存し直されて保存先に入る
+      expect(expectReady(result.current).assignments).toEqual(MOVED);
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(MOVED);
+      expect(expectReady(result.current).saveError).toBeNull();
+
+      // 実行：読み直した後に、もう一度変える
+      const later: AssignmentMap = { ...MOVED, akashi: "sixth" };
+      await act(async () => {
+        await result.current.setAssignments(later);
+      });
+
+      // 検証：後の変更も保存先に入る
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(later);
+      expect(expectReady(result.current).saveError).toBeNull();
+    });
+
+    it("2 隻だけを取り込んだ後、読み直す前に割り当てを変えても保存先に書き戻さず、読み直した後は艦にいる個体の割り当てだけになる", async () => {
+      // 準備：取り込み（31 隻）と割り当てのある状態で読み込み、初霜改二と明石改だけを取り込み直す
+      await seedSummer2026(storage);
+      const { result } = await renderReady();
+      await act(async () => {
+        await getPlanStorage().saveImport(
+          importInput([shipByUid("hatsushimo"), shipByUid("akashi")], { importedAt: NEXT_IMPORTED_AT }),
+        );
+      });
+      // 前提：取り込みで、初霜改二のほかの割り当ては保存先から外れている
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "s31" });
+
+      // 実行：読み直す前（前の取り込みの画面のまま）に割り当てを変える
+      await act(async () => {
+        await result.current.setAssignments(MOVED);
+      });
+      await waitForQueuedSaves();
+
+      // 検証：取り込みで外した個体の割り当てを保存先に書き戻さない。保存の失敗も出さない
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "s31" });
+      expect(expectReady(result.current).saveError).toBeNull();
+
+      // 実行：読み直す
+      await reloadHook(result);
+      await waitForQueuedSaves();
+
+      // 検証：取り込みにいる初霜改二の、変えた後の割り当て（連合艦隊）だけが残り、保存先にも入る
+      const ready = expectReady(result.current);
+      expect(ready.assignments).toEqual({ hatsushimo: "rengo" });
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "rengo" });
+      expect(ready.saveError).toBeNull();
+    });
+  });
+
+  describe("取り込みの後の割り当て（取り込みの順番でそろえる。U9）", () => {
+    it("取り込み（saveImport）の途中で割り当てを変えると、取り込みで外した個体の割り当てが保存先に戻らず、読み直した後も艦にいない個体の割り当てがない", async () => {
+      // 準備：取り込み（31 隻）と割り当てのある状態で読み込み、取り込みの保存を止めておく
+      await seedSummer2026(storage);
+      const holding = holdableStorage(storage);
+      resetPlanDataCache({ storage: holding.storage });
+      const { result } = await renderReady();
+      const ships = [shipByUid("hatsushimo"), shipByUid("akashi")];
+      const importedUids = new Set(ships.map((ship) => ship.uid));
+      const held = holding.holdSaveImport();
+
+      // 実行：初霜改二と明石改だけの取り込みを保存している途中で、前の取り込みの画面のまま割り当てを変え
+      //       （初霜改二を連合艦隊へ）、それから取り込みを終える
+      const importing = getPlanStorage().saveImport(importInput(ships, { importedAt: NEXT_IMPORTED_AT }));
+      await held.reached;
+      let saving: Promise<void> = Promise.resolve();
+      act(() => {
+        saving = result.current.setAssignments(MOVED);
+      });
+      held.release();
+      await act(async () => {
+        await Promise.all([importing, saving]);
+      });
+      await waitForQueuedSaves();
+
+      // 検証：保存先には、取り込みにいない個体の割り当てが戻らない。保存の失敗も出さない
+      const afterImport = await storage.loadAssignments(EVENT_ID);
+      expect(Object.keys(afterImport).filter((uid) => !importedUids.has(uid))).toEqual([]);
+      expect(expectReady(result.current).saveError).toBeNull();
+
+      // 実行：取り込みの後に読み直す
+      await reloadHook(result);
+      await waitForQueuedSaves();
+
+      // 検証：取り込みにいる初霜改二の、変えた後の割り当て（連合艦隊）だけが残り、保存し直される
+      const ready = expectReady(result.current);
+      expect(ready.assignments).toEqual({ hatsushimo: "rengo" });
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "rengo" });
+      expect(ready.saveError).toBeNull();
+    });
+
+    it("保存に失敗した後、読み直しを挟まずに古い形式・個体 ID ありの形式の順に取り込むと、読み直した後も失敗した割り当ては戻らない", async () => {
+      // 準備：取り込み（31 隻）と割り当てのある状態で読み込み、割り当ての変更の保存を 1 回だけ失敗させる
+      await seedSummer2026(storage);
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, MOVED);
+
+      // 実行：古い形式で取り込み、続けて個体 ID ありの形式（31 隻）で取り込み直してから読み直す
+      await act(async () => {
+        await getPlanStorage().saveImport(legacyImportInput(legacyShips(shipByUid("shigure")), NEXT_IMPORTED_AT));
+        await getPlanStorage().saveImport(importInput(summer2026Ships, { importedAt: THIRD_IMPORTED_AT }));
+      });
+      // 前提：古い形式の取り込みで、保存先の割り当てはすべて消えている
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
+      await reloadHook(result);
+      await waitForQueuedSaves();
+
+      // 検証：失敗した割り当ては引き継がず、状態も保存先も空で、保存の失敗も残らない
+      const ready = expectReady(result.current);
+      expect(ready.assignments).toEqual({});
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
+      expect(ready.saveError).toBeNull();
+    });
+
+    it("同じ取り込みの日時（importedAt）の古い形式で取り込み直しても、保存に失敗した割り当てを読み直しで残さない", async () => {
+      // 準備：古い形式で時雨改三だけを取り込み（legacy-1 = 時雨改三）、第三十一戦隊に置いて読み込み、
+      //       連合艦隊へ移した保存を 1 回だけ失敗させる
+      await storage.saveImport(legacyImportInput(legacyShips(shipByUid("shigure")), FIRST_IMPORTED_AT));
+      await storage.saveAssignments(EVENT_ID, { "legacy-1": "s31" });
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, { "legacy-1": "rengo" });
+
+      // 実行：同じ日時のまま、並びの違う古い形式（legacy-1 = 雪風改二、legacy-2 = 時雨改三）で取り込み直してから読み直す
+      await act(async () => {
+        await getPlanStorage().saveImport(
+          legacyImportInput(legacyShips(shipByUid("yukikaze"), shipByUid("shigure")), FIRST_IMPORTED_AT),
+        );
+      });
+      await reloadHook(result);
+      await waitForQueuedSaves();
+
+      // 検証：legacy-1（いまは雪風改二）を連合艦隊に置かない。状態も保存先も空で、保存の失敗も残らない
+      const ready = expectReady(result.current);
+      expect(ready.assignments).toEqual({});
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({});
+      expect(ready.saveError).toBeNull();
+    });
+  });
+
+  describe("取り込みで外れる件数と、未保存の割り当て（getPlanStorage）", () => {
+    it("保存先でも外れる割り当てがあるとき、取り込みの確認は保存先の分を差し引き、未保存の割り当てで外れる件数を数える", async () => {
+      // 準備：保存先は「初霜改二→s31・明石改→sixth」、未保存（保存に失敗した割り当て）は「初霜改二→s31」
+      await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+      await storage.saveAssignments(EVENT_ID, { hatsushimo: "s31", akashi: "sixth" });
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, { hatsushimo: "s31" });
+      // 前提：保存先は古い割り当てのまま（保存先だけで数えると、明石改の 1 件が外れる）
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "s31", akashi: "sixth" });
+
+      // 実行：初霜改二だけの取り込みで外れる件数を確かめる
+      const preview = await getPlanStorage().previewImport(importInput([shipByUid("hatsushimo")]));
+
+      // 検証：未保存の割り当て（初霜改二だけ）では、外れる割り当てはない
+      expect(preview).toEqual({ removedAssignmentCount: 0 });
+    });
+
+    it("古い形式で取り込み直して未保存の割り当てを捨てた（読み直した）後の取り込みの確認は、捨てた割り当てで数えない", async () => {
+      // 準備：取り込み（31 隻）と割り当てのある状態で読み込み、割り当ての変更（19 件）の保存を 1 回だけ失敗させる
+      await seedSummer2026(storage);
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, MOVED);
+      await act(async () => {
+        await getPlanStorage().saveImport(legacyImportInput(legacyShips(shipByUid("shigure")), NEXT_IMPORTED_AT));
+      });
+      await reloadHook(result);
+      await waitForQueuedSaves();
+
+      // 実行：個体 ID ありの形式で、初霜改二だけの取り込みで外れる件数を確かめる
+      const preview = await getPlanStorage().previewImport(importInput([shipByUid("hatsushimo")]));
+
+      // 検証：保存先にも返す値にも割り当てはないので、外れる割り当てはない
+      expect(preview).toEqual({ removedAssignmentCount: 0 });
+    });
+
+    it("古い形式で取り込み直した直後（読み直す前）の取り込みの確認も、捨てることになる未保存の割り当てで数えない", async () => {
+      // 準備：取り込み（31 隻）と割り当てのある状態で読み込み、割り当ての変更（19 件）の保存を 1 回だけ失敗させ、古い形式で取り込み直す
+      await seedSummer2026(storage);
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, MOVED);
+      await act(async () => {
+        await getPlanStorage().saveImport(legacyImportInput(legacyShips(shipByUid("shigure")), NEXT_IMPORTED_AT));
+      });
+
+      // 実行：読み直す前に、個体 ID ありの形式で、初霜改二だけの取り込みで外れる件数を確かめる
+      const preview = await getPlanStorage().previewImport(importInput([shipByUid("hatsushimo")]));
+
+      // 検証：未保存の割り当ては古い形式の取り込みで引き継がないことになったので、数えない（保存先も空）
+      expect(preview).toEqual({ removedAssignmentCount: 0 });
+    });
+
+    it.each([
+      {
+        label: "保存先では外れないが、未保存の割り当てでは外れる",
+        saved: { hatsushimo: "s31" },
+        unsaved: { akashi: "s31" },
+        expected: 1,
+      },
+      {
+        label: "保存先では外れるが、未保存の割り当てでは外れない",
+        saved: { hatsushimo: "s31", akashi: "sixth" },
+        unsaved: { hatsushimo: "s31" },
+        expected: 0,
+      },
+    ])(
+      "取り込みの保存（saveImport）が返す外した件数も、未保存の割り当てで数え、取り込みの確認の件数と同じになる（$label）",
+      async ({ saved, unsaved, expected }) => {
+        // 準備：初霜改二と明石改を取り込み、保存先の割り当てを置いてから、未保存の割り当て（保存に失敗した変更）を作る
+        await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+        await storage.saveAssignments(EVENT_ID, saved);
+        const { result } = await renderReady();
+        await setAssignmentsFailingOnce(result, unsaved);
+        const input = importInput([shipByUid("hatsushimo")], { importedAt: NEXT_IMPORTED_AT });
+
+        // 実行：初霜改二だけの取り込みを確かめてから保存する
+        const preview = await getPlanStorage().previewImport(input);
+        let saveResult: SaveImportResult | undefined;
+        await act(async () => {
+          saveResult = await getPlanStorage().saveImport(input);
+        });
+
+        // 検証
+        expect(preview).toEqual({ removedAssignmentCount: expected });
+        expect(saveResult).toEqual({ removedAssignmentCount: expected });
+      },
+    );
+
+    it("未保存の割り当てがあるときの取り込みの保存で、保存先の割り当ての読み取り（数え直しの準備）が失敗しても、取り込みそのものは行い、保存先で数えた件数を返す", async () => {
+      // 準備：取り込み（31 隻）と割り当て（19 件）のある状態で読み込み、割り当ての変更の保存を 1 回だけ失敗させる
+      await seedSummer2026(storage);
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, MOVED);
+      // 次の保存先の割り当ての読み取り（取り込みの保存の前の読み取り）を 1 回だけ失敗させる
+      const loadAssignments = vi.spyOn(storage, "loadAssignments").mockRejectedValueOnce(new Error("UnknownError"));
+      const ships = [shipByUid("hatsushimo"), shipByUid("akashi")];
+
+      // 実行・検証：初霜改二と明石改だけの取り込みを保存する。保存先の割り当て（19 件）のうち、
+      //             取り込みにいない個体の 18 件（保存先で数えた件数）を返す
+      await act(async () => {
+        await expect(
+          getPlanStorage().saveImport(importInput(ships, { importedAt: NEXT_IMPORTED_AT })),
+        ).resolves.toEqual({ removedAssignmentCount: 18 });
+      });
+
+      // 検証：失敗した読み取りを通ったうえで、取り込みが保存されている
+      expect(loadAssignments).toHaveBeenCalled();
+      expect(byUid(await storage.loadShips())).toEqual(byUid(ships));
+      expect(await storage.loadLastImport()).toMatchObject({ importedAt: NEXT_IMPORTED_AT, shipCount: 2 });
+
+      // 実行：読み直す
+      await reloadHook(result);
+      await waitForQueuedSaves();
+
+      // 検証：未保存の割り当ては、取り込みの後の艦（初霜改二・明石改）で絞って残り、保存先にも入る
+      expect(expectReady(result.current).assignments).toEqual({ hatsushimo: "rengo" });
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "rengo" });
     });
   });
 
@@ -540,6 +943,31 @@ describe("札割りのデータのフック（usePlanData）", () => {
 
       // 検証：beforeEach で渡した保存先から読める
       expect(await storage.loadShips()).toEqual([shipByUid("hatsushimo")]);
+    });
+
+    it("getPlanStorage() の close を呼んでも、共有している保存先を閉じず、その後も usePlanData で読み書きできる", async () => {
+      // 準備
+      await seedSummer2026(storage);
+      const { result } = renderHook(() => usePlanData(EVENT_ID, FUDA_IDS));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+
+      // 実行：取り込み画面などが、受け取った保存先を閉じる
+      getPlanStorage().close();
+      await act(async () => {
+        await result.current.setAssignments(MOVED);
+      });
+
+      // 検証：割り当てを保存できる
+      expect(expectReady(result.current).saveError).toBeNull();
+
+      // 実行：読み直す
+      await act(async () => {
+        await result.current.reload();
+      });
+
+      // 検証：読み直せて、変えた割り当てが返る値にも保存先にも残る
+      expect(expectReady(result.current).assignments).toEqual(MOVED);
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual(MOVED);
     });
 
     it("保存先を渡さずに resetPlanDataCache すると、既定の保存先になり、getPlanStorage は何度呼んでも同じものを返す", () => {
