@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useId, useState } from "react";
 import { formatDateTimeJst } from "@/domain/definition-edit";
 import { errorMessage } from "../editor-model";
 import type { SaveLogEntry, SaveLogKind, SaveLogLoader } from "./types";
-import { saveLogUserNames, viewSaveLogs } from "./view";
+import { type SaveLogMember, type SaveLogUserOption, saveLogUserOptions, viewSaveLogs } from "./view";
 import styles from "./SaveLogDialog.module.css";
 
 /** 種類のバッジ・選択肢の文字 */
@@ -28,8 +28,8 @@ export type SaveLogDialogProps = {
   eventName: string;
   /** 定義の海域の表示名（「海域」の選択肢） */
   areaNames: readonly string[];
-  /** 編集できる人の表示名（「誰が」の選択肢の並び。管理者を先に、追加した順） */
-  memberNames: readonly string[];
+  /** 編集できる人（「誰が」の選択肢の並びと今の表示名。管理者を先に、追加した順） */
+  members: readonly SaveLogMember[];
 };
 
 /** 記録の読み込みの状態 */
@@ -42,6 +42,11 @@ type LoadState =
 function shortDateTime(value: string): string {
   const full = formatDateTimeJst(value);
   return /^\d{4}\//.test(full) ? full.slice(5) : full;
+}
+
+/** 「誰が」の選択肢の選択欄の値（ID のある人は ID、ID の分からない記録は表示名で見分ける） */
+function userOptionValue(option: SaveLogUserOption): string {
+  return option.userId === null ? `name:${option.name}` : `id:${option.userId}`;
 }
 
 /** 選択欄の値を種類にする（「すべて」は null） */
@@ -97,9 +102,9 @@ function SaveLogRow({ entry }: { entry: SaveLogEntry }): ReactNode {
 }
 
 /** ウィンドウの中身（開くたびに作られ、記録を読み直す） */
-function SaveLogBody({ loader, eventId, areaNames, memberNames }: Omit<SaveLogDialogProps, "eventName">): ReactNode {
+function SaveLogBody({ loader, eventId, areaNames, members }: Omit<SaveLogDialogProps, "eventName">): ReactNode {
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
-  const [userName, setUserName] = useState(ALL);
+  const [userValue, setUserValue] = useState(ALL);
   const [kind, setKind] = useState(ALL);
   const [mapLabel, setMapLabel] = useState(ALL);
   const [pages, setPages] = useState(1);
@@ -121,12 +126,14 @@ function SaveLogBody({ loader, eventId, areaNames, memberNames }: Omit<SaveLogDi
   }, [loader, eventId]);
 
   const entries = load.status === "loaded" ? load.entries : [];
+  const users = saveLogUserOptions(entries, members);
+  const selectedUser = users.find((option) => userOptionValue(option) === userValue) ?? null;
   const view = viewSaveLogs(
     entries,
-    { userName: userName === ALL ? null : userName, kind: toKind(kind), mapLabel: mapLabel === ALL ? null : mapLabel },
+    { user: selectedUser, kind: toKind(kind), mapLabel: mapLabel === ALL ? null : mapLabel },
     pages,
   );
-  const userOptions = saveLogUserNames(entries, memberNames).map((name) => [name, name] as const);
+  const userOptions = users.map((option) => [userOptionValue(option), option.name] as const);
   const kindOptions = KIND_CHOICES.map((value) => [value, KIND_LABELS[value]] as const);
   const areaOptions = areaNames.map((name) => [name, name] as const);
   const filterDisabled = load.status !== "loaded";
@@ -142,11 +149,11 @@ function SaveLogBody({ loader, eventId, areaNames, memberNames }: Omit<SaveLogDi
       <div className={styles.filters}>
         <FilterSelect
           label="誰が"
-          value={userName}
+          value={userValue}
           disabled={filterDisabled}
           allLabel="全員"
           options={userOptions}
-          onChange={changeFilter(setUserName)}
+          onChange={changeFilter(setUserValue)}
         />
         <FilterSelect
           label="種類"

@@ -50,11 +50,11 @@ export function restoreClock(): void {
 export const ADMIN: EditorUser = { displayName: "テスト管理者", role: "admin" };
 /** ログイン中の協力者 */
 export const COLLAB: EditorUser = { displayName: "協力者A", role: "collab" };
-/** 編集できる人 */
+/** 編集できる人（PR-12b：利用者の ID を持つ。編集中の表示の名前・保存の記録の「誰が」を ID で引くため） */
 export const MEMBERS: readonly EditorMember[] = [
-  { displayName: "テスト管理者", role: "admin" },
-  { displayName: "協力者A", role: "collab" },
-  { displayName: "協力者B", role: "collab" },
+  { userId: "user-admin", displayName: "テスト管理者", role: "admin" },
+  { userId: "user-a", displayName: "協力者A", role: "collab" },
+  { userId: "user-b", displayName: "協力者B", role: "collab" },
 ];
 
 // ---- イベントと文書 ----

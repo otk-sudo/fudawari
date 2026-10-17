@@ -36,6 +36,11 @@ import type { PresenceConnection, PresenceConnectOptions, PresenceConnector, Pre
 //   （モックは 1 人だけの絵。並べ方を変えるなら「複数人は「編集できる人」の並びで 1 人 1 行に出す」のテストだけを直す）
 // テストで決めていないこと（親が決める）
 // - 表示中の海域がない人（段階がない）の出し方、新規作成に切り替えたときにチャンネルから抜けるか、終了したイベントで出すか
+//
+// PR-12b（Codex #21-4301315092・レビュー P5）で足したこと
+// - 表示名は、送られてきた値（PresencePeer.displayName）ではなく、編集できる人の一覧（利用者の ID → 表示名）から引く。
+//   一覧にいない利用者の ID の人は出さない（v1 での対策。送る値は誰でも書けるため）
+// - 編集中の人の入れ物に aria-live="polite" を付け、誰もいなくても入れ物は描く（出入りを読み上げる）
 
 /** 偽物のつなぎ先の 1 回分 */
 interface FakeConnection extends PresenceConnection {
@@ -249,5 +254,65 @@ describe("編集中の表示（定義画面）", () => {
     // 検証
     expect(presence.connect).not.toHaveBeenCalled();
     expectTextNotShown("も編集中");
+  });
+
+  describe("PR-12b：表示名は編集できる人の一覧から引く（Codex #21-4301315092）", () => {
+    it("送られてきた表示名ではなく、利用者の ID で引いた編集できる人の表示名を出す", async () => {
+      // 準備
+      const { presence } = await renderWithPresence();
+      await connected(presence);
+
+      // 実行：user-a（編集できる人の協力者A）が、違う表示名を送ってきた
+      presence.emit([{ userId: "user-a", displayName: "なりすまし", areaName: "E3" }]);
+
+      // 検証
+      expectTextShown("協力者Aも編集中（E3 を表示中）");
+      expectTextNotShown("なりすまし");
+    });
+
+    it("編集できる人の一覧にいない利用者の ID の人は出さない（一覧にいる人は出す）", async () => {
+      // 準備
+      const { presence } = await renderWithPresence();
+      await connected(presence);
+
+      // 実行
+      presence.emit([{ userId: "user-stranger", displayName: "知らない人", areaName: "E1" }, AKANE]);
+
+      // 検証
+      expectTextShown("協力者Aも編集中（E3 を表示中）");
+      expectTextNotShown("知らない人");
+      expect(screen.getAllByText(textContaining("も編集中"))).toHaveLength(1);
+    });
+  });
+
+  describe("PR-12b：編集中の人の読み上げ（レビュー P5）", () => {
+    /** aria-live="polite" の要素 */
+    function politeRegions(): Element[] {
+      return [...document.querySelectorAll('[aria-live="polite"]')];
+    }
+
+    it("編集中の人の入れ物に aria-live=\"polite\" を付け、誰もいないときも入れ物を描いておく（出入りで同じ入れ物の中身が変わる）", async () => {
+      // 準備：誰もいない
+      const { presence } = await renderWithPresence();
+      await connected(presence);
+      presence.emit([]);
+      const regionsWhenEmpty = politeRegions();
+
+      // 実行：入る
+      presence.emit([AKANE]);
+
+      // 検証：行は aria-live="polite" の入れ物の中にあり、その入れ物は誰もいないときからあった
+      const line = screen.getByText(textContaining("協力者Aも編集中"));
+      const live = line.closest('[aria-live="polite"]');
+      expect(live, "「も編集中」の行を囲む aria-live=\"polite\" の入れ物").not.toBeNull();
+      expect(regionsWhenEmpty).toContain(live);
+
+      // 実行：抜ける
+      presence.emit([]);
+
+      // 検証：入れ物は残り、中身は消える
+      expect(live).toBeInTheDocument();
+      expect(live).not.toHaveTextContent("も編集中");
+    });
   });
 });

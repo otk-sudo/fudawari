@@ -4,6 +4,19 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { PresenceConnection, PresenceConnector, PresencePeer } from "./types";
 import styles from "./EditingPresence.module.css";
 
+/** 編集できる人（利用者の ID と今の表示名） */
+export interface EditingMember {
+  readonly userId: string;
+  readonly displayName: string;
+}
+
+/** 画面に出す 1 人（表示名は編集できる人の一覧から引いたもの） */
+interface ShownPeer {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly areaName: string | null;
+}
+
 export type EditingPresenceProps = {
   /** Presence のチャンネルにつなぐ関数（同じ関数を渡し続けること。変わるとつなぎ直す） */
   connect: PresenceConnector;
@@ -13,8 +26,11 @@ export type EditingPresenceProps = {
   displayName: string;
   /** 自分が表示中の海域の表示名（選んでいる段階の海域。なければ null） */
   areaName: string | null;
-  /** 編集できる人の表示名（管理者を先に、追加した順）。複数人はこの並びで出す */
-  memberNames: readonly string[];
+  /**
+   * 編集できる人（管理者を先に、追加した順）。表示名は送られてきた値ではなくここから引き、ここにいない人は出さない
+   * （送る値は誰でも書けるため）。複数人はこの並びで出す
+   */
+  members: readonly EditingMember[];
 };
 
 /**
@@ -66,17 +82,25 @@ function usePresencePeers(
   return peers;
 }
 
-/** 人の並び：編集できる人の並び → そこにいない人は表示名の順 */
-function sortPeers(peers: readonly PresencePeer[], memberNames: readonly string[]): PresencePeer[] {
-  const rank = (peer: PresencePeer): number => {
-    const index = memberNames.indexOf(peer.displayName);
-    return index === -1 ? memberNames.length : index;
-  };
-  return [...peers].sort((a, b) => rank(a) - rank(b) || a.displayName.localeCompare(b.displayName, "ja"));
+/**
+ * 出す人：編集できる人の一覧にいる人だけを、その一覧の並びで、一覧の表示名にして返す
+ * （送られてきた表示名は使わない。一覧にいない利用者の ID の人は出さない）
+ */
+function shownPeers(peers: readonly PresencePeer[], members: readonly EditingMember[]): ShownPeer[] {
+  const byUser = new Map(peers.map((peer) => [peer.userId, peer]));
+  const shown: ShownPeer[] = [];
+  const added = new Set<string>();
+  for (const member of members) {
+    const peer = byUser.get(member.userId);
+    if (peer === undefined || added.has(member.userId)) continue;
+    added.add(member.userId);
+    shown.push({ userId: member.userId, displayName: member.displayName, areaName: peer.areaName });
+  }
+  return shown;
 }
 
 /** 1 人分の文（「（名前）も編集中（E3 を表示中）」。表示中の海域がなければ「（名前）も編集中」） */
-function presenceText(peer: PresencePeer): string {
+function presenceText(peer: ShownPeer): string {
   return peer.areaName === null
     ? `${peer.displayName}も編集中`
     : `${peer.displayName}も編集中（${peer.areaName} を表示中）`;
@@ -84,19 +108,23 @@ function presenceText(peer: PresencePeer): string {
 
 /**
  * 編集中の人の表示（要件 3.7「編集中の人」、モック PlanEditor.dc.html）。
- * 定義画面を開いている自分以外の人を、1 人 1 行で「（名前）も編集中（E3 を表示中）」と出す（誰もいなければ何も出さない）
+ * 定義画面を開いている自分以外の人を、1 人 1 行で「（名前）も編集中（E3 を表示中）」と出す。
+ * 出入りを読み上げるよう、入れ物（aria-live="polite"）は誰もいないときも描いておき、中身だけを変える
  */
-export function EditingPresence({ connect, eventId, displayName, areaName, memberNames }: EditingPresenceProps): ReactNode {
-  const peers = usePresencePeers(connect, eventId, displayName, areaName);
-  if (peers.length === 0) return null;
+export function EditingPresence({ connect, eventId, displayName, areaName, members }: EditingPresenceProps): ReactNode {
+  const peers = shownPeers(usePresencePeers(connect, eventId, displayName, areaName), members);
   return (
-    <ul className={styles.list} aria-label="編集中の人">
-      {sortPeers(peers, memberNames).map((peer) => (
-        <li key={peer.userId} className={styles.item}>
-          <span className={styles.dot} aria-hidden="true" />
-          {presenceText(peer)}
-        </li>
-      ))}
-    </ul>
+    <div className={styles.live} aria-live="polite">
+      {peers.length > 0 && (
+        <ul className={styles.list} aria-label="編集中の人">
+          {peers.map((peer) => (
+            <li key={peer.userId} className={styles.item}>
+              <span className={styles.dot} aria-hidden="true" />
+              {presenceText(peer)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

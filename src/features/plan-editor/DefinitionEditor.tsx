@@ -1009,13 +1009,18 @@ export function DefinitionEditor({
 
   // 確認のウィンドウ（今のモードのワークスペースの衝突のときだけ出す）
   const shownConflict = conflict !== null && conflict.context.target === mode ? conflict : null;
-  // 確認のウィンドウに並べる自動で合わせた所（3 人目と合わせ直したときは、前に合わせた所も含める）
+  // 確認のウィンドウに並べる自動で合わせた所（3 人目と合わせ直したときは、前に合わせた所も含める）。
+  // 「場所を見る」は、編集中の文書（攻略の流れに今ある段階）と合わせた文書の両方にある段階だけに出す
+  // （相手が足した段階は、保存するまで攻略の流れにないので選べない）
   const pendingMergedItems =
     shownConflict === null
       ? []
       : placesIn(
-          [...shownConflict.context.mergedItems, ...mergedItemsOf(shownConflict.merge, shownConflict.theirs.name)],
-          shownConflict.merge.merged,
+          placesIn(
+            [...shownConflict.context.mergedItems, ...mergedItemsOf(shownConflict.merge, shownConflict.theirs.name)],
+            shownConflict.merge.merged,
+          ),
+          ws.doc,
         );
   // 攻略の流れの段階の印：自動で合わせた段階（保存した後も残す）に、確認の間は相手だけが変えた段階・衝突した段階を重ねる
   const stageMarks = new Map<string, StageMark>();
@@ -1039,7 +1044,6 @@ export function DefinitionEditor({
 
   // PR-12：既存の更新のときだけ「保存の記録を見る」と「（名前）も編集中」を出す（終了したイベントでも出す）
   const openedEventId = mode === "update" ? ws.eventId : null;
-  const memberNames = data.members.map((member) => member.displayName);
   const shownAreaName =
     selectedStage === null ? null : (ws.doc.areas.find((area) => area.id === selectedStage.areaId)?.name ?? null);
   const draftLogSlot =
@@ -1049,7 +1053,7 @@ export function DefinitionEditor({
         eventId={openedEventId}
         eventName={ws.meta.name}
         areaNames={ws.doc.areas.map((area) => area.name)}
-        memberNames={memberNames}
+        members={data.members}
       />
     ) : undefined;
   const presenceSlot =
@@ -1060,7 +1064,7 @@ export function DefinitionEditor({
         eventId={openedEventId}
         displayName={user.displayName}
         areaName={shownAreaName}
-        memberNames={memberNames}
+        members={data.members}
       />
     ) : undefined;
 
@@ -1082,7 +1086,7 @@ export function DefinitionEditor({
         onCommitText={commitField}
         onClearEnd={clearEnd}
         metaLocked={metaLocked}
-        modeLocked={dialogOpen}
+        modeLock={dialogOpen ? "confirming" : busy !== null ? "busy" : null}
         baseEventOptions={data.baseEventOptions}
         canChooseBase={canChooseBase}
         onChooseBase={chooseBase}
