@@ -161,4 +161,65 @@ describe("validateDraftDefinition（共有の下書きの検証）", () => {
       expect(draft.errors.map((e) => e.path)).toEqual(["fudas[0].color", "stages[4].fudaId"]);
     });
   });
+
+  describe("特効グループの国籍（v1.1。公開用の検証と同じ規則）", () => {
+    /** 特効グループのある、イベント名・開始日時・版の日付が空の下書き（テスト用データのイベントの情報だけを空にした） */
+    const relaxedDraft = withEvent({ name: "", startAt: "", versionDate: "" });
+
+    it("国籍を持つグループの下書きは通り、国籍は入力の順のまま残る", () => {
+      // 準備：空のイベント名などがある下書き（仮の値を通る道）と、空の欄がない文書（公開用の検証をそのまま返す道）
+      const withNationality = (doc: DefinitionDoc): DefinitionDoc =>
+        editDoc(doc, (d) => {
+          groupOf(d, "E2-3-C").nationalities = ["uk", "usa"];
+        });
+
+      // 実行・検証
+      for (const doc of [withNationality(relaxedDraft), withNationality(def)]) {
+        const value = expectValid(validateDraftDefinition(doc));
+        expect(groupOf(value, "E2-3-C").nationalities).toEqual(["uk", "usa"]);
+        expect(value).toEqual(doc);
+      }
+    });
+
+    it("国籍が空の配列のグループは、検証後の値で nationalities の項目を持たない", () => {
+      const doc = editDoc(relaxedDraft, (d) => {
+        groupOf(d, "E2-3-C").nationalities = [];
+      });
+
+      const value = expectValid(validateDraftDefinition(doc));
+
+      expect(Object.hasOwn(groupOf(value, "E2-3-C"), "nationalities")).toBe(false);
+    });
+
+    it("v1 の下書き（国籍なし）は、そのまま通り、値も変わらない（どのグループも nationalities の項目を持たない）", () => {
+      const value = expectValid(validateDraftDefinition(relaxedDraft));
+
+      expect(value).toEqual(relaxedDraft);
+      expect(value.stages.flatMap((s) => s.boosts).some((g) => Object.hasOwn(g, "nationalities"))).toBe(false);
+    });
+
+    it("国籍の誤り（unknown・重複・配列でない）は、公開用の検証と同じエラー（code・path・message）を返す", () => {
+      // 準備：空のイベント名などがある下書きで、3 つのグループの国籍を壊す
+      const broken = editDoc(relaxedDraft, (d) => {
+        (groupOf(d, "E2-3-C") as unknown as Record<string, unknown>).nationalities = ["unknown"];
+        (groupOf(d, "E2-3-B") as unknown as Record<string, unknown>).nationalities = ["usa", "usa"];
+        (groupOf(d, "E2-3-A") as unknown as Record<string, unknown>).nationalities = "usa";
+      });
+
+      // 実行
+      const draft = validateDraftDefinition(broken);
+      const pub = validatePublicDefinition(broken);
+
+      // 検証
+      expect(draft.ok).toBe(false);
+      expect(pub.ok).toBe(false);
+      if (draft.ok || pub.ok) return;
+      expect(draft.errors).toEqual(withoutRelaxedFields(pub.errors));
+      expect(draft.errors.map((e) => [e.path, e.code])).toEqual([
+        ["stages[4].boosts[0].nationalities[0]", "invalid_value"],
+        ["stages[4].boosts[1].nationalities[1]", "duplicate_value"],
+        ["stages[4].boosts[2].nationalities", "invalid_type"],
+      ]);
+    });
+  });
 });

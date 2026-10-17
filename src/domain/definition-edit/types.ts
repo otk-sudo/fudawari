@@ -13,6 +13,7 @@
 //  （validateDraftDefinition・validatePublicDefinition。イベント名以外の名前の空はどちらでも弾く）で弾く。
 //   札の追加だけは入力を確定する操作なので、空の名前を弾く。
 import type { EventInfo, Importance, PublicDefinition } from "@/domain/definition/types";
+import type { BoostNationality } from "@/domain/nationality";
 
 /** 定義の文書（共有の下書き。公開定義と同じ形） */
 export type DefinitionDoc = PublicDefinition;
@@ -110,6 +111,8 @@ export interface AddBoostGroupInput {
   multiplier?: number;
   /** 艦名（省略時は空。前後の空白を除き、重複を除く。空の艦名は不可） */
   shipNames?: readonly string[];
+  /** 国籍（省略時はなし。v1.1。BOOST_NATIONALITIES の順に並べ直し、重複を除く。選べない国籍は不可） */
+  nationalities?: readonly BoostNationality[];
 }
 
 /** 特効グループの変更（U16：倍率と名前をその場で編集） */

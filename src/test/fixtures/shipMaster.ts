@@ -12,6 +12,7 @@
 //
 // 使い方：createShipMaster(summer2026MasterEntries)（@/domain/master）で索引を作って引く
 import type { RemodelStage, ShipMasterEntry } from "@/domain/master/types";
+import type { Nationality } from "@/domain/nationality";
 import { deepFreeze } from "./freeze";
 
 interface ShipClass {
@@ -54,9 +55,11 @@ function entry(fields: {
   remodelStage: RemodelStage;
   sortNo: number;
   luckBase: number;
+  /** 国籍（省略すると日本。v1.1） */
+  nationality?: Nationality;
 }): ShipMasterEntry {
-  const { shipClass, ...rest } = fields;
-  return { ...rest, ...shipClass };
+  const { shipClass, nationality = "japan", ...rest } = fields;
+  return { ...rest, ...shipClass, nationality };
 }
 
 const entries: ShipMasterEntry[] = [

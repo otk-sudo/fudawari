@@ -6,6 +6,7 @@ import {
   friendlyRow,
   start2Fragment,
   start2FragmentClassNames,
+  start2FragmentClassNationalities,
   type MstShipRow,
 } from "@/test/fixtures/start2Fragment";
 import {
@@ -39,7 +40,7 @@ function soloRow(id: number, name: string, ctype: number, sortno: number, after 
 describe("buildShipMasterEntries（start2.json から自前の形式の艦船マスタを作る）", () => {
   it("味方艦の項目を ShipMasterEntry の形に写す（時雨改二）", () => {
     // 実行
-    const entries = buildShipMasterEntries(start2Fragment, start2FragmentClassNames);
+    const entries = buildShipMasterEntries(start2Fragment, start2FragmentClassNames, start2FragmentClassNationalities);
 
     // 検証
     expect(entryOf(entries, 145)).toEqual({
@@ -50,6 +51,7 @@ describe("buildShipMasterEntries（start2.json から自前の形式の艦船マ
       shipTypeId: 2,
       shipClassId: 23,
       shipClassName: "白露型",
+      nationality: "japan", // v1.1：艦型の国籍の対応表から
       remodelStage: "intermediate",
       sortNo: 243,
       luckBase: 15, // api_luck[0]（初期値）。api_luck[1]（最大値）は使わない
@@ -64,6 +66,7 @@ describe("buildShipMasterEntries（start2.json から自前の形式の艦船マ
       "id",
       "luckBase",
       "name",
+      "nationality",
       "remodelStage",
       "shipClassId",
       "shipClassName",
@@ -154,6 +157,51 @@ describe("buildShipMasterEntries（start2.json から自前の形式の艦船マ
 
       expect(entryOf(entries, 961).shipClassName).toBe("白露型");
       expect(entryOf(entries, 508).shipClassName).toBe("鈴谷型");
+    });
+  });
+
+  describe("国籍（v1.1。艦型の番号 → 国籍の対応表から入れる）", () => {
+    it("対応表にある艦型の艦は、改造の段階によらず対応表の国籍になる（時雨系 23 → 日本、鈴谷系 9 → ドイツ）", () => {
+      // 実行
+      const entries = buildShipMasterEntries(start2Fragment, start2FragmentClassNames, start2FragmentClassNationalities);
+
+      // 検証
+      expect(entries.map((e) => [e.id, e.nationality])).toEqual([
+        [43, "japan"],
+        [124, "germany"],
+        [129, "germany"],
+        [145, "japan"],
+        [243, "japan"],
+        [503, "germany"],
+        [508, "germany"],
+        [961, "japan"],
+      ]);
+    });
+
+    it("対応表にない艦型の艦は unknown（艦型 23 だけの対応表なら、鈴谷系は unknown）", () => {
+      const entries = buildShipMasterEntries(start2Fragment, start2FragmentClassNames, new Map([[23, "usa"]]));
+
+      expect(entryOf(entries, 961).nationality).toBe("usa");
+      expect(entryOf(entries, 124).nationality).toBe("unknown");
+      expect(entryOf(entries, 508).nationality).toBe("unknown");
+    });
+
+    it("国籍の対応表を省略すると（既定は空の対応表）、すべての艦が unknown", () => {
+      const entries = buildShipMasterEntries(start2Fragment, start2FragmentClassNames);
+
+      expect(new Set(entries.map((e) => e.nationality))).toEqual(new Set(["unknown"]));
+    });
+
+    it("国籍の対応表は、艦型の名前の対応表とは別に引く（名前を補った艦型でも、国籍の対応表にあればその国籍）", () => {
+      // 艦型 900 は名前の対応表になく「甲型」と補うが、国籍の対応表には「イタリア」がある
+      const rows = [soloRow(20, "甲", 900, 100), soloRow(30, "乙", 900, 200)];
+
+      const entries = buildShipMasterEntries(start2Of(rows), new Map(), new Map([[900, "italy"]]));
+
+      expect(entries.map((e) => [e.shipClassName, e.nationality])).toEqual([
+        ["甲型", "italy"],
+        ["甲型", "italy"],
+      ]);
     });
   });
 });

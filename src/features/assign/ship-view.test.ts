@@ -107,7 +107,7 @@ describe("艦の情報と特効（shipEntryOf・hasBoostIn・boostIn）", () => 
 
     expect(entry.ship).toBe(ship);
     expect(entry.info).toMatchObject({ known: true, name: "時雨改二" });
-    expect(entry.boost).toEqual(shipBoostSummary(def, "時雨"));
+    expect(entry.boost).toEqual(shipBoostSummary(def, { baseName: "時雨", nationality: "japan" }));
   });
 
   it("マスタにない艦は、名前が分からない艦で特効なし", () => {

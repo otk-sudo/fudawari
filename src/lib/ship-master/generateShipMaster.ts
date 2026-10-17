@@ -8,8 +8,9 @@
 // - 取得の一時的な失敗（通信の失敗、5xx など）は、少し待って再試行する。
 // - 壊れたマスタを配らないよう、味方艦の隻数の下限と、味方艦の行の数の項目（図鑑番号・艦種・艦型・運の初期値）を確かめる。
 import { buildShipMasterEntries, findInvalidFriendlyRows, readStart2 } from "@/domain/master/fromStart2";
-import { SHIP_CLASS_NAMES } from "@/domain/master/shipClassNames";
+import { SHIP_CLASS_NAMES, SHIP_CLASS_NATIONALITIES } from "@/domain/master/shipClassNames";
 import type { ShipMasterEntry } from "@/domain/master/types";
+import type { BoostNationality } from "@/domain/nationality";
 
 /** start2.json の取得元 */
 export const START2_URL = "https://raw.githubusercontent.com/Tibowl/api_start2/master/start2.json";
@@ -17,7 +18,10 @@ export const START2_URL = "https://raw.githubusercontent.com/Tibowl/api_start2/m
 /** 書き出し先（プロジェクトのルートからの相対パス） */
 export const SHIP_MASTER_OUTPUT_PATH = "public/data/ship-master.json";
 
-/** 艦船マスタのファイルの形式の版。形を変えるときに上げる */
+/**
+ * 艦船マスタのファイルの形式の版。形を変えるときに上げる。
+ * v1.1 の国籍（nationality）は項目を足すだけなので 1 のまま（読み込みは、国籍のない古い行を unknown として読む）
+ */
 export const SHIP_MASTER_FILE_SCHEMA_VERSION = 1;
 
 /** 味方艦の隻数の下限の既定値（2026-10 の実データは 866 隻） */
@@ -51,6 +55,8 @@ export interface GenerateShipMasterDeps {
   writeFile: (path: string, content: string) => Promise<void>;
   /** 艦型の名前の対応表。省略すると SHIP_CLASS_NAMES（src/domain/master/shipClassNames.ts） */
   classNames?: ReadonlyMap<number, string>;
+  /** 艦型の国籍の対応表（v1.1）。省略すると SHIP_CLASS_NATIONALITIES（src/domain/master/shipClassNames.ts） */
+  classNationalities?: ReadonlyMap<number, BoostNationality>;
   /** 書き出し先。省略すると SHIP_MASTER_OUTPUT_PATH */
   outputPath?: string;
   /**
@@ -74,6 +80,19 @@ export interface GenerateShipMasterResult {
   outputPath: string;
   /** 書き出した艦の数 */
   shipCount: number;
+  /**
+   * 国籍の対応表にない艦型（国籍が unknown になり、国籍の特効が効かない艦型。v1.1）。
+   * 艦型の番号の昇順で、艦名は艦 ID の昇順。なければ空の配列。生成は止めない（スクリプトが警告に出す）
+   */
+  unknownNationalityClasses: UnknownNationalityClass[];
+}
+
+/** 国籍の対応表にない艦型と、その艦型の艦名 */
+export interface UnknownNationalityClass {
+  /** 艦型の番号（api_ctype） */
+  shipClassId: number;
+  /** その艦型の艦名（艦 ID の昇順） */
+  shipNames: string[];
 }
 
 /**
@@ -90,6 +109,7 @@ export interface GenerateShipMasterResult {
 export async function generateShipMaster(deps: GenerateShipMasterDeps): Promise<GenerateShipMasterResult> {
   const outputPath = deps.outputPath ?? SHIP_MASTER_OUTPUT_PATH;
   const classNames = deps.classNames ?? SHIP_CLASS_NAMES;
+  const classNationalities = deps.classNationalities ?? SHIP_CLASS_NATIONALITIES;
   const minShipCount = deps.minShipCount ?? DEFAULT_MIN_SHIP_COUNT;
 
   // 取得（一時的な失敗は再試行する）
@@ -118,7 +138,7 @@ export async function generateShipMaster(deps: GenerateShipMasterDeps): Promise<
   }
 
   // 変換（味方艦が 1 隻もない・下限に満たなければ、壊れたマスタを配らないよう止める）
-  const ships = buildShipMasterEntries(start2, classNames);
+  const ships = buildShipMasterEntries(start2, classNames, classNationalities);
   if (ships.length === 0) {
     throw new Error("start2.json の api_mst_ship に味方艦が 1 隻もありません");
   }
@@ -131,7 +151,24 @@ export async function generateShipMaster(deps: GenerateShipMasterDeps): Promise<
   // 書き出し
   const file: ShipMasterFile = { schemaVersion: SHIP_MASTER_FILE_SCHEMA_VERSION, ships };
   await deps.writeFile(outputPath, JSON.stringify(file));
-  return { outputPath, shipCount: ships.length };
+  return { outputPath, shipCount: ships.length, unknownNationalityClasses: unknownNationalityClassesOf(ships) };
+}
+
+/** 国籍が unknown になった艦を艦型ごとにまとめる（艦型の番号の昇順。ships は艦 ID の昇順なので、艦名もその順） */
+function unknownNationalityClassesOf(ships: readonly ShipMasterEntry[]): UnknownNationalityClass[] {
+  const byClass = new Map<number, string[]>();
+  for (const ship of ships) {
+    if (ship.nationality !== "unknown") continue;
+    const names = byClass.get(ship.shipClassId);
+    if (names === undefined) {
+      byClass.set(ship.shipClassId, [ship.name]);
+    } else {
+      names.push(ship.name);
+    }
+  }
+  return [...byClass]
+    .sort(([a], [b]) => a - b)
+    .map(([shipClassId, shipNames]) => ({ shipClassId, shipNames }));
 }
 
 /** 1 回の取得の結果 */

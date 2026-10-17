@@ -7,8 +7,8 @@ export type EventField = "name" | "startAt" | "endAt" | "versionDate";
 export type FudaField = "name" | "color" | "gameNumber";
 /** 段階の項目（areaId は別の海域への移動） */
 export type StageField = "name" | "fudaId" | "importance" | "areaId";
-/** 特効グループの項目 */
-export type BoostGroupField = "name" | "multiplier" | "shipNames";
+/** 特効グループの項目（nationalities は v1.1） */
+export type BoostGroupField = "name" | "multiplier" | "shipNames" | "nationalities";
 
 /**
  * 変更・衝突の場所（画面の「場所を見る」や、赤く光らせる・橙の枠を付ける段階を決めるのに使う）

@@ -13,7 +13,8 @@
 // - 段階の並び順：「E2 の段階の並び順を変更」
 // - 特効グループの追加・削除：「E3 ゲージ4 の特効を追加（第二十七駆逐隊 ×1.20）」「E2 ゲージ3 の特効を削除（連合艦隊B）」
 // - 特効グループの項目：「E2 ゲージ3 の特効「連合艦隊C」の倍率を「×1.27」→「×1.30」」、名前も同じ形、
-//   艦名：「E2 ゲージ3 の特効「連合艦隊C」の艦名を変更（追加：時雨、雪風／削除：響）」
+//   艦名：「E2 ゲージ3 の特効「連合艦隊C」の艦名を変更（追加：時雨、雪風／削除：響）」、
+//   国籍（v1.1）：「E2 ゲージ3 の特効「連合艦隊C」の国籍を変更（追加：アメリカ／削除：イギリス）」（表示名。艦名の文の後）
 // - 札：「札を追加（機動部隊）」「札を削除（予備の札）」「札「連合艦隊」の名前を「連合艦隊」→「連合艦隊（後段）」」、
 //   色・札番号も同じ形、「札の並び順を変更」
 // - 海域：「E4 を追加」「E4 を外す」。イベント：「イベント名を「…」→「…」」、日時も同じ形（未定は「未定」）
@@ -24,10 +25,11 @@
 // - 札の項目の変更 → 札の並び順、海域ごとに 段階の変更 → その海域の段階の並び順 の順に並べる。
 // - 段階の項目・特効グループの変更の areaIds は、その段階の移す前と後の海域（移していなければ 1 つ）。
 // - 名前が空の特効グループは「特効（名前なし）」と書き、追加・削除の括弧には名前の代わりに倍率を書く。
-// - 艦名は集合として比べる（並びだけが変わっても変更にしない）。特効グループの並び、海域の名前は変える操作がないため比べない。
+// - 艦名・国籍は集合として比べる（並びだけが変わっても変更にしない。国籍は省略と空の配列を同じに扱う）。特効グループの並び、海域の名前は変える操作がないため比べない。
 import { importanceLabel } from "@/domain/definition/importance";
 import type { BoostGroup, Fuda, Stage } from "@/domain/definition/types";
 import type { DefinitionDoc } from "@/domain/definition-edit/types";
+import { BOOST_NATIONALITIES, nationalityLabel } from "@/domain/nationality";
 import {
   areaNameIn,
   EVENT_FIELDS,
@@ -161,6 +163,23 @@ function describeGroups(
       ];
       const text = `${groupFieldLabel(label, "shipNames")}を変更（${parts.join("／")}）`;
       changes.push({ location: location("shipNames"), change: "modified", text, areaIds });
+    }
+    // 国籍（v1.1）：省略と空の配列は同じ。足した・外した国籍を BOOST_NATIONALITIES の順に表示名で並べる
+    const beforeNationalities = new Set(b.nationalities ?? []);
+    const afterNationalities = new Set(a.nationalities ?? []);
+    const addedNationalities = BOOST_NATIONALITIES.filter(
+      (nationality) => afterNationalities.has(nationality) && !beforeNationalities.has(nationality),
+    );
+    const removedNationalities = BOOST_NATIONALITIES.filter(
+      (nationality) => beforeNationalities.has(nationality) && !afterNationalities.has(nationality),
+    );
+    if (addedNationalities.length > 0 || removedNationalities.length > 0) {
+      const parts = [
+        ...(addedNationalities.length > 0 ? [`追加：${addedNationalities.map(nationalityLabel).join("、")}`] : []),
+        ...(removedNationalities.length > 0 ? [`削除：${removedNationalities.map(nationalityLabel).join("、")}`] : []),
+      ];
+      const text = `${groupFieldLabel(label, "nationalities")}を変更（${parts.join("／")}）`;
+      changes.push({ location: location("nationalities"), change: "modified", text, areaIds });
     }
     return changes;
   });

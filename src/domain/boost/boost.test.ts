@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { BoostGroup, Fuda, Importance, PublicDefinition, Stage } from "@/domain/definition/types";
-import { baseNameOf, createShipMaster } from "@/domain/master/master";
+import { boostTargetOf, createShipMaster } from "@/domain/master/master";
+import type { BoostNationality, Nationality } from "@/domain/nationality";
 import type { AssignmentMap } from "@/domain/plan/types";
+import type { OwnedShip } from "@/domain/ship/types";
 import {
+  nationalityMasterEntries,
+  nationalityShips,
   shipByUid,
   summer2026Assignments,
   summer2026Definition,
+  summer2026DefinitionWithUsaBoost,
   summer2026MasterEntries,
   summer2026Ships,
   unknownShip,
@@ -17,12 +22,17 @@ import {
   stageLabel,
   stageMultiplier,
 } from "./boost";
-import type { ShipBoostSummary } from "./types";
+import type { BoostTarget, ShipBoostSummary } from "./types";
 
 // ---- テストの補助 ----
 
 const def = summer2026Definition;
 const ALL_FUDAS = ["s31", "tago", "rengo", "ulithi", "sixth"];
+
+/** 特効の照合の対象（艦名と国籍。v1.1） */
+const target = (baseName: string, nationality: Nationality): BoostTarget => ({ baseName, nationality });
+/** 日本の艦（v1 のテストの艦はすべて日本） */
+const jp = (baseName: string): BoostTarget => target(baseName, "japan");
 
 /** テスト用の定義から段階を取り出す */
 function stageOf(stageId: string, definition: PublicDefinition = def): Stage {
@@ -74,6 +84,13 @@ const group = (id: string, multiplier: number, shipNames: string[]): BoostGroup 
   multiplier,
   shipNames,
 });
+/** 国籍の条件を持つ特効グループ（v1.1） */
+const nationalGroup = (
+  id: string,
+  multiplier: number,
+  shipNames: string[],
+  nationalities: BoostNationality[],
+): BoostGroup => ({ id, name: id, multiplier, shipNames, nationalities });
 const stage = (
   id: string,
   areaId: string,
@@ -94,15 +111,15 @@ describe("stageMultiplier（艦 × 段階の倍率）", () => {
     const e2g3 = stageOf("E2-3");
 
     // 実行・検証
-    expect(stageMultiplier(e2g3, baseName)).toBeCloseTo(expected, 10);
+    expect(stageMultiplier(e2g3, jp(baseName))).toBeCloseTo(expected, 10);
   });
 
   it("どのグループにも当てはまらない艦は 1", () => {
-    expect(stageMultiplier(stageOf("E2-3"), "あきつ丸")).toBe(1);
+    expect(stageMultiplier(stageOf("E2-3"), jp("あきつ丸"))).toBe(1);
   });
 
   it("特効が未入力の段階では 1", () => {
-    expect(stageMultiplier(stageOf("E3-G"), "初霜")).toBe(1);
+    expect(stageMultiplier(stageOf("E3-G"), jp("初霜"))).toBe(1);
   });
 
   it("艦名が分からない艦（null）は 1", () => {
@@ -112,8 +129,8 @@ describe("stageMultiplier（艦 × 段階の倍率）", () => {
   it("艦名は完全に一致したときだけ当てはまる（「松」のグループは「松風」に効かない）", () => {
     const e2g3 = stageOf("E2-3");
 
-    expect(stageMultiplier(e2g3, "松")).toBeCloseTo(1.24, 10);
-    expect(stageMultiplier(e2g3, "松風")).toBe(1);
+    expect(stageMultiplier(e2g3, jp("松"))).toBeCloseTo(1.24, 10);
+    expect(stageMultiplier(e2g3, jp("松風"))).toBe(1);
   });
 
   it("同じ段階で複数のグループに当てはまると、倍率を掛け合わせる（U12）", () => {
@@ -124,9 +141,9 @@ describe("stageMultiplier（艦 × 段階の倍率）", () => {
     ]);
 
     // 実行・検証
-    expect(stageMultiplier(s, "初霜")).toBeCloseTo(1.27 * 1.1, 10);
-    expect(stageMultiplier(s, "雪風")).toBeCloseTo(1.1, 10);
-    expect(stageMultiplier(s, "長波")).toBe(1);
+    expect(stageMultiplier(s, jp("初霜"))).toBeCloseTo(1.27 * 1.1, 10);
+    expect(stageMultiplier(s, jp("雪風"))).toBeCloseTo(1.1, 10);
+    expect(stageMultiplier(s, jp("長波"))).toBe(1);
   });
 
   it("3 つのグループに当てはまると 3 つとも掛け合わせる", () => {
@@ -136,14 +153,14 @@ describe("stageMultiplier（艦 × 段階の倍率）", () => {
       group("g3", 1.05, ["時雨"]),
     ]);
 
-    expect(stageMultiplier(s, "時雨")).toBeCloseTo(1.1 * 1.2 * 1.05, 10);
+    expect(stageMultiplier(s, jp("時雨"))).toBeCloseTo(1.1 * 1.2 * 1.05, 10);
   });
 });
 
 describe("fudaBoost（艦 × 札のスコア・特効の有無・最大倍率）", () => {
   it("初霜を連合艦隊に置くと +81（E2 ゲージ3〔難所〕の ×1.27 だけが効く：(1.27 − 1) × 100 × 3）", () => {
     // 実行
-    const boost = fudaBoost(def, "rengo", "初霜");
+    const boost = fudaBoost(def, "rengo", jp("初霜"));
 
     // 検証
     expect(boost).toEqual({
@@ -165,12 +182,12 @@ describe("fudaBoost（艦 × 札のスコア・特効の有無・最大倍率）
     // E3 ゲージ1 には利根がいないので、E3 ゲージ4〔難所〕の ×1.08 だけ：8 × 3
     ["利根", "ulithi", 24],
   ])("%s を %s に置いたときのスコアは %i（重みは 普通 1／重要 2／難所 3）", (baseName, fudaId, expected) => {
-    expect(fudaBoost(def, fudaId, baseName).score).toBe(expected);
+    expect(fudaBoost(def, fudaId, jp(baseName)).score).toBe(expected);
   });
 
   it("効く段階は定義の順に並び、効かない段階は入らない", () => {
     // 北上は第三十一戦隊の E1・E2 ギミック・E3 ゲージ2 輸送で効く（E3 ギミックは特効が未入力）
-    const boost = fudaBoost(def, "s31", "北上");
+    const boost = fudaBoost(def, "s31", jp("北上"));
 
     expect(boost.stages.map((s) => [s.stageId, round4(s.multiplier)])).toEqual([
       ["E1-1", 1.21],
@@ -191,14 +208,14 @@ describe("fudaBoost（艦 × 札のスコア・特効の有無・最大倍率）
     );
 
     // 実行
-    const boost = fudaBoost(mini, "a", "時雨");
+    const boost = fudaBoost(mini, "a", jp("時雨"));
 
     // 検証
     expect(boost.stages.map((s) => s.stageId)).toEqual(["x1a", "x1b", "x2"]);
   });
 
   it("特効がない札は スコア 0・効く段階なし・特効なし・最大倍率 1（一覧のバッジは「–」）", () => {
-    expect(fudaBoost(def, "s31", "涼風")).toEqual({
+    expect(fudaBoost(def, "s31", jp("涼風"))).toEqual({
       fudaId: "s31",
       score: 0,
       stages: [],
@@ -214,7 +231,7 @@ describe("fudaBoost（艦 × 札のスコア・特効の有無・最大倍率）
     ["冬月", "s31", 1.21],
     ["大和", "ulithi", 1.08],
   ])("%s の %s での最大倍率は ×%s（一覧のバッジ）", (baseName, fudaId, expected) => {
-    const boost = fudaBoost(def, fudaId, baseName);
+    const boost = fudaBoost(def, fudaId, jp(baseName));
 
     expect(boost.hasBoost).toBe(true);
     expect(boost.maxMultiplier).toBeCloseTo(expected, 10);
@@ -228,7 +245,7 @@ describe("fudaBoost（艦 × 札のスコア・特効の有無・最大倍率）
     );
 
     // 実行
-    const boost = fudaBoost(mini, "a", "初霜");
+    const boost = fudaBoost(mini, "a", jp("初霜"));
 
     // 検証：(1.27 × 1.1 − 1) × 100 × 3 = 119.1 → 119
     expect(boost.score).toBe(119);
@@ -236,7 +253,7 @@ describe("fudaBoost（艦 × 札のスコア・特効の有無・最大倍率）
   });
 
   it("定義にない札 ID なら特効なし（例外を投げない）", () => {
-    expect(fudaBoost(def, "no-such-fuda", "初霜")).toEqual({
+    expect(fudaBoost(def, "no-such-fuda", jp("初霜"))).toEqual({
       fudaId: "no-such-fuda",
       score: 0,
       stages: [],
@@ -255,7 +272,7 @@ describe("fudaBoost（艦 × 札のスコア・特効の有無・最大倍率）
 describe("shipBoostSummary（効く札をスコアの高い順に、効く段階と倍率、効かない札）", () => {
   it("初霜：連合艦隊 +81、第三十一戦隊 +29、多号作戦部隊 +24 の順。効かないのはウルシー攻撃部隊・第六艦隊", () => {
     // 実行
-    const summary = shipBoostSummary(def, "初霜");
+    const summary = shipBoostSummary(def, jp("初霜"));
 
     // 検証
     expect(compact(summary)).toEqual({
@@ -277,7 +294,7 @@ describe("shipBoostSummary（効く札をスコアの高い順に、効く段階
   });
 
   it("北上：連合艦隊 +82、第三十一戦隊 +53、ウルシー攻撃部隊 +32 の順", () => {
-    expect(compact(shipBoostSummary(def, "北上"))).toEqual({
+    expect(compact(shipBoostSummary(def, jp("北上")))).toEqual({
       effective: [
         [
           "rengo",
@@ -310,7 +327,7 @@ describe("shipBoostSummary（効く札をスコアの高い順に、効く段階
   });
 
   it("長波：4 つの札で効き、スコアの高い順（連合艦隊 110 → ウルシー攻撃部隊 56 → 第三十一戦隊 29 → 多号作戦部隊 24）", () => {
-    const summary = shipBoostSummary(def, "長波");
+    const summary = shipBoostSummary(def, jp("長波"));
 
     expect(summary.effective.map((f) => [f.fudaId, f.score])).toEqual([
       ["rengo", 110],
@@ -322,7 +339,7 @@ describe("shipBoostSummary（効く札をスコアの高い順に、効く段階
   });
 
   it("特効がない艦は、効く札なし・すべての札が定義の順で効かない札", () => {
-    expect(shipBoostSummary(def, "あきつ丸")).toEqual({ effective: [], ineffectiveFudaIds: ALL_FUDAS });
+    expect(shipBoostSummary(def, jp("あきつ丸"))).toEqual({ effective: [], ineffectiveFudaIds: ALL_FUDAS });
   });
 
   it("艦名が分からない艦（null）も、すべての札が効かない札", () => {
@@ -340,7 +357,7 @@ describe("shipBoostSummary（効く札をスコアの高い順に、効く段階
     );
 
     // 実行
-    const summary = shipBoostSummary(mini, "テスト艦");
+    const summary = shipBoostSummary(mini, jp("テスト艦"));
 
     // 検証
     expect(summary.effective.map((f) => [f.fudaId, f.score])).toEqual([
@@ -430,7 +447,7 @@ describe("個体から（艦船マスタの改装段階を問わない艦名を�
     const hatsushimo = shipByUid("hatsushimo");
 
     // 実行
-    const boost = fudaBoost(def, "rengo", baseNameOf(master, hatsushimo.shipId));
+    const boost = fudaBoost(def, "rengo", boostTargetOf(master, hatsushimo.shipId));
 
     // 検証
     expect(boost.score).toBe(81);
@@ -442,14 +459,14 @@ describe("個体から（艦船マスタの改装段階を問わない艦名を�
 
     for (const uid of ["shigure", "shigure2"]) {
       const ship = shipByUid(uid);
-      expect(stageMultiplier(e2g3, baseNameOf(master, ship.shipId))).toBeCloseTo(1.24, 10);
+      expect(stageMultiplier(e2g3, boostTargetOf(master, ship.shipId))).toBeCloseTo(1.24, 10);
     }
   });
 
   it("マスタにない艦（名前が分からない艦）は、どの札でも特効なし", () => {
     const master = createShipMaster(summer2026MasterEntries);
 
-    const summary = shipBoostSummary(def, baseNameOf(master, unknownShip.shipId));
+    const summary = shipBoostSummary(def, boostTargetOf(master, unknownShip.shipId));
 
     expect(summary).toEqual({ effective: [], ineffectiveFudaIds: ALL_FUDAS });
   });
@@ -457,7 +474,7 @@ describe("個体から（艦船マスタの改装段階を問わない艦名を�
   it("割り振り画面のパネル（Assign.dc.html）の初霜改二：効く札の順と、効く段階の表示名", () => {
     // 準備
     const master = createShipMaster(summer2026MasterEntries);
-    const summary = shipBoostSummary(def, baseNameOf(master, shipByUid("hatsushimo").shipId));
+    const summary = shipBoostSummary(def, boostTargetOf(master, shipByUid("hatsushimo").shipId));
     const fudaName = (id: string) => def.fudas.find((f) => f.id === id)?.name;
 
     // 実行：画面と同じ形（札名、スコア、効く段階の表示名と倍率）に並べる
@@ -487,7 +504,7 @@ describe("個体から（艦船マスタの改装段階を問わない艦名を�
     // 実行：札ごとに、割り当てた艦の [艦名, その札での最大倍率（特効なしは "–"）] と特効の隻数を求める
     const rows = def.fudas.map((f) => {
       const members = summer2026Ships.filter((s) => summer2026Assignments[s.uid] === f.id);
-      const boosts = members.map((s) => fudaBoost(def, f.id, baseNameOf(master, s.shipId)));
+      const boosts = members.map((s) => fudaBoost(def, f.id, boostTargetOf(master, s.shipId)));
       return {
         fudaId: f.id,
         count: members.length,
@@ -509,5 +526,275 @@ describe("個体から（艦船マスタの改装段階を問わない艦名を�
       { fudaId: "ulithi", count: 3, boosted: 3, badges: ["×1.14", "×1.14", "×1.08"] },
       { fudaId: "sixth", count: 1, boosted: 1, badges: ["×1.38"] },
     ]);
+  });
+});
+
+// ---- 国籍の条件（v1.1「特効グループに国籍の条件を足す」の仕様 4 章） ----
+// 「shipNames に艦の baseName がある、または nationalities に艦の国籍がある」グループが、その艦に効く。
+// 1 つのグループは艦名と国籍の両方に当てはまっても倍率を 1 回だけ掛け、別のグループどうしは掛け合わせる（U12）。
+// 国籍が unknown の艦は国籍の条件には当てはまらない（艦名の条件には当てはまる）。
+
+describe("国籍の条件（v1.1）", () => {
+  describe("stageMultiplier", () => {
+    it("国籍の条件のグループは、その国籍の艦に効き、ほかの国籍の艦には効かない", () => {
+      // 準備：艦名なし・国籍 アメリカ の ×1.2
+      const s = stage("S", "E1", "a", "normal", [nationalGroup("us", 1.2, [], ["usa"])]);
+
+      // 実行・検証
+      expect(stageMultiplier(s, target("Iowa", "usa"))).toBeCloseTo(1.2, 10);
+      expect(stageMultiplier(s, target("Samuel B.Roberts", "usa"))).toBeCloseTo(1.2, 10);
+      expect(stageMultiplier(s, target("Warspite", "uk"))).toBe(1);
+      expect(stageMultiplier(s, jp("時雨"))).toBe(1);
+    });
+
+    it("国籍を複数持つグループは、そのどれかの国籍の艦に効く", () => {
+      const s = stage("S", "E1", "a", "normal", [nationalGroup("eu", 1.15, [], ["uk", "germany", "italy"])]);
+
+      expect(stageMultiplier(s, target("Warspite", "uk"))).toBeCloseTo(1.15, 10);
+      expect(stageMultiplier(s, target("Bismarck", "germany"))).toBeCloseTo(1.15, 10);
+      expect(stageMultiplier(s, target("Iowa", "usa"))).toBe(1);
+    });
+
+    it("日本の国籍の条件は、日本の艦（v1 の艦）に効く", () => {
+      const s = stage("S", "E1", "a", "normal", [nationalGroup("jp", 1.1, [], ["japan"])]);
+
+      expect(stageMultiplier(s, jp("時雨"))).toBeCloseTo(1.1, 10);
+      expect(stageMultiplier(s, target("Iowa", "usa"))).toBe(1);
+    });
+
+    it("1 つのグループで艦名と国籍の両方に当てはまっても、倍率は 1 回だけ掛ける（×1.2 であって ×1.44 ではない）", () => {
+      const s = stage("S", "E1", "a", "hard", [nationalGroup("us", 1.2, ["Iowa"], ["usa"])]);
+
+      expect(stageMultiplier(s, target("Iowa", "usa"))).toBeCloseTo(1.2, 10);
+    });
+
+    it("艦名と国籍の条件を持つグループは、艦名で当てはまる艦にも、国籍で当てはまる艦にも効く", () => {
+      // 準備：艦名 Warspite（英）・国籍 アメリカ
+      const s = stage("S", "E1", "a", "normal", [nationalGroup("mixed", 1.2, ["Warspite"], ["usa"])]);
+
+      // 実行・検証
+      expect(stageMultiplier(s, target("Warspite", "uk"))).toBeCloseTo(1.2, 10); // 艦名で
+      expect(stageMultiplier(s, target("Johnston", "usa"))).toBeCloseTo(1.2, 10); // 国籍で
+      expect(stageMultiplier(s, target("Ark Royal", "uk"))).toBe(1); // どちらでもない
+    });
+
+    it("別のグループどうしは、艦名のグループと国籍のグループでも掛け合わせる（U12）", () => {
+      const s = stage("S", "E1", "a", "hard", [
+        nationalGroup("us", 1.2, [], ["usa"]),
+        group("iowa", 1.1, ["Iowa"]),
+        nationalGroup("allies", 1.05, [], ["usa", "uk"]),
+      ]);
+
+      expect(stageMultiplier(s, target("Iowa", "usa"))).toBeCloseTo(1.2 * 1.1 * 1.05, 10);
+      expect(stageMultiplier(s, target("Johnston", "usa"))).toBeCloseTo(1.2 * 1.05, 10);
+      expect(stageMultiplier(s, target("Warspite", "uk"))).toBeCloseTo(1.05, 10);
+    });
+
+    // レビューの指摘（回帰）：艦名だけ A・両方 B・国籍だけ C が同じ段階にあるとき、B は 1 回だけ掛け、A・C とは掛け合わせる。
+    // グループの並び（両方を持つ B が先頭・中・末尾）に左右されない
+    describe("艦名だけ A ×1.1・艦名と国籍の両方 B ×1.2・国籍だけ C ×1.3 が同じ段階にあるとき", () => {
+      const groupA = (): BoostGroup => group("A", 1.1, ["Iowa"]);
+      const groupB = (): BoostGroup => nationalGroup("B", 1.2, ["Iowa"], ["usa"]);
+      const groupC = (): BoostGroup => nationalGroup("C", 1.3, [], ["usa"]);
+
+      it.each<[string, () => BoostGroup[]]>([
+        ["A・B・C（共通の B が中）", () => [groupA(), groupB(), groupC()]],
+        ["B・A・C（共通の B が先頭）", () => [groupB(), groupA(), groupC()]],
+        ["B・C・A（共通の B が先頭）", () => [groupB(), groupC(), groupA()]],
+        ["A・C・B（共通の B が末尾）", () => [groupA(), groupC(), groupB()]],
+        ["C・A・B（共通の B が末尾）", () => [groupC(), groupA(), groupB()]],
+        ["C・B・A（共通の B が中）", () => [groupC(), groupB(), groupA()]],
+      ])("並び %s：艦名 A・B と国籍 B・C に当てはまる艦は 1.1 × 1.2 × 1.3（B は 1 回だけ）", (_label, boosts) => {
+        // 準備
+        const s = stage("S", "E1", "a", "hard", boosts());
+
+        // 実行・検証
+        expect(stageMultiplier(s, target("Iowa", "usa"))).toBeCloseTo(1.1 * 1.2 * 1.3, 10);
+        // 艦名だけ当てはまる艦（国籍が違う）は A・B、国籍だけ当てはまる艦は B・C
+        expect(stageMultiplier(s, target("Iowa", "uk"))).toBeCloseTo(1.1 * 1.2, 10);
+        expect(stageMultiplier(s, target("Johnston", "usa"))).toBeCloseTo(1.2 * 1.3, 10);
+        expect(stageMultiplier(s, target("Warspite", "uk"))).toBe(1);
+      });
+
+      it("札のスコアも、B を 1 回だけ掛けた倍率で求める（難所：(1.716 − 1) × 100 × 3 = 214.8 → 215）", () => {
+        const mini = miniDefinition([fuda("a")], [stage("S", "E1", "a", "hard", [groupB(), groupA(), groupC()])]);
+
+        const boost = fudaBoost(mini, "a", target("Iowa", "usa"));
+
+        expect(boost.score).toBe(215);
+        expect(boost.maxMultiplier).toBeCloseTo(1.716, 10);
+      });
+    });
+
+    it("国籍が unknown の艦は国籍の条件には当てはまらないが、艦名の条件には当てはまる", () => {
+      const s = stage("S", "E1", "a", "normal", [
+        nationalGroup("us", 1.2, [], ["usa"]),
+        group("named", 1.1, ["謎の艦"]),
+      ]);
+
+      expect(stageMultiplier(s, target("謎の艦", "unknown"))).toBeCloseTo(1.1, 10);
+      expect(stageMultiplier(s, target("別の謎の艦", "unknown"))).toBe(1);
+    });
+
+    it("検証を通さない定義の国籍に unknown が入っていても、国籍が unknown の艦には効かない", () => {
+      const s = stage("S", "E1", "a", "normal", [
+        nationalGroup("broken", 1.2, [], ["unknown" as unknown as BoostNationality]),
+      ]);
+
+      expect(stageMultiplier(s, target("謎の艦", "unknown"))).toBe(1);
+    });
+
+    it("1 つのグループに同じ国籍が重複して書かれていても、そのグループの倍率は 1 回だけ掛ける", () => {
+      const s = stage("S", "E1", "a", "normal", [nationalGroup("us", 1.2, [], ["usa", "usa"])]);
+
+      expect(stageMultiplier(s, target("Iowa", "usa"))).toBeCloseTo(1.2, 10);
+    });
+
+    it("艦名と国籍は別々に照合する（艦名が「usa」の日本の艦は、国籍 アメリカ のグループに当てはまらない）", () => {
+      const s = stage("S", "E1", "a", "normal", [
+        nationalGroup("us", 1.2, [], ["usa"]),
+        group("uk-name", 1.1, ["uk"]),
+      ]);
+
+      expect(stageMultiplier(s, target("usa", "japan"))).toBe(1);
+      expect(stageMultiplier(s, target("Warspite", "uk"))).toBe(1);
+      expect(stageMultiplier(s, target("uk", "japan"))).toBeCloseTo(1.1, 10);
+    });
+
+    it("同じ段階で、いろいろな艦を続けて照合しても結果は変わらない（段階ごとの索引を使い回しても正しい）", () => {
+      const s = stage("S", "E1", "a", "normal", [
+        nationalGroup("us", 1.2, ["Warspite"], ["usa"]),
+        group("jp", 1.1, ["時雨"]),
+      ]);
+      const targets = [target("Iowa", "usa"), jp("時雨"), target("Warspite", "uk"), target("謎の艦", "unknown")];
+
+      const first = targets.map((t) => stageMultiplier(s, t));
+      const second = [...targets]
+        .reverse()
+        .map((t) => stageMultiplier(s, t))
+        .reverse();
+
+      expect(second).toEqual(first);
+      expect(first.map(round4)).toEqual([1.2, 1.1, 1.2, 1]);
+    });
+
+    it("艦名も国籍もないグループは、どの艦にも効かない", () => {
+      const s = stage("S", "E1", "a", "normal", [nationalGroup("empty", 1.5, [], [])]);
+
+      expect(stageMultiplier(s, target("Iowa", "usa"))).toBe(1);
+      expect(stageMultiplier(s, jp("時雨"))).toBe(1);
+    });
+
+    it("艦が分からない（null）なら、国籍の条件のグループがあっても 1", () => {
+      const s = stage("S", "E1", "a", "normal", [nationalGroup("us", 1.2, [], ["usa"])]);
+
+      expect(stageMultiplier(s, null)).toBe(1);
+    });
+  });
+
+  describe("fudaBoost・shipBoostSummary（E2 ゲージ3〔連合艦隊・難所〕に「米艦」×1.20 を足した定義）", () => {
+    const usaDef = summer2026DefinitionWithUsaBoost;
+
+    it("米艦（Iowa）を連合艦隊に置くと +60（(1.20 − 1) × 100 × 3）、効く段階は E2 ゲージ3 ×1.20、最大倍率 ×1.20", () => {
+      const boost = fudaBoost(usaDef, "rengo", target("Iowa", "usa"));
+
+      expect(boost).toEqual({
+        fudaId: "rengo",
+        score: 60,
+        stages: [{ stageId: "E2-3", multiplier: expect.closeTo(1.2, 10) }],
+        hasBoost: true,
+        maxMultiplier: expect.closeTo(1.2, 10),
+      });
+    });
+
+    it("米艦のまとめ：効くのは連合艦隊 +60 だけ、ほかの札は効かない札（定義の順）", () => {
+      expect(compact(shipBoostSummary(usaDef, target("Samuel B.Roberts", "usa")))).toEqual({
+        effective: [["rengo", 60, [["E2-3", 1.2]]]],
+        ineffective: ["s31", "tago", "ulithi", "sixth"],
+      });
+    });
+
+    it("英艦・国籍の分からない艦は、どの札でも特効なし", () => {
+      for (const t of [target("Warspite", "uk"), target("謎の艦", "unknown")]) {
+        expect(shipBoostSummary(usaDef, t)).toEqual({ effective: [], ineffectiveFudaIds: ALL_FUDAS });
+      }
+    });
+
+    it("日本の艦の特効は、米艦のグループを足しても変わらない（初霜は連合艦隊 +81 のまま）", () => {
+      expect(compact(shipBoostSummary(usaDef, jp("初霜")))).toEqual(compact(shipBoostSummary(def, jp("初霜"))));
+      expect(fudaBoost(usaDef, "rengo", jp("初霜")).score).toBe(81);
+    });
+  });
+
+  describe("countBoostedShipsByStage（マスタの国籍で数える）", () => {
+    const master = createShipMaster([...summer2026MasterEntries, ...nationalityMasterEntries]);
+    const ships: readonly OwnedShip[] = [...summer2026Ships, ...nationalityShips];
+
+    it("連合艦隊に米艦 2 隻・英艦・国籍の分からない艦を足すと、E2 ゲージ3 だけ米艦 2 隻が増える（8 → 10）", () => {
+      // 準備
+      const assignments: AssignmentMap = {
+        ...summer2026Assignments,
+        iowa: "rengo",
+        sbr: "rengo",
+        warspite: "rengo",
+        mystery: "rengo",
+      };
+
+      // 実行
+      const counts = countBoostedShipsByStage(summer2026DefinitionWithUsaBoost, master, ships, assignments);
+
+      // 検証：ほかの段階はモックの数のまま
+      expect(counts).toEqual({
+        "E1-1": 3,
+        "E2-G": 3,
+        "E2-1": 3,
+        "E2-2": 6,
+        "E2-3": 10,
+        "E3-G": 0,
+        "E3-1": 3,
+        "E3-2": 3,
+        "E3-3": 1,
+        "E3-4": 3,
+      });
+    });
+
+    it("米艦を米艦のグループのない札（多号作戦部隊）に置いても数えない", () => {
+      const assignments: AssignmentMap = { iowa: "tago" };
+
+      const counts = countBoostedShipsByStage(summer2026DefinitionWithUsaBoost, master, ships, assignments);
+
+      expect(Object.values(counts).every((count) => count === 0)).toBe(true);
+    });
+  });
+
+  describe("個体から（boostTargetOf でマスタの艦名と国籍を引いて）", () => {
+    const master = createShipMaster([...summer2026MasterEntries, ...nationalityMasterEntries]);
+    const shipOf = (uid: string): OwnedShip => {
+      const found = nationalityShips.find((s) => s.uid === uid);
+      if (found === undefined) throw new Error(`個体 ${uid} がありません`);
+      return found;
+    };
+
+    it("Iowa改の個体を連合艦隊に置くと +60（マスタの国籍 アメリカ で当てはまる）", () => {
+      const boost = fudaBoost(summer2026DefinitionWithUsaBoost, "rengo", boostTargetOf(master, shipOf("iowa").shipId));
+
+      expect(boost.score).toBe(60);
+    });
+
+    it("国籍の分からない艦（謎の艦）の個体は、艦名のグループには当てはまる", () => {
+      // 準備：E2 ゲージ3 に艦名「謎の艦」のグループを足した定義
+      const named: PublicDefinition = {
+        ...summer2026DefinitionWithUsaBoost,
+        stages: summer2026DefinitionWithUsaBoost.stages.map((s) =>
+          s.id === "E2-3" ? { ...s, boosts: [...s.boosts, group("named", 1.1, ["謎の艦"])] } : s,
+        ),
+      };
+
+      // 実行
+      const boost = fudaBoost(named, "rengo", boostTargetOf(master, shipOf("mystery").shipId));
+
+      // 検証：「米艦」には当てはまらず、艦名のグループの ×1.1 だけ
+      expect(boost.stages.map((s) => [s.stageId, round4(s.multiplier)])).toEqual([["E2-3", 1.1]]);
+    });
   });
 });

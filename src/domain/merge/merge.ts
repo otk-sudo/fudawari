@@ -14,6 +14,9 @@
 //     - 2 人が違う値に変えた → 衝突（merged には仮に自分の値）
 //   - 特効グループの艦名（shipNames）は集合として合わせる：base ＋ 2 人が足した艦名 − 2 人が外した艦名。衝突にしない
 //     （並びは base の順 → 足した艦名。相手が足した・外した艦名があれば autoMerged に field "shipNames" で入れる）
+//   - 特効グループの国籍（nationalities。v1.1）も艦名と同じく集合として合わせる。衝突にしない
+//     （並びは BOOST_NATIONALITIES の順。省略は空として扱い、結果が空なら項目を持たない。
+//     相手が足した・外した国籍があれば autoMerged に field "nationalities" で入れる）
 //
 // ■ 追加と削除
 //   - 片方だけが追加した → 残す（相手が追加したものは autoMerged に change "added"）。新しい ID は呼び出し側が作るので重ならない。
@@ -42,7 +45,7 @@
 //   - 段階：「E2 ゲージ3」（海域名 ＋ 半角空白 ＋ 段階名）。段階の項目：「E2 ゲージ3 の大事さ」
 //     （段階名 → 「段階名」、札 → 「札」、大事さ → 「大事さ」、海域 → 「海域」）
 //   - 段階の並び順：「E2 の段階の並び順」
-//   - 特効グループ：「E2 ゲージ3 の特効「連合艦隊C」」。項目：「E2 ゲージ3 の特効「連合艦隊C」の倍率」（名前・倍率・艦名）
+//   - 特効グループ：「E2 ゲージ3 の特効「連合艦隊C」」。項目：「E2 ゲージ3 の特効「連合艦隊C」の倍率」（名前・倍率・艦名・国籍）
 //   - 札：「札「連合艦隊」」。項目：「札「連合艦隊」の名前」（名前・色・札番号）。札の並び順：「札の並び順」
 //   - 海域：「E4」。イベント：「イベント名」「開始日時」「終了日時」「版の日付」
 // ■ 値の表示（theirsText・mineText）
@@ -67,6 +70,7 @@ import { importanceLabel } from "@/domain/definition/importance";
 import type { Area, BoostGroup, EventInfo, Fuda, Stage } from "@/domain/definition/types";
 import { findDocumentIssues } from "@/domain/definition-edit/issues";
 import type { DefinitionDoc } from "@/domain/definition-edit/types";
+import { BOOST_NATIONALITIES, type BoostNationality } from "@/domain/nationality";
 import {
   areaNameIn,
   eventFieldLabel,
@@ -464,6 +468,28 @@ function mergeShipNames(reports: Reports, place: Place, names: Three<readonly st
   return unique([...base.filter((name) => !removed.has(name)), ...added]);
 }
 
+/**
+ * 特効グループの国籍を集合として合わせる（base ＋ 2 人が足した国籍 − 2 人が外した国籍。衝突にしない。v1.1）。
+ * 並びは BOOST_NATIONALITIES の順（base・足した順によらない）
+ */
+function mergeNationalities(
+  reports: Reports,
+  place: Place,
+  nationalities: Three<readonly BoostNationality[]>,
+): BoostNationality[] {
+  const base = new Set(nationalities.base);
+  const mine = new Set(nationalities.mine);
+  const theirs = new Set(nationalities.theirs);
+  // 相手だけが足した・外した国籍があれば、自動で合わせた所に入れる（2 人とも同じ変更なら入れない）
+  const theirsAdded = [...theirs].some((nationality) => !base.has(nationality) && !mine.has(nationality));
+  const theirsRemoved = [...base].some((nationality) => !theirs.has(nationality) && mine.has(nationality));
+  if (theirsAdded || theirsRemoved) addAutoMerged(reports, place, "modified");
+  // base にあった国籍は 2 人とも残したものだけ、base になかった国籍はどちらかが足したもの
+  return BOOST_NATIONALITIES.filter((nationality) =>
+    base.has(nationality) ? mine.has(nationality) && theirs.has(nationality) : mine.has(nationality) || theirs.has(nationality),
+  );
+}
+
 /** 特効グループの項目を合わせる */
 function mergeGroup(
   ctx: MergeContext,
@@ -484,12 +510,19 @@ function mergeGroup(
     mine: mine[key],
     theirs: theirs[key],
   });
-  return {
+  const merged: BoostGroup = {
     id: base.id,
     name: mergeValue(ctx, reports, place("name"), field("name"), groupNameText),
     multiplier: mergeValue(ctx, reports, place("multiplier"), field("multiplier"), multiplierText),
     shipNames: mergeShipNames(reports, place("shipNames"), field("shipNames")),
   };
+  // 国籍は省略を空として扱い、結果が空なら項目を持たない（v1 の定義と同じ形）
+  const nationalities = mergeNationalities(reports, place("nationalities"), {
+    base: base.nationalities ?? [],
+    mine: mine.nationalities ?? [],
+    theirs: theirs.nationalities ?? [],
+  });
+  return nationalities.length > 0 ? { ...merged, nationalities } : merged;
 }
 
 /** 段階の項目と特効グループを合わせる（段階が 3 つすべてにあるとき） */

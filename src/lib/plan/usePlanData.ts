@@ -180,7 +180,8 @@ function wrapStorage(inner: FudawariStorage, store: PlanDataStore): FudawariStor
     previewImport: (input) => store.afterSaves(() => previewImportWithUnsaved(inner, store, input)),
     clearImportedShips: () => store.afterSaves(() => inner.clearImportedShips()),
     loadShips: () => inner.loadShips(),
-    loadLastImport: () => inner.loadLastImport(),
+    // 最終取り込みも保存の列の後に読む（列に並んだ削除・取り込みより前の古い記録を返さない。PR-14b）
+    loadLastImport: () => store.afterSaves(() => inner.loadLastImport()),
     loadAssignments: (eventId) => inner.loadAssignments(eventId),
     saveAssignments: (eventId, assignments) => inner.saveAssignments(eventId, assignments),
     returnOrphanedAssignments: (eventId, fudaIds) => inner.returnOrphanedAssignments(eventId, fudaIds),

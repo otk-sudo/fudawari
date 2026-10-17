@@ -1,6 +1,8 @@
 // 特効グループの編集（要件 3.7「この段階のボスで効く特効」、U11・U16、roadmap T3-6）
 // 特効グループの ID は文書全体（すべての段階）で重複しないので、グループの操作は groupId だけで指定する。
+// 国籍（v1.1）は BOOST_NATIONALITIES の順に並べて持ち、空なら nationalities の項目ごと持たない（v1 の定義と同じ形）。
 import type { BoostGroup, Stage } from "@/domain/definition/types";
+import { BOOST_NATIONALITIES, type BoostNationality, isBoostNationality } from "@/domain/nationality";
 import { fail, ok } from "./result";
 import type { AddBoostGroupInput, BoostGroupPatch, DefinitionDoc, EditResult } from "./types";
 
@@ -12,6 +14,7 @@ function isValidMultiplier(multiplier: number): boolean {
 const invalidMultiplier = (): EditResult => fail("invalid_value", "倍率は 1 以上の数で入力してください");
 const emptyShipName = (): EditResult => fail("invalid_value", "空の艦名は追加できません");
 const groupNotFound = (): EditResult => fail("not_found", "特効グループが見つかりません");
+const invalidNationality = (): EditResult => fail("invalid_value", "選べない国籍があります");
 
 /** 重複を除く（先に出た順） */
 function unique(names: readonly string[]): string[] {
@@ -22,6 +25,27 @@ function unique(names: readonly string[]): string[] {
 function trimShipNames(shipNames: readonly string[]): string[] | undefined {
   const trimmed = shipNames.map((name) => name.trim());
   return trimmed.includes("") ? undefined : trimmed;
+}
+
+/**
+ * 国籍を BOOST_NATIONALITIES の順に並べ直し、重複を除く。選べない国籍（"unknown" を含む）があれば undefined。
+ * 型の上では選べる国籍だけだが、画面などから型を外れた値が来ても文書に入れないよう、実行時にも確かめる
+ */
+function normalizeNationalities(nationalities: readonly BoostNationality[]): BoostNationality[] | undefined {
+  if (!nationalities.every((nationality) => isBoostNationality(nationality))) return undefined;
+  const chosen = new Set<BoostNationality>(nationalities);
+  return BOOST_NATIONALITIES.filter((nationality) => chosen.has(nationality));
+}
+
+/** グループの国籍を置き換えたグループ（空なら nationalities の項目を持たない） */
+function withNationalities(group: BoostGroup, nationalities: readonly BoostNationality[]): BoostGroup {
+  const next: { -readonly [K in keyof BoostGroup]: BoostGroup[K] } = { ...group };
+  if (nationalities.length > 0) {
+    next.nationalities = nationalities;
+  } else {
+    delete next.nationalities;
+  }
+  return next;
 }
 
 /** 特効グループと、それを持つ段階 */
@@ -51,8 +75,9 @@ function withGroup(doc: DefinitionDoc, at: GroupLocation, next: BoostGroup | und
 
 /**
  * 段階に特効グループを追加する（その段階の特効の最後）。
- * 省略時は 名前 ""・倍率 1・艦名なし。艦名は前後の空白を除き、重複を除く（先に出た順）。
- * - エラー：倍率が 1 未満・有限の数でない、空の艦名 → invalid_value、
+ * 省略時は 名前 ""・倍率 1・艦名なし・国籍なし。艦名は前後の空白を除き、重複を除く（先に出た順）。
+ * 国籍は BOOST_NATIONALITIES の順に並べ直し、重複を除く（空なら nationalities の項目を持たない）。
+ * - エラー：倍率が 1 未満・有限の数でない、空の艦名、選べない国籍 → invalid_value、
  *   newGroupId が文書のどこかの特効グループの ID と同じ → duplicate_id、段階がない → not_found
  */
 export function addBoostGroup(doc: DefinitionDoc, input: AddBoostGroupInput): EditResult {
@@ -65,8 +90,13 @@ export function addBoostGroup(doc: DefinitionDoc, input: AddBoostGroupInput): Ed
   if (!isValidMultiplier(multiplier)) return invalidMultiplier();
   const shipNames = trimShipNames(input.shipNames ?? []);
   if (shipNames === undefined) return emptyShipName();
+  const nationalities = normalizeNationalities(input.nationalities ?? []);
+  if (nationalities === undefined) return invalidNationality();
 
-  const group: BoostGroup = { id: input.newGroupId, name: input.name ?? "", multiplier, shipNames: unique(shipNames) };
+  const group = withNationalities(
+    { id: input.newGroupId, name: input.name ?? "", multiplier, shipNames: unique(shipNames) },
+    nationalities,
+  );
   const updated: Stage = { ...stage, boosts: [...stage.boosts, group] };
   return ok({ ...doc, stages: doc.stages.map((s) => (s === stage ? updated : s)) });
 }
@@ -110,6 +140,24 @@ export function removeShipName(doc: DefinitionDoc, groupId: string, shipName: st
   if (!at.group.shipNames.includes(shipName)) return fail("not_found", "その艦名は特効グループにありません");
 
   return ok(withGroup(doc, at, { ...at.group, shipNames: at.group.shipNames.filter((n) => n !== shipName) }));
+}
+
+/**
+ * 特効グループの国籍を選び直す（国籍を選ぶ欄のチェック、国籍タグの ×。v1.1）。渡した国籍だけに置き換える（足すのではない）。
+ * BOOST_NATIONALITIES の順に並べ直し、重複を除く。空になったら nationalities の項目を消す（キーを持たない）。
+ * - エラー：選べない国籍（"unknown" を含む）がある → invalid_value、グループがない → not_found
+ */
+export function setGroupNationalities(
+  doc: DefinitionDoc,
+  groupId: string,
+  nationalities: readonly BoostNationality[],
+): EditResult {
+  const at = locateGroup(doc, groupId);
+  if (at === undefined) return groupNotFound();
+  const normalized = normalizeNationalities(nationalities);
+  if (normalized === undefined) return invalidNationality();
+
+  return ok(withGroup(doc, at, withNationalities(at.group, normalized)));
 }
 
 /**
