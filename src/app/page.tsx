@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSettingsDialogOpen } from "@/components/settings-dialog-store";
 import { type HomeLatestEvent, HomeScreen } from "@/features/home/HomeScreen";
 import { formatImportedAt } from "@/features/import/import-screen-text";
 import {
@@ -30,11 +31,14 @@ function latestEventOf(state: LatestDefinitionState, now: Date): HomeLatestEvent
  * 最終取り込みの日時（「10/15 20:40」の形）。取り込んでいない・読めない・読み込み中は null。
  * 共有の札割りのデータ（usePlanData）は使わず、保存先から最終取り込みだけを直接読む（設定の useStoredLastImport と同じ形）。
  * usePlanData は読み込むときに定義から消えた札の割り当てを控えに戻して保存するので、ホームを開いただけで割り当てを
- * 書き換えないように使わない。最新イベントの定義の状態にもよらない
+ * 書き換えないように使わない。最新イベントの定義の状態にもよらない。
+ * 設定のウィンドウでは取り込んだ艦娘データを削除できるので、ウィンドウが閉じたら読み直す（開いている間は読まない。PR-14b）
  */
 function useLastImportedAt(): string | null {
   const [importedAt, setImportedAt] = useState<string | null>(null);
+  const settingsOpen = useSettingsDialogOpen();
   useEffect(() => {
+    if (settingsOpen) return;
     let active = true;
     getPlanStorage()
       .loadLastImport()
@@ -49,7 +53,7 @@ function useLastImportedAt(): string | null {
     return () => {
       active = false;
     };
-  }, []);
+  }, [settingsOpen]);
   return importedAt;
 }
 

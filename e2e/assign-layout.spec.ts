@@ -123,6 +123,9 @@ test("1366×768 でテスト用データの割り当てのとき、いちばん�
   // 準備
   await seedPlan(page, { ships: summer2026Ships, assignments: summer2026Assignments });
   await openAssignScreen(page);
+  // 日本語フォント（Noto Sans JP。display: swap）を読み終えるまで待つ。読み込みの途中で差し替わると札の列の高さが
+  // 20px ほど変わり、札の列の下端とページの高さを測る間に変わると余白を少なく測るため（PR-14b で、測る時点の揺れを直した）
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
 
   // 実行
   await scrollToBottom(page);
@@ -159,3 +162,53 @@ test("比べる相手：一覧（/list）は 1366×768 で下までスクロー�
 function columnOfList(page: Page) {
   return page.getByRole("region", { name: "連合艦隊", exact: true }).first();
 }
+
+// ---- PR-14b（PR-14 の再レビュー P1'・P2'。任意の見た目）----
+// 親が決めた直し方：控えの sticky の上端を top: 12px 程度にし（画面の上端に貼り付かない）、
+// お知らせ（「控えに戻しました」など）が出ていても、1366×768 で控えの下端が画面に収まるようにする。
+// - P1'：札の列が高くてページを下までスクロールしたとき、控えの上端は画面の上端から 8px 以上離れ、下端は画面に収まる
+// - P2'：お知らせが出ている（定義から消えた札に置いた割り当てを控えに戻した）とき、ページの一番上で控えの下端が画面に収まる。
+//   お知らせの作り方は src/app/assign/page.test.tsx の U17 のテストと同じ（定義にない札 "removed-fuda" に置いた割り当てを保存しておく）
+
+/** 控え（region）の画面の中の上端・下端（スクロールした位置での見え方） */
+async function trayEdges(page: Page): Promise<{ top: number; bottom: number }> {
+  return trayOf(page).evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { top: rect.top, bottom: rect.bottom };
+  });
+}
+
+test("1366×768 でテスト用データの割り当て（札の列が 2 段）のとき、下までスクロールしても控えの上端は画面の上端に貼り付かず（8px 以上）、下端は画面に収まる（PR-14b：再レビュー P1'）", async ({ page }) => {
+  // 準備
+  await seedPlan(page, { ships: summer2026Ships, assignments: summer2026Assignments });
+  await openAssignScreen(page);
+
+  // 実行
+  const scrolled = await scrollToBottom(page);
+  expect(scrolled, "ページがスクロールした量").toBeGreaterThan(0);
+
+  // 検証
+  const edges = await trayEdges(page);
+  const description = `控えの上端 ${Math.round(edges.top)}px・下端 ${Math.round(edges.bottom)}px／画面 ${VIEWPORT.height}px`;
+  test.info().annotations.push({ type: "計測", description });
+  expect(edges.top, description).toBeGreaterThanOrEqual(8);
+  expect(edges.bottom, description).toBeLessThanOrEqual(VIEWPORT.height);
+});
+
+test("1366×768 で「控えに戻しました」のお知らせが出ていて控えに 600 隻いても、ページの一番上で控えの下端は画面に収まる（PR-14b：再レビュー P2'）", async ({ page }) => {
+  // 準備：600 隻のうち 2 隻を、定義から消えた札に置いておく（開くと控えに戻し、お知らせを出す）
+  const ships = createBulkShips(600);
+  const [first, second] = ships;
+  if (first === undefined || second === undefined) throw new Error("テスト用データの艦が足りない");
+  await seedPlan(page, { ships, assignments: { [first.uid]: "removed-fuda", [second.uid]: "removed-fuda" } });
+
+  // 実行
+  await openAssignScreen(page);
+  await expect(page.getByRole("status").filter({ hasText: "控えに戻しました" })).toBeVisible();
+
+  // 検証：ページの一番上での控えの下端
+  const edges = await trayEdges(page);
+  const description = `お知らせあり：控えの上端 ${Math.round(edges.top)}px・下端 ${Math.round(edges.bottom)}px／画面 ${VIEWPORT.height}px`;
+  test.info().annotations.push({ type: "計測", description });
+  expect(edges.bottom, description).toBeLessThanOrEqual(VIEWPORT.height);
+});
