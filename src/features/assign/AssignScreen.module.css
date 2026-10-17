@@ -35,15 +35,9 @@
   --assign-place-boost-text: #f6e2b3; /* 「ここに置く（特効あり）」の文字 */
   --assign-place-boost-border: #6e5520; /* 「ここに置く（特効あり）」の枠 */
 
-  /*
-   * 画面の高さちょうどの箱にする（控えを画面の高さに収めるため。PR-14）。
-   * 札の列が高いとき（2 段に折り返したときなど）は本文の外へはみ出して、ページ全体がスクロールする
-   */
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
-  height: 100dvh;
 }
 
 /* ライト（data-theme="light" で指定したとき）。値はすべて仮 */
@@ -196,14 +190,11 @@
 
 /* ---- 本文（控え・札の列・選択中の艦のパネル） ---- */
 
-/* ヘッダー帯・お知らせの残りの高さ（控えはこの高さまでに収め、札の列ははみ出してよい） */
 .body {
   display: flex;
-  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 12px;
-  min-height: 0;
   padding: 12px 14px 16px;
 }
 

@@ -1111,7 +1111,12 @@ export function DefinitionEditor({
             {perms.canCreate ? "次のイベントは「新規作成」から作ってください。" : "次のイベントは管理者が作成するまでお待ちください。"}
           </span>
           {perms.canCreate && (
-            <button type="button" className={controls.primaryButton} onClick={() => switchMode("create")}>
+            <button
+              type="button"
+              className={controls.primaryButton}
+              disabled={busy !== null}
+              onClick={() => switchMode("create")}
+            >
               新しいイベントを作成
             </button>
           )}

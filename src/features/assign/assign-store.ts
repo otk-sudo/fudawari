@@ -9,7 +9,8 @@
 //   自分に落としても変わらない。ドラッグを始めると選択が外れる。
 // - 元に戻す：割り当ての変更だけが対象（選択・開閉は対象外）。20 手まで。
 // - 外からの置き換え：画面の外（設定の札割りの読み込みなど）で割り当てが変わったら、新しい割り当てに替えて履歴を捨てる
-//   （replaceAssignments。保存はしない。保存先はもう新しい割り当てになっている。PR-14）
+//   （replaceAssignments。保存はしない。保存先はもう新しい割り当てになっている。保存の失敗の知らせを消し、
+//   置き換える前に頼んだ保存の結果は映さない。PR-14）
 // - 保存：割り当てが変わるたびに、外から渡した保存の関数（src/lib/storage の saveAssignments と同じ形）を呼ぶ。
 //   保存の結果は待たずに画面の操作を続け、失敗したら saveError に理由を入れる（次の保存が成功したら null に戻す）。
 //
@@ -69,7 +70,7 @@ export interface AssignState {
   dropOnTray(uid: ShipUid): void;
   /** 「元に戻す」：直前の割り当ての変更を戻す。戻すものがなければ何もしない */
   undo(): void;
-  /** 外で変わった割り当てに置き換え、「元に戻す」の履歴を捨てる（保存はしない） */
+  /** 外で変わった割り当てに置き換え、「元に戻す」の履歴と保存の失敗の知らせを捨てる（保存はしない。置き換える前に頼んだ保存の結果も映さない） */
   replaceAssignments(assignments: AssignmentMap): void;
 }
 
@@ -186,7 +187,10 @@ export function createAssignStore(options: AssignStoreOptions): AssignStore {
       dropOnTray: (uid) => reassign([[uid, undefined]]),
       replaceAssignments: (assignments) => {
         past = [];
-        set({ assignments, canUndo: false });
+        // 置き換える前に頼んだ保存の結果は映さない（番号を進めると、その結果は settle で捨てられる）。
+        // 置き換えた割り当ては外ですでに保存されているので、保存の失敗の知らせも消す
+        saveRequest += 1;
+        set({ assignments, canUndo: false, saveError: null });
       },
       undo: () => {
         const previous = past.at(-1);
