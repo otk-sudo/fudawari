@@ -1,7 +1,7 @@
 // ホームの最終取り込みと、設定での削除の競合（PR-14b、Codex の指摘 4301989968）
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
 import { SettingsDialog } from "@/components/SettingsDialog";
@@ -23,8 +23,12 @@ function PlanProbe(): ReactNode {
   const state = useLatestDefinition();
   const definition = state.status === "success" ? state.definition : null;
   const fudaIds = useMemo(() => definition?.fudas.map((fuda) => fuda.id) ?? [], [definition]);
-  plan = usePlanData(definition?.event.id ?? null, fudaIds);
-  return <p>{`probe:${plan.status}`}</p>;
+  const current = usePlanData(definition?.event.id ?? null, fudaIds);
+  // テストから操作するため、描画の後に外の変数へ写す（描画の中では代入しない）
+  useEffect(() => {
+    plan = current;
+  });
+  return <p>{`probe:${current.status}`}</p>;
 }
 
 function getHomeHeader(): HTMLElement {
