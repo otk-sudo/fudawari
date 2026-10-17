@@ -19,8 +19,9 @@ export interface ImportFilter {
  * - "svdata"：`svdata=` で始まる文字列（ロックの情報あり、個体 ID あり）
  * - "compact"：短縮形式で ship_id がある新しい形式（個体 ID あり、ロックの情報なし）
  * - "compactLegacy"：短縮形式で ship_id がない古い形式（個体 ID なし、ロックの情報なし）
+ * - "apiShipArray"：api_ 付きの項目の艦を並べた JSON 配列（svdata= も api_data もない。個体 ID あり、ロックの情報は api_locked があるときだけ）
  */
-export type ImportFormat = "svdata" | "compact" | "compactLegacy";
+export type ImportFormat = "svdata" | "compact" | "compactLegacy" | "apiShipArray";
 
 /**
  * 解析に失敗した理由

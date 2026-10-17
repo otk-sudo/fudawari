@@ -7,6 +7,7 @@ import {
   compactShip,
   kyouka,
   standardCompactText,
+  standardSamples,
   standardSvdataText,
   svShip,
   toCompactText,
@@ -252,6 +253,63 @@ describe("parseImportText：短縮形式（新しい形式。ship_id あり）",
       { uid: "2", shipId: 145, level: 80, luck: 15, sallyArea: 0 },
     ]);
   });
+});
+
+/**
+ * api_ship の配列（`svdata=` も api_data もない、api_ 付きの項目の艦を並べた JSON 配列）。
+ * 実際の利用者の貼り付けで使われていた形。ロックの情報（api_locked）がないことが多い
+ */
+function apiShipArrayText(withLock: boolean): string {
+  return JSON.stringify(
+    standardSamples.map((s) => ({
+      api_id: s.uid,
+      api_ship_id: s.shipId,
+      api_lv: s.lv,
+      api_kyouka: kyouka(s.luckUp),
+      api_exp: [0, 100, 0],
+      api_slot_ex: -1,
+      api_sally_area: s.area,
+      api_sp_effect_items: [],
+      ...(withLock ? { api_locked: s.locked } : {}),
+    })),
+  );
+}
+
+describe("parseImportText：api_ship の配列（svdata= も api_data もない形）", () => {
+  it("api_id を個体 ID、api_ship_id を艦の ID として読み、svdata 形式と同じ個体の一覧を作る", () => {
+    // 実行
+    const result = expectSuccess(parseImportText(apiShipArrayText(false), master, ALL));
+
+    // 検証：艦の ID が 0 の要素（106）は飛ばす
+    expect(result.ships).toEqual(standardShips);
+    expect(result.format).toBe("apiShipArray");
+    expect(result.hasUid).toBe(true);
+    expect(result.unknownShipCount).toBe(1);
+    expect(result.taggedShipCount).toBe(2);
+  });
+
+  it("api_locked がなければ、「ロック済みだけ」を選んでも絞り込まず、そのことが分かる結果を返す", () => {
+    const result = expectSuccess(parseImportText(apiShipArrayText(false), master, { lockedOnly: true, minLevel: 1 }));
+
+    expect(result.ships).toEqual(standardShips);
+    expect(result.hasLockInfo).toBe(false);
+    expect(result.lockFilterIgnored).toBe(true);
+  });
+
+  it("api_locked があれば、「ロック済みだけ」で絞り込む", () => {
+    const result = expectSuccess(parseImportText(apiShipArrayText(true), master, { lockedOnly: true, minLevel: 1 }));
+
+    expect(uidsOf(result.ships)).toEqual(["101", "102", "104"]);
+    expect(result.hasLockInfo).toBe(true);
+    expect(result.lockFilterIgnored).toBe(false);
+  });
+
+  it("Lv 下限が効く", () => {
+    const result = expectSuccess(parseImportText(apiShipArrayText(false), master, { lockedOnly: false, minLevel: 99 }));
+
+    expect(uidsOf(result.ships)).toEqual(["101", "102", "103"]);
+  });
+
 });
 
 describe("parseImportText：古い短縮形式（ship_id なし。個体 ID なし）", () => {
