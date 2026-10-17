@@ -213,7 +213,8 @@ describe("generateLatestDefinition（最新イベントの公開版を取得し�
     expect(url.searchParams.get("select")?.split(",")).toContain("content");
   });
 
-  it("どちらの取得にも、publishable key を apikey と Authorization: Bearer で付ける", async () => {
+  // publishable key は JWT ではないため Authorization: Bearer に入れない（入れると Invalid JWT で 401 になりうる。Supabase の API キーの説明）
+  it("どちらの取得にも、publishable key を apikey だけで付け、Authorization は付けない", async () => {
     const { deps, fetch } = setup(publishedRoutes());
 
     await generateLatestDefinition(deps);
@@ -222,7 +223,7 @@ describe("generateLatestDefinition（最新イベントの公開版を取得し�
     for (const [url, init] of fetch.mock.calls) {
       const headers = new Headers(init.headers);
       expect(headers.get("apikey"), `apikey（${url}）`).toBe(PUBLISHABLE_KEY);
-      expect(headers.get("authorization"), `Authorization（${url}）`).toBe(`Bearer ${PUBLISHABLE_KEY}`);
+      expect(headers.get("authorization"), `Authorization（${url}）`).toBeNull();
     }
   });
 

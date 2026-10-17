@@ -156,7 +156,7 @@ roadmap の T3-2。要件は `docs/requirements.md`（特に 2.3 権限、3.7 �
 
 1. `publish_definition` が `published_definitions` に行を入れる。
 2. Supabase の Database Webhook（`published_definitions` の INSERT）が Cloudflare Pages の Deploy Hook を呼ぶ（アカウント操作 ⑦）。
-3. Cloudflare Pages が再ビルドする（ビルドコマンドは `npm run build`）。prebuild の `npm run fetch:latest-definition`（`scripts/fetch-latest-definition.ts`。処理は `src/lib/definition/generateLatestDefinition.ts`）が、環境変数 `NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`（anon の publishable key。ヘッダー `apikey` と `Authorization: Bearer`）で PostgREST を読む。
+3. Cloudflare Pages が再ビルドする（ビルドコマンドは `npm run build`）。prebuild の `npm run fetch:latest-definition`（`scripts/fetch-latest-definition.ts`。処理は `src/lib/definition/generateLatestDefinition.ts`）が、環境変数 `NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`（anon の publishable key。ヘッダー `apikey` だけ。JWT ではないため `Authorization: Bearer` には入れない）で PostgREST を読む。
    - `GET /rest/v1/app_state?select=latest_event_id&id=eq.true` で最新イベントの ID を読む。
    - `GET /rest/v1/published_definitions?select=content,version_label,published_at&event_id=eq.{ID}&order=published_at.desc&limit=1` で最新の公開版を 1 件読む。
    - 公開版の `content` を `validatePublicDefinition` で検証し、`content.event.id` が最新イベントの ID と一致することを確かめてから、検証済みの値を `public/data/latest-definition.json` に書き出す（DB の列は入れない）。

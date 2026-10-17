@@ -1,6 +1,6 @@
 // ビルド時に最新イベントの公開定義を取得して静的 JSON に書き出す処理（roadmap T3-11、docs/design/database.md 6 章、U7）
 //
-// - Supabase の REST（PostgREST）を anon の publishable key で読む（ヘッダー apikey と Authorization: Bearer）。
+// - Supabase の REST（PostgREST）を anon の publishable key で読む（ヘッダー apikey だけ。publishable key は JWT ではないため Authorization: Bearer には入れない）。
 //   1. GET {url}/rest/v1/app_state?select=latest_event_id&id=eq.true で最新イベントの ID を読む
 //   2. ID があれば GET {url}/rest/v1/published_definitions?select=content,…&event_id=eq.{ID}&order=published_at.desc&limit=1
 //      で最新の公開版を 1 件読む
@@ -42,7 +42,7 @@ export interface FetchResponseLike {
 
 /** 取得に付けるもの（Node の fetch の RequestInit に渡せる形） */
 export interface SupabaseFetchInit {
-  /** apikey と Authorization: Bearer（どちらも publishable key） */
+  /** ヘッダー apikey に付ける publishable key（Authorization には入れない） */
   headers: Record<string, string>;
 }
 
@@ -124,7 +124,7 @@ export async function generateLatestDefinition(
   const reader: TableReader = {
     fetch: deps.fetch,
     baseUrl,
-    headers: { apikey: publishableKey, Authorization: `Bearer ${publishableKey}` },
+    headers: { apikey: publishableKey },
     retries: deps.retries ?? DEFAULT_RETRIES,
     retryDelayMs: deps.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS,
   };
