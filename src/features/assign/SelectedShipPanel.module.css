@@ -113,8 +113,9 @@
 
 .line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
   font-size: calc(12px * var(--font-scale));
 }
 
@@ -123,9 +124,12 @@
   flex: 1 0 auto;
 }
 
-/* 国籍（・艦種）の条件で効いたグループの内訳（v1.1。モックの段階の行の「艦種 …」の小さい二次の文字） */
+/* 国籍（・艦種）の条件で効いたグループの内訳（v1.1。モックの段階の行の「艦種 …」の小さい二次の文字）。
+ * 段階名と倍率の間に押し込むと、段階名が長いときに数文字の幅になり 1 文字ずつ縦に並ぶため、
+ * 段階名の下の段に行の幅いっぱいで出す（order で倍率の後ろに回し、flex-basis 100% で折り返す） */
 .lineNote {
-  flex: 0 1 auto;
+  order: 1;
+  flex: 1 0 100%;
   min-width: 0;
   font-size: calc(11px * var(--font-scale));
   color: var(--color-text-muted);

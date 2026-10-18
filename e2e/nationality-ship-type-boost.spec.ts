@@ -231,3 +231,47 @@ test.describe("内訳のある段階の行で、段階名が 1 行に収まる�
     });
   }
 });
+
+// ---- 内訳の文が狭い列に押し込まれない（本番での表示の崩れ。2026-10-18 ユーザーの報告） ----
+// 段階名が長いと、段階名と倍率の間の内訳の文が数文字の幅に押し込まれ、1 文字ずつ縦に並んでいた。
+// 内訳の文は段階名の下の段に、行の幅いっぱいで横書きに出す（行の幅の 7 割以上、高さは 2 行分まで）。
+
+/** 内訳の文の要素の大きさと、その行（段階の行）の幅 */
+async function measureNote(note: Locator): Promise<{ width: number; height: number; lineWidth: number; lineHeight: number }> {
+  return note.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const line = element.parentElement?.getBoundingClientRect();
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || Number.parseFloat(getComputedStyle(element).fontSize) * 1.5;
+    return { width: rect.width, height: rect.height, lineWidth: line?.width ?? 0, lineHeight };
+  });
+}
+
+async function expectNoteNotSqueezed(note: Locator, where: string): Promise<void> {
+  const m = await measureNote(note);
+  const detail = `${where}（${JSON.stringify(m)}）`;
+  expect.soft(m.width, `${detail}：内訳の幅が行の幅の 7 割以上`).toBeGreaterThanOrEqual(m.lineWidth * 0.7);
+  expect.soft(m.height, `${detail}：内訳の高さが 2 行分まで`).toBeLessThanOrEqual(m.lineHeight * 2 + 2);
+}
+
+test("長い内訳でも、開いた艦カードと選んだ艦のパネルで内訳の文が狭い列に押し込まれない", async ({ page }) => {
+  // 準備：Johnston改 を連合艦隊に置く（内訳の長い定義）
+  await page.clock.setFixedTime(WHILE_RUNNING);
+  await routeShipTypeData(page, longNoteDefinition);
+  await seedPlan(page, {
+    ships: [...summer2026Ships, ...nationalityShips, ...shipTypeShips],
+    assignments: { ...summer2026Assignments, johnston: "rengo" },
+  });
+
+  // 実行：割り振りを開き、連合艦隊の Johnston改 を選ぶ（カードも開く）
+  await page.goto(ASSIGN_PATH);
+  const card = cardIn(columnOf(page, "連合艦隊"), "johnston");
+  await card.click();
+  await expect(card).toHaveAttribute("aria-expanded", "true");
+  const panel = panelOf(page);
+  await expect(panel).toContainText("Johnston改");
+
+  // 検証：内訳の文の要素が行の幅いっぱいで、高さは 2 行分まで
+  const note = "米駆逐 ×1.20（アメリカ・駆逐）、米艦 ×1.10（アメリカ・イギリス）";
+  await expectNoteNotSqueezed(card.getByText(note, { exact: true }), "艦カード");
+  await expectNoteNotSqueezed(panel.getByText(note, { exact: true }), "選んだ艦のパネル");
+});
