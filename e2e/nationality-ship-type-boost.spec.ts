@@ -144,7 +144,7 @@ test.describe("艦種で絞った国籍の特効グループ（v1.1）", () => {
 
 // ---- 内訳のある段階の行の見た目（PR #39 のレビュー指摘 B1） ----
 //
-// 段階の行は「段階名・内訳・倍率」を横に並べる。内訳があっても段階名（「E2 ゲージ3」）が細く縮んで
+// 段階の行の HTML の並びは「段階名・内訳・倍率」（見た目は内訳を下の段に回す）。内訳があっても段階名（「E2 ゲージ3」）が細く縮んで
 // 1 文字ずつ折り返さず、1 行に収まることを、ビルドした画面の大きさで測る（Desktop Chrome の既定の幅）。
 // 内訳の文は長ければ折り返してよい（段階名だけを測る）。
 
@@ -231,3 +231,120 @@ test.describe("内訳のある段階の行で、段階名が 1 行に収まる�
     });
   }
 });
+
+// ---- 内訳の文が狭い列に押し込まれない（本番での表示の崩れ。2026-10-18 ユーザーの報告） ----
+// 段階名が長いと、段階名と倍率の間の内訳の文が数文字の幅に押し込まれ、1 文字ずつ縦に並んでいた。
+// 内訳の文は段階名の下の段に、行の幅いっぱいで横書きに出す（行の幅の 7 割以上、高さは 2 行分まで）。
+
+/** 内訳の文の要素の大きさと、その行（段階の行）の幅 */
+async function measureNote(note: Locator): Promise<{ width: number; height: number; lineWidth: number; lineHeight: number }> {
+  return note.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const line = element.parentElement?.getBoundingClientRect();
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || Number.parseFloat(getComputedStyle(element).fontSize) * 1.5;
+    return { width: rect.width, height: rect.height, lineWidth: line?.width ?? 0, lineHeight };
+  });
+}
+
+async function expectNoteNotSqueezed(note: Locator, where: string): Promise<void> {
+  const m = await measureNote(note);
+  const detail = `${where}（${JSON.stringify(m)}）`;
+  expect.soft(m.width, `${detail}：内訳の幅が行の幅の 7 割以上`).toBeGreaterThanOrEqual(m.lineWidth * 0.7);
+  expect.soft(m.height, `${detail}：内訳の高さが 2 行分まで`).toBeLessThanOrEqual(m.lineHeight * 2 + 2);
+}
+
+test("長い内訳でも、開いた艦カードと選んだ艦のパネルで内訳の文が狭い列に押し込まれない", async ({ page }) => {
+  // 準備：Johnston改 を連合艦隊に置く（内訳の長い定義）
+  await page.clock.setFixedTime(WHILE_RUNNING);
+  await routeShipTypeData(page, longNoteDefinition);
+  await seedPlan(page, {
+    ships: [...summer2026Ships, ...nationalityShips, ...shipTypeShips],
+    assignments: { ...summer2026Assignments, johnston: "rengo" },
+  });
+
+  // 実行：割り振りを開き、連合艦隊の Johnston改 を選ぶ（カードも開く）
+  await page.goto(ASSIGN_PATH);
+  const card = cardIn(columnOf(page, "連合艦隊"), "johnston");
+  await card.click();
+  await expect(card).toHaveAttribute("aria-expanded", "true");
+  const panel = panelOf(page);
+  await expect(panel).toContainText("Johnston改");
+
+  // 検証：内訳の文の要素が行の幅いっぱいで、高さは 2 行分まで
+  const note = "米駆逐 ×1.20（アメリカ・駆逐）、米艦 ×1.10（アメリカ・イギリス）";
+  await expectNoteNotSqueezed(card.getByText(note, { exact: true }), "艦カード");
+  await expectNoteNotSqueezed(panel.getByText(note, { exact: true }), "選んだ艦のパネル");
+});
+
+// ---- 報告と同じ条件（1366×768 の艦カード・長い段階名・文字「大」）で、■・段階名・倍率が同じ段に残る ----
+// 内訳を下の段に回すと、段階名が縮まないため長い段階名では ■ だけが 1 段目に取り残され、倍率も下の段へ落ちていた（PR #41 のレビュー M1）。
+
+/** E2 ゲージ3 の段階名を本番の報告と同じくらい長くした定義（表示は「E2 E2-2 第二ゲージ（戦車輸送）」） */
+const longLabelDefinition: PublicDefinition = {
+  ...longNoteDefinition,
+  stages: longNoteDefinition.stages.map((stage) =>
+    stage.id === "E2-3" ? { ...stage, name: "E2-2 第二ゲージ（戦車輸送）" } : stage,
+  ),
+};
+
+/** 段階の行の中の ■・段階名・倍率・内訳の位置と、行があふれていないか */
+async function measureRow(label: Locator): Promise<{
+  sameRow: boolean;
+  noteBelow: boolean;
+  overflow: number;
+  detail: Record<string, number>;
+}> {
+  return label.evaluate((element) => {
+    const line = element.parentElement;
+    if (line === null) throw new Error("段階の行がない");
+    const children = [...line.children] as HTMLElement[];
+    const labelBox = element.getBoundingClientRect();
+    const multiplier = children.find((child) => /^×/.test(child.textContent ?? ""));
+    const note = children.find((child) => child !== element && child !== multiplier && (child.textContent ?? "") !== "");
+    const dot = children.find((child) => child.getAttribute("aria-hidden") === "true");
+    const top = (el: Element | undefined) => (el === undefined ? Number.NaN : el.getBoundingClientRect().top);
+    const bottom = (el: Element | undefined) => (el === undefined ? Number.NaN : el.getBoundingClientRect().bottom);
+    // 同じ段：■ と倍率の縦の中心が段階名の高さの範囲に入る（段階名が 2 行に折り返しても、その段の中にそろう）
+    const center = (el: Element) => (el.getBoundingClientRect().top + el.getBoundingClientRect().bottom) / 2;
+    const inFirstRow = (el: Element | undefined) => el === undefined || (center(el) >= labelBox.top && center(el) <= labelBox.bottom);
+    return {
+      sameRow: inFirstRow(dot) && inFirstRow(multiplier),
+      noteBelow: note === undefined || top(note) >= labelBox.bottom - 1,
+      overflow: line.scrollWidth - line.clientWidth,
+      detail: { labelTop: labelBox.top, labelBottom: labelBox.bottom, dotTop: top(dot), multiplierTop: top(multiplier), noteTop: top(note), noteBottom: bottom(note) },
+    };
+  });
+}
+
+for (const fontSize of ["標準", "大"] as const) {
+  test(`1366×768・文字${fontSize}・長い段階名で、艦カードと選んだ艦のパネルの段階の行が崩れない`, async ({ page }) => {
+    // 準備：1366×768、Johnston改 を連合艦隊に置く（長い段階名・長い内訳の定義）
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.clock.setFixedTime(WHILE_RUNNING);
+    await routeShipTypeData(page, longLabelDefinition);
+    await seedPlan(page, {
+      ships: [...summer2026Ships, ...nationalityShips, ...shipTypeShips],
+      assignments: { ...summer2026Assignments, johnston: "rengo" },
+    });
+
+    // 実行：割り振りを開き、文字の大きさを変え、連合艦隊の Johnston改 を選ぶ（カードも開く）
+    await page.goto(ASSIGN_PATH);
+    if (fontSize === "大") {
+      await page.evaluate(() => document.documentElement.setAttribute("data-font-size", "large"));
+    }
+    const card = cardIn(columnOf(page, "連合艦隊"), "johnston");
+    await card.click();
+    await expect(card).toHaveAttribute("aria-expanded", "true");
+    const panel = panelOf(page);
+    await expect(panel).toContainText("Johnston改");
+
+    // 検証：■・段階名・倍率が同じ段にあり、内訳は段階名の下の段、行はあふれない
+    for (const [where, scope] of [["艦カード", card], ["選んだ艦のパネル", panel]] as const) {
+      const row = await measureRow(scope.getByText("E2 E2-2 第二ゲージ（戦車輸送）", { exact: true }));
+      const detail = `${where}（${JSON.stringify(row)}）`;
+      expect.soft(row.sameRow, `${detail}：■・段階名・倍率が同じ段`).toBe(true);
+      expect.soft(row.noteBelow, `${detail}：内訳は段階名の下の段`).toBe(true);
+      expect.soft(row.overflow, `${detail}：行があふれない`).toBeLessThanOrEqual(1);
+    }
+  });
+}
