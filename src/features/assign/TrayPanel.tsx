@@ -8,9 +8,10 @@
 // - 区切りの見出しと艦カードの一覧（TrayGroupList）。条件に合う艦がいなければ「条件に合う艦はいません」
 //
 // 絞り込み・並び順・表示の条件と、絞り込みの開閉・区切りの折りたたみはこの部品の中で持つ（画面を移ると初めに戻る）。
-// 絞り込みの欄は「絞り込み」のボタンのほか、欄の中の「閉じる」と Esc（欄の中か「絞り込み」のボタンにフォーカスがあるとき）で閉じる。
+// 絞り込みの欄は「絞り込み」のボタンのほか、欄の先頭の「閉じる」（名前は「絞り込みを閉じる」）と Esc（欄の中か「絞り込み」のボタンにフォーカスがあるとき）で閉じる。
 // 閉じても条件は残す（条件を戻すのは「リセット」）。欄の中から閉じたら「絞り込み」のボタンにフォーカスを戻す（2026-10-17 の要望）。
-// 上の操作（見出し〜艦種タブ）は控えの高さの半分までにして、超えた分はその中でスクロールさせ、艦の一覧に残りの高さを使う。
+// 控えは画面の高さいっぱいの高さを持ち、艦の一覧に最低 160px を残して、残りを上の操作（見出し〜艦種タブ。絞り込みの欄を含む）が使う。
+// 上の操作が入りきらないときは、その中でスクロールさせる。
 // 控えの組み立て（絞り込み・並べ替え・区切り）は buildTray（tray.ts）が行う。
 // 艦の一覧（role="tabpanel"）は仮想スクロールのスクロールする要素で、TrayGroupList に渡す。
 // <section> は控えへのドロップの落とす先（dnd-kit の useDroppable。roadmap T2-8）。強調するかは画面（dropHighlight）が決める。
@@ -253,6 +254,13 @@ export function TrayPanel({
 
         {filterOpen && (
           <div id={filterId} className={styles.filters} onKeyDown={handleFilterKeyDown}>
+            {/* 欄の先頭（「改造状態」の見出しの右に見える）に置く：開いた直後にスクロールせずに見え、欄の中で最初に Tab で止まる */}
+            <button type="button" className={styles.filterClose} aria-label="絞り込みを閉じる" onClick={closeFilter}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="M6 15l6-6 6 6" />
+              </svg>
+              閉じる
+            </button>
             <fieldset className={styles.fieldset}>
               <legend className={styles.legend}>改造状態</legend>
               <div className={styles.checks}>
@@ -301,12 +309,6 @@ export function TrayPanel({
                 ))}
               </div>
             </fieldset>
-            <button type="button" className={styles.filterClose} onClick={closeFilter}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                <path d="M6 15l6-6 6 6" />
-              </svg>
-              閉じる
-            </button>
           </div>
         )}
 

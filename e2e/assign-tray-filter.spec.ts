@@ -83,7 +83,7 @@ test.beforeEach(async ({ page }) => {
 
 /** ボタン「絞り込み」（名前は「絞り込み」とバッジの数） */
 function filterButtonOf(page: Page) {
-  return trayOf(page).getByRole("button", { name: /^絞り込み/ });
+  return trayOf(page).getByRole("button", { name: /^絞り込み\s*\d*$/ });
 }
 
 /** 画面の中の矩形（上端・下端・左端・右端） */
