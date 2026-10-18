@@ -1456,6 +1456,19 @@ describe("mergeDefinitions：特効グループの艦種（v1.1。国籍の条�
     expect(mergedField(result.merged, "shipTypes")).toBeUndefined();
   });
 
+  it("合わせた国籍が空で艦種を持たないときは、相手が足した艦種を自動で合わせた所（field \"shipTypes\"）に入れない（PR #39 のレビュー指摘）", () => {
+    // 準備：上と同じ例（自分が国籍を全部外し、相手が艦種を足した）
+    const mine = withGroupC(usaBase, { nationalities: undefined });
+    const theirs = withGroupC(usaBase, { shipTypes: [2] });
+
+    // 実行
+    const { result } = run(mine, theirs, usaBase);
+
+    // 検証：結果に艦種がないので、相手の艦種の追加を取り込んだとは伝えない
+    expect(mergedField(result.merged, "shipTypes")).toBeUndefined();
+    expect(shipTypesAutoMerged(result.autoMerged)).toEqual([]);
+  });
+
   it("合わせた国籍が空なら、艦種も持たない（2 人がそれぞれ国籍を外して空になった。base の艦種は残さない）", () => {
     const from = withGroupC(base, { nationalities: ["usa", "uk"], shipTypes: [2] });
     const mine = withGroupC(from, { nationalities: ["usa"] });

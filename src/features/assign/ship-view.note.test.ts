@@ -170,6 +170,43 @@ describe("段階の倍率の行の内訳の文（boostLines の note）", () => 
     expect(compact(linesOf(def, "sbr"))).toEqual([["E2 ゲージ3", 1.2, "米駆逐（アメリカ・駆逐）"]]);
   });
 
+  describe("名前が空のグループに倍率を付けるとき（PR #39 のレビュー指摘 B2）", () => {
+    it("「{条件} ×{倍率}」にする（米駆逐 ×1.20 に、名前なし・国籍 アメリカ ×1.10 を掛け合わせた Johnston改）", () => {
+      // 準備：E2 ゲージ3 の「米駆逐」×1.20 に続けて、名前なし・国籍 アメリカ ×1.10 を足す
+      const def = withGroups(ddDef, "E2-3", [
+        { id: "us-nameless", name: "", multiplier: 1.1, shipNames: [], nationalities: ["usa"] },
+      ]);
+
+      // 実行
+      const lines = linesOf(def, "johnston");
+
+      // 検証：「×1.10（アメリカ）」ではなく「アメリカ ×1.10」
+      expect(compact(lines)).toEqual([["E2 ゲージ3", 1.32, "米駆逐 ×1.20（アメリカ・駆逐）、アメリカ ×1.10"]]);
+    });
+
+    it("国籍と艦種を持つ名前なしのグループも「アメリカ・駆逐 ×1.20」（名前のあるグループは今の形のまま）", () => {
+      // 準備：名前なし・アメリカ・駆逐 ×1.20 に続けて、「米艦」×1.10（国籍 アメリカ）
+      const def = withGroups(summer2026Definition, "E2-3", [
+        { id: "nameless-dd", name: "", multiplier: 1.2, shipNames: [], nationalities: ["usa"], shipTypes: [2] },
+        { id: "us", name: "米艦", multiplier: 1.1, shipNames: [], nationalities: ["usa"] },
+      ]);
+
+      // 実行
+      const lines = linesOf(def, "johnston");
+
+      // 検証
+      expect(compact(lines)).toEqual([["E2 ゲージ3", 1.32, "アメリカ・駆逐 ×1.20、米艦 ×1.10（アメリカ）"]]);
+    });
+
+    it("名前なしのグループが 1 つだけで倍率が同じなら、今のまま条件だけ（倍率を付けない）", () => {
+      const def = withGroups(summer2026Definition, "E2-3", [
+        { id: "nameless", name: "", multiplier: 1.1, shipNames: [], nationalities: ["usa"] },
+      ]);
+
+      expect(compact(linesOf(def, "iowa"))).toEqual([["E2 ゲージ3", 1.1, "アメリカ"]]);
+    });
+  });
+
   it("照合の対象が null なら、どの行も null", () => {
     // 準備：Johnston改 の特効のまとめ
     const entry = shipEntryOf(ddDef, master, shipOf("johnston"));

@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { PublicDefinition } from "../src/domain/definition/types";
 import { ASSIGN_PATH, cardIn, columnOf, panelOf, seedPlan } from "../src/test/assign-e2e";
 import {
   nationalityMasterEntries,
@@ -30,14 +31,17 @@ const SHIP_MASTER_PATH = "/data/ship-master.json";
 const WHILE_RUNNING = new Date("2026-10-16T12:00:00+09:00");
 
 /** 公開定義と艦船マスタの取得を、艦種の特効のテスト用データの応答に差し替える（問い合わせ文字列の有無は問わない） */
-async function routeShipTypeData(page: Page): Promise<void> {
+async function routeShipTypeData(
+  page: Page,
+  definition: PublicDefinition = summer2026DefinitionWithUsaDestroyerBoost,
+): Promise<void> {
   await page.route(
     (url) => url.pathname === LATEST_DEFINITION_PATH,
     (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(summer2026DefinitionWithUsaDestroyerBoost),
+        body: JSON.stringify(definition),
       }),
   );
   await page.route(
@@ -136,4 +140,94 @@ test.describe("艦種で絞った国籍の特効グループ（v1.1）", () => {
     await expect(johnston).toHaveCount(1);
     await expect(johnston).toContainText("×1.20");
   });
+});
+
+// ---- 内訳のある段階の行の見た目（PR #39 のレビュー指摘 B1） ----
+//
+// 段階の行は「段階名・内訳・倍率」を横に並べる。内訳があっても段階名（「E2 ゲージ3」）が細く縮んで
+// 1 文字ずつ折り返さず、1 行に収まることを、ビルドした画面の大きさで測る（Desktop Chrome の既定の幅）。
+// 内訳の文は長ければ折り返してよい（段階名だけを測る）。
+
+/** E2 ゲージ3 に「米艦」×1.10（国籍 アメリカ・イギリス）も足して、Johnston改 の内訳を長くした定義 */
+const longNoteDefinition: PublicDefinition = {
+  ...summer2026DefinitionWithUsaDestroyerBoost,
+  stages: summer2026DefinitionWithUsaDestroyerBoost.stages.map((stage) =>
+    stage.id === "E2-3"
+      ? {
+          ...stage,
+          boosts: [
+            ...stage.boosts,
+            { id: "E2-3-US-UK", name: "米艦", multiplier: 1.1, shipNames: [], nationalities: ["usa", "uk"] },
+          ],
+        }
+      : stage,
+  ),
+};
+
+/** 段階名の要素の大きさ：文字の行の数、文字列の幅、要素の幅と高さ、1 行の高さ */
+interface LabelMetrics {
+  lines: number;
+  textWidth: number;
+  width: number;
+  height: number;
+  lineHeight: number;
+}
+
+/** 段階名の要素を測る（文字の範囲の矩形から、行の数と文字列の幅を求める） */
+async function measureLabel(label: Locator): Promise<LabelMetrics> {
+  return label.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const rects = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
+    const box = element.getBoundingClientRect();
+    return {
+      lines: new Set(rects.map((rect) => Math.round(rect.top))).size,
+      textWidth: rects.reduce((sum, rect) => sum + rect.width, 0),
+      width: box.width,
+      height: box.height,
+      lineHeight: Math.max(0, ...rects.map((rect) => rect.height)),
+    };
+  });
+}
+
+/** 段階名の要素が 1 行に収まっている（行が 1 つ・高さが 1 行分・幅が文字列の幅より縮んでいない）。艦カードとパネルの両方を測るため soft で確かめる */
+async function expectLabelOnOneLine(label: Locator, where: string): Promise<void> {
+  const m = await measureLabel(label);
+  const detail = `${where}（${JSON.stringify(m)}）`;
+  expect.soft(m.lines, `${detail}：段階名が 1 行`).toBe(1);
+  expect.soft(m.height, `${detail}：段階名の高さが 1 行分`).toBeLessThanOrEqual(m.lineHeight * 1.5);
+  expect.soft(m.width, `${detail}：段階名の幅が文字列の幅より縮んでいない`).toBeGreaterThanOrEqual(m.textWidth - 1);
+}
+
+test.describe("内訳のある段階の行で、段階名が 1 行に収まる（v1.1、PR #39 のレビュー指摘 B1）", () => {
+  for (const [kind, definition, note] of [
+    ["「米駆逐」1 グループ", summer2026DefinitionWithUsaDestroyerBoost, "米駆逐（アメリカ・駆逐）"],
+    ["長い内訳（米艦 ×1.10 と掛け合わせ）", longNoteDefinition, "米駆逐 ×1.20（アメリカ・駆逐）、米艦 ×1.10（アメリカ・イギリス）"],
+  ] as const) {
+    test(`${kind}：連合艦隊の開いた艦カードと選んだ艦のパネルで、「E2 ゲージ3」が折り返さない`, async ({ page }) => {
+      // 準備：Johnston改 を連合艦隊に置く
+      await page.clock.setFixedTime(WHILE_RUNNING);
+      await routeShipTypeData(page, definition);
+      await seedPlan(page, {
+        ships: [...summer2026Ships, ...nationalityShips, ...shipTypeShips],
+        assignments: { ...summer2026Assignments, johnston: "rengo" },
+      });
+
+      // 実行：割り振りを開き、連合艦隊の Johnston改 を選ぶ（カードも開く）
+      await page.goto(ASSIGN_PATH);
+      const card = cardIn(columnOf(page, "連合艦隊"), "johnston");
+      await card.click();
+      await expect(card).toHaveAttribute("aria-expanded", "true");
+      const panel = panelOf(page);
+      await expect(panel).toContainText("Johnston改");
+
+      // 検証：内訳が出ている（内訳の文に「×」が入る例もあるので、文そのもので確かめる）
+      await expect(card).toContainText(note);
+      await expect(panel).toContainText(note);
+
+      // 検証：段階名の要素が 1 行に収まる
+      await expectLabelOnOneLine(card.getByText("E2 ゲージ3", { exact: true }), "艦カード");
+      await expectLabelOnOneLine(panel.getByText("E2 ゲージ3", { exact: true }), "選んだ艦のパネル");
+    });
+  }
 });

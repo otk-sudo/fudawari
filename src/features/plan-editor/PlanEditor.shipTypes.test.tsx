@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DefinitionDoc } from "@/domain/definition-edit";
@@ -6,6 +6,8 @@ import type { Mutable } from "@/test/fixtures";
 import { expectInDocumentOrder } from "@/test/dom-order";
 import {
   boostGroupNamed,
+  createFakeRepository,
+  DRAFT_VERSION,
   fixClock,
   makeData,
   makeDoc,
@@ -423,6 +425,54 @@ describe("イベント定義の画面（PlanEditor）：特効グループの艦
         mapLabel: "E2",
         summary: "E2 ゲージ3 の特効「連合艦隊C」の艦種を変更（追加：駆逐）",
       });
+    });
+  });
+
+  describe("外からの文書の差し替えで国籍が空になったとき（PR #39 のレビュー指摘）", () => {
+    it("艦種を選ぶ欄を開いたまま、保存で相手の変更（連合艦隊C の国籍を全部外した）を合わせて国籍が空になり、その後に国籍を足しても、艦種を選ぶ欄は閉じている", async () => {
+      // 準備：開いたときの版は 連合艦隊C が国籍 アメリカ。相手（版 8）は連合艦隊C の国籍を全部外して先に保存していた
+      const draftContent = makeDoc((draft) => {
+        const group = draft.stages.flatMap((s) => s.boosts).find((g) => g.id === "E2-3-C");
+        if (group === undefined) throw new Error("テスト用の定義に連合艦隊C がありません");
+        group.nationalities = ["usa"];
+      });
+      const theirs = makeDoc();
+      const data = makeData({ latestEvent: makeEvent({ draftContent }) });
+      const repository = createFakeRepository(data);
+      repository.saveDraft.mockResolvedValueOnce({
+        status: "conflict",
+        version: DRAFT_VERSION + 1,
+        content: theirs,
+        updatedByName: "協力者B",
+        updatedAt: "2026-10-17T11:52:00+09:00",
+      });
+      const { user } = await renderEditor(data, { repository });
+      await selectStage(user, "E2", "ゲージ3");
+      // 自分は艦種を選ぶ欄を開いて駆逐を入れる（欄は開いたまま）
+      const picker = await openPicker(user);
+      await user.click(within(picker).getByRole("checkbox", { name: "駆逐" }));
+
+      // 実行 1：保存する（衝突しないので、相手の変更を合わせた文書に差し替えて保存し直す）
+      await user.click(saveDraftButton());
+      await savedDraftInput(repository, 2);
+
+      // 検証 1：合わせた文書では連合艦隊C の国籍が空なので、艦種の行も欄も出ない
+      await waitFor(() => {
+        expect(queryAddShipTypeButton(boostGroupNamed("連合艦隊C"))).toBeNull();
+      });
+      expect(queryPicker()).not.toBeInTheDocument();
+
+      // 実行 2：国籍を選ぶ欄で、もう一度アメリカを入れる
+      await user.click(within(boostGroupNamed("連合艦隊C")).getByRole("button", { name: "＋ 国籍" }));
+      await user.click(
+        within(screen.getByRole("group", { name: "国籍を選ぶ" })).getByRole("checkbox", { name: "アメリカ" }),
+      );
+
+      // 検証 2：艦種の行（「＋ 艦種」）は出るが、艦種を選ぶ欄は開いた状態で出ない
+      const groupC = boostGroupNamed("連合艦隊C");
+      expect(queryAddShipTypeButton(groupC)).not.toBeNull();
+      expect(queryAddShipTypeButton(groupC)).toHaveAttribute("aria-expanded", "false");
+      expect(queryPicker()).not.toBeInTheDocument();
     });
   });
 });
