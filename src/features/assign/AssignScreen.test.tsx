@@ -136,7 +136,7 @@ function getSearchBox(): HTMLElement {
 
 /** ボタン「絞り込み」（名前は「絞り込み」とバッジの数） */
 function getFilterButton(): HTMLElement {
-  return within(getTray()).getByRole("button", { name: /^絞り込み/ });
+  return within(getTray()).getByRole("button", { name: /^絞り込み\s*\d*$/ });
 }
 
 /** 並び順のプルダウン */

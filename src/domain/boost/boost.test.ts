@@ -8,9 +8,12 @@ import {
   nationalityMasterEntries,
   nationalityShips,
   shipByUid,
+  shipTypeMasterEntries,
+  shipTypeShips,
   summer2026Assignments,
   summer2026Definition,
   summer2026DefinitionWithUsaBoost,
+  summer2026DefinitionWithUsaDestroyerBoost,
   summer2026MasterEntries,
   summer2026Ships,
   unknownShip,
@@ -29,8 +32,17 @@ import type { BoostTarget, ShipBoostSummary } from "./types";
 const def = summer2026Definition;
 const ALL_FUDAS = ["s31", "tago", "rengo", "ulithi", "sixth"];
 
-/** 特効の照合の対象（艦名と国籍。v1.1） */
-const target = (baseName: string, nationality: Nationality): BoostTarget => ({ baseName, nationality });
+/**
+ * 艦種を問わないテストの艦の艦種の番号（どの艦種の選択肢にも入らない番号）。
+ * 艦種の条件（shipTypes）を持たないグループは艦種を見ないので、v1・国籍のテストの結果は変わらない
+ */
+const ANY_SHIP_TYPE = 0;
+/** 特効の照合の対象（艦名・国籍・艦種の番号。v1.1） */
+const target = (baseName: string, nationality: Nationality, shipTypeId: number = ANY_SHIP_TYPE): BoostTarget => ({
+  baseName,
+  nationality,
+  shipTypeId,
+});
 /** 日本の艦（v1 のテストの艦はすべて日本） */
 const jp = (baseName: string): BoostTarget => target(baseName, "japan");
 
@@ -795,6 +807,257 @@ describe("国籍の条件（v1.1）", () => {
 
       // 検証：「米艦」には当てはまらず、艦名のグループの ×1.1 だけ
       expect(boost.stages.map((s) => [s.stageId, round4(s.multiplier)])).toEqual([["E2-3", 1.1]]);
+    });
+  });
+});
+
+describe("国籍の条件を艦種で絞る（v1.1。shipTypes）", () => {
+  /** 艦種の番号（api_stype） */
+  const DD = 2; // 駆逐艦
+  const CL = 3; // 軽巡洋艦
+  const BB = 9; // 戦艦
+  const FBB = 8; // 戦艦（艦種 8）
+
+  /** 国籍と艦種の条件を持つ特効グループ */
+  const typedGroup = (
+    id: string,
+    multiplier: number,
+    shipNames: string[],
+    nationalities: BoostNationality[],
+    shipTypes: number[],
+  ): BoostGroup => ({ id, name: id, multiplier, shipNames, nationalities, shipTypes });
+
+  /** よく使う艦 */
+  const johnston = target("Johnston", "usa", DD); // 米駆逐
+  const sbr = target("Samuel B.Roberts", "usa", DD); // 米駆逐
+  const iowa = target("Iowa", "usa", BB); // 米戦艦
+  const atlanta = target("Atlanta", "usa", CL); // 米軽巡
+  const shigure = target("時雨", "japan", DD); // 日本の駆逐
+  const warspite = target("Warspite", "uk", BB); // 英戦艦
+
+  describe("stageMultiplier", () => {
+    it("「アメリカ・駆逐 ×1.2」は米駆逐艦にだけ効き、米戦艦・米軽巡・日本の駆逐艦・英戦艦には効かない", () => {
+      // 準備
+      const s = stage("S", "E1", "a", "normal", [typedGroup("usdd", 1.2, [], ["usa"], [DD])]);
+
+      // 実行・検証
+      expect(stageMultiplier(s, johnston)).toBeCloseTo(1.2, 10);
+      expect(stageMultiplier(s, sbr)).toBeCloseTo(1.2, 10);
+      expect(stageMultiplier(s, iowa)).toBe(1);
+      expect(stageMultiplier(s, atlanta)).toBe(1);
+      expect(stageMultiplier(s, shigure)).toBe(1);
+      expect(stageMultiplier(s, warspite)).toBe(1);
+    });
+
+    it("艦種を複数持つグループは、そのどれかの艦種の艦に効く（アメリカ・軽巡と駆逐）", () => {
+      const s = stage("S", "E1", "a", "normal", [typedGroup("us-light", 1.15, [], ["usa"], [CL, DD])]);
+
+      expect(stageMultiplier(s, atlanta)).toBeCloseTo(1.15, 10);
+      expect(stageMultiplier(s, johnston)).toBeCloseTo(1.15, 10);
+      expect(stageMultiplier(s, iowa)).toBe(1);
+    });
+
+    it("戦艦の選択肢（艦種 8・9）を持つグループは、艦種 8 と 9 の両方の艦に効く", () => {
+      const s = stage("S", "E1", "a", "normal", [typedGroup("bb", 1.3, [], ["usa", "germany"], [FBB, BB])]);
+
+      expect(stageMultiplier(s, iowa)).toBeCloseTo(1.3, 10);
+      expect(stageMultiplier(s, target("Bismarck", "germany", FBB))).toBeCloseTo(1.3, 10);
+      expect(stageMultiplier(s, johnston)).toBe(1);
+    });
+
+    it("国籍を複数持つグループの艦種は、どの国籍にも同じように効く（アメリカ・イギリスの戦艦）", () => {
+      const s = stage("S", "E1", "a", "normal", [typedGroup("allied-bb", 1.2, [], ["usa", "uk"], [FBB, BB])]);
+
+      expect(stageMultiplier(s, iowa)).toBeCloseTo(1.2, 10);
+      expect(stageMultiplier(s, warspite)).toBeCloseTo(1.2, 10);
+      expect(stageMultiplier(s, johnston)).toBe(1);
+      expect(stageMultiplier(s, target("大和", "japan", BB))).toBe(1);
+    });
+
+    it("艦種が空の配列のグループは、選んだ国籍のすべての艦種に効く（艦種で絞らない）", () => {
+      const s = stage("S", "E1", "a", "normal", [typedGroup("us-all", 1.1, [], ["usa"], [])]);
+
+      for (const t of [johnston, iowa, atlanta]) {
+        expect(stageMultiplier(s, t), t.baseName).toBeCloseTo(1.1, 10);
+      }
+      expect(stageMultiplier(s, shigure)).toBe(1);
+    });
+
+    it("艦名の条件は艦種で絞らない（艦名「Iowa」・アメリカ・駆逐のグループは、艦名で Iowa〔戦艦〕にも効く）", () => {
+      const s = stage("S", "E1", "a", "normal", [typedGroup("mixed", 1.2, ["Iowa"], ["usa"], [DD])]);
+
+      expect(stageMultiplier(s, iowa)).toBeCloseTo(1.2, 10); // 艦名で
+      expect(stageMultiplier(s, johnston)).toBeCloseTo(1.2, 10); // 国籍と艦種で
+      expect(stageMultiplier(s, atlanta)).toBe(1); // どちらでもない
+    });
+
+    it("1 つのグループで艦名と（国籍・艦種）の両方に当てはまっても、倍率は 1 回だけ掛ける（×1.2 であって ×1.44 ではない）", () => {
+      const s = stage("S", "E1", "a", "hard", [typedGroup("johnston", 1.2, ["Johnston"], ["usa"], [DD])]);
+
+      expect(stageMultiplier(s, johnston)).toBeCloseTo(1.2, 10);
+    });
+
+    it("別のグループどうしは掛け合わせる（アメリカ全体 ×1.1・アメリカ駆逐 ×1.2・艦名 Johnston ×1.05。U12）", () => {
+      const s = stage("S", "E1", "a", "hard", [
+        nationalGroup("us", 1.1, [], ["usa"]),
+        typedGroup("usdd", 1.2, [], ["usa"], [DD]),
+        group("johnston", 1.05, ["Johnston"]),
+      ]);
+
+      expect(stageMultiplier(s, johnston)).toBeCloseTo(1.1 * 1.2 * 1.05, 10);
+      expect(stageMultiplier(s, sbr)).toBeCloseTo(1.1 * 1.2, 10);
+      expect(stageMultiplier(s, iowa)).toBeCloseTo(1.1, 10);
+      expect(stageMultiplier(s, shigure)).toBe(1);
+    });
+
+    it("同じ国籍で艦種ごとに倍率を分けたグループ（アメリカ・駆逐 ×1.2、アメリカ・戦艦 ×1.3）は、それぞれの艦種の艦にだけ効く", () => {
+      const s = stage("S", "E1", "a", "normal", [
+        typedGroup("usdd", 1.2, [], ["usa"], [DD]),
+        typedGroup("usbb", 1.3, [], ["usa"], [FBB, BB]),
+      ]);
+
+      expect(stageMultiplier(s, johnston)).toBeCloseTo(1.2, 10);
+      expect(stageMultiplier(s, iowa)).toBeCloseTo(1.3, 10);
+      expect(stageMultiplier(s, atlanta)).toBe(1);
+    });
+
+    it("国籍が unknown の艦は、艦種が合っていても国籍・艦種の条件には当てはまらない（艦名の条件には当てはまる）", () => {
+      const s = stage("S", "E1", "a", "normal", [
+        typedGroup("usdd", 1.2, [], ["usa"], [DD]),
+        group("named", 1.1, ["謎の艦"]),
+      ]);
+
+      expect(stageMultiplier(s, target("謎の艦", "unknown", DD))).toBeCloseTo(1.1, 10);
+      expect(stageMultiplier(s, target("別の謎の艦", "unknown", DD))).toBe(1);
+    });
+
+    it("検証を通さない、国籍がなく艦種だけのグループは、どの艦にも国籍・艦種では当てはまらない", () => {
+      const s = stage("S", "E1", "a", "normal", [
+        typedGroup("dd-only", 1.2, [], [], [DD]),
+        { id: "dd-only-omitted", name: "dd-only-omitted", multiplier: 1.3, shipNames: [], shipTypes: [DD] } as BoostGroup,
+      ]);
+
+      for (const t of [johnston, shigure, target("謎の艦", "unknown", DD)]) {
+        expect(stageMultiplier(s, t), t.baseName).toBe(1);
+      }
+    });
+
+    it("1 つのグループに同じ艦種が重複して書かれていても、そのグループの倍率は 1 回だけ掛ける", () => {
+      const s = stage("S", "E1", "a", "normal", [typedGroup("usdd", 1.2, [], ["usa"], [DD, DD])]);
+
+      expect(stageMultiplier(s, johnston)).toBeCloseTo(1.2, 10);
+    });
+
+    it("同じ段階で、国籍・艦種の違う艦を続けて照合しても結果は変わらない（段階ごとの索引を使い回しても正しい）", () => {
+      // 準備：同じ国籍で艦種の違う艦、同じ艦種で国籍の違う艦を混ぜる
+      const s = stage("S", "E1", "a", "normal", [
+        typedGroup("usdd", 1.2, [], ["usa"], [DD]),
+        typedGroup("ukbb", 1.3, [], ["uk"], [FBB, BB]),
+        group("shigure", 1.1, ["時雨"]),
+      ]);
+      const targets = [johnston, iowa, shigure, warspite, sbr, atlanta, target("Ark Royal", "uk", 11)];
+
+      // 実行
+      const first = targets.map((t) => stageMultiplier(s, t));
+      const second = [...targets]
+        .reverse()
+        .map((t) => stageMultiplier(s, t))
+        .reverse();
+
+      // 検証
+      expect(second).toEqual(first);
+      expect(first.map(round4)).toEqual([1.2, 1, 1.1, 1.3, 1.2, 1, 1]);
+    });
+  });
+
+  describe("fudaBoost・shipBoostSummary（E2 ゲージ3〔連合艦隊・難所〕に「米駆逐」×1.20 を足した定義）", () => {
+    const ddDef = summer2026DefinitionWithUsaDestroyerBoost;
+
+    it("米駆逐艦（Johnston）を連合艦隊に置くと +60（(1.20 − 1) × 100 × 3）、効く段階は E2 ゲージ3 ×1.20、最大倍率 ×1.20", () => {
+      const boost = fudaBoost(ddDef, "rengo", johnston);
+
+      expect(boost).toEqual({
+        fudaId: "rengo",
+        score: 60,
+        stages: [{ stageId: "E2-3", multiplier: expect.closeTo(1.2, 10) }],
+        hasBoost: true,
+        maxMultiplier: expect.closeTo(1.2, 10),
+      });
+    });
+
+    it("米駆逐艦のまとめ：効くのは連合艦隊 +60 だけ、ほかの札は効かない札（定義の順）", () => {
+      expect(compact(shipBoostSummary(ddDef, sbr))).toEqual({
+        effective: [["rengo", 60, [["E2-3", 1.2]]]],
+        ineffective: ["s31", "tago", "ulithi", "sixth"],
+      });
+    });
+
+    it("米戦艦（Iowa）・英戦艦・国籍の分からない駆逐艦は、どの札でも特効なし", () => {
+      for (const t of [iowa, warspite, target("謎の艦", "unknown", DD)]) {
+        expect(shipBoostSummary(ddDef, t), t.baseName).toEqual({ effective: [], ineffectiveFudaIds: ALL_FUDAS });
+      }
+    });
+
+    it("日本の駆逐艦の特効は、米駆逐のグループを足しても変わらない（時雨は E2 ゲージ3 ×1.24 のまま）", () => {
+      expect(compact(shipBoostSummary(ddDef, shigure))).toEqual(compact(shipBoostSummary(def, shigure)));
+      const rengo = fudaBoost(ddDef, "rengo", shigure);
+      expect(rengo.stages.find((s) => s.stageId === "E2-3")?.multiplier).toBeCloseTo(1.24, 10);
+    });
+  });
+
+  describe("countBoostedShipsByStage（マスタの国籍と艦種で数える）", () => {
+    const master = createShipMaster([...summer2026MasterEntries, ...nationalityMasterEntries, ...shipTypeMasterEntries]);
+    const ships: readonly OwnedShip[] = [...summer2026Ships, ...nationalityShips, ...shipTypeShips];
+
+    it("連合艦隊に米駆逐 2 隻・米戦艦・英艦・国籍の分からない駆逐艦を足すと、E2 ゲージ3 だけ米駆逐 2 隻が増える（8 → 10）", () => {
+      // 準備
+      const assignments: AssignmentMap = {
+        ...summer2026Assignments,
+        johnston: "rengo",
+        sbr: "rengo",
+        iowa: "rengo",
+        warspite: "rengo",
+        mystery: "rengo",
+      };
+
+      // 実行
+      const counts = countBoostedShipsByStage(summer2026DefinitionWithUsaDestroyerBoost, master, ships, assignments);
+
+      // 検証：ほかの段階はモックの数のまま
+      expect(counts).toEqual({
+        "E1-1": 3,
+        "E2-G": 3,
+        "E2-1": 3,
+        "E2-2": 6,
+        "E2-3": 10,
+        "E3-G": 0,
+        "E3-1": 3,
+        "E3-2": 3,
+        "E3-3": 1,
+        "E3-4": 3,
+      });
+    });
+
+    it("米戦艦（Iowa改）だけを連合艦隊に置いても数えない", () => {
+      const counts = countBoostedShipsByStage(summer2026DefinitionWithUsaDestroyerBoost, master, ships, { iowa: "rengo" });
+
+      expect(Object.values(counts).every((count) => count === 0)).toBe(true);
+    });
+  });
+
+  describe("個体から（boostTargetOf でマスタの艦名・国籍・艦種を引いて）", () => {
+    const master = createShipMaster([...summer2026MasterEntries, ...nationalityMasterEntries, ...shipTypeMasterEntries]);
+    const shipOf = (uid: string): OwnedShip => {
+      const found = [...nationalityShips, ...shipTypeShips].find((s) => s.uid === uid);
+      if (found === undefined) throw new Error(`個体 ${uid} がありません`);
+      return found;
+    };
+
+    it("Johnston改の個体を連合艦隊に置くと +60、Iowa改の個体は特効なし（マスタの艦種で絞る）", () => {
+      const ddDef = summer2026DefinitionWithUsaDestroyerBoost;
+
+      expect(fudaBoost(ddDef, "rengo", boostTargetOf(master, shipOf("johnston").shipId)).score).toBe(60);
+      expect(fudaBoost(ddDef, "rengo", boostTargetOf(master, shipOf("iowa").shipId)).hasBoost).toBe(false);
     });
   });
 });

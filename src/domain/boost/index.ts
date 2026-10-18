@@ -3,6 +3,7 @@ export type { BoostTarget, FudaBoost, ShipBoostSummary, StageBoost } from "./typ
 export {
   countBoostedShipsByStage,
   fudaBoost,
+  nationalityBoostGroups,
   shipBoostSummary,
   stageLabel,
   stageMultiplier,

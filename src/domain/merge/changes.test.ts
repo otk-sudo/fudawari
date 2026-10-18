@@ -392,3 +392,86 @@ describe("特効グループの国籍の変更の文（v1.1）", () => {
     });
   });
 });
+
+describe("特効グループの艦種の変更の文（v1.1。国籍の条件を絞る shipTypes）", () => {
+  /** 艦種の場所（E2 ゲージ3 の連合艦隊C） */
+  const SHIP_TYPES_AT = { kind: "boostGroup", stageId: "E2-3", groupId: "E2-3-C", field: "shipTypes" } as const;
+
+  /** E2 ゲージ3 の連合艦隊C を国籍 アメリカ にし、艦種を変えた文書（undefined なら艦種の項目を持たない） */
+  function withShipTypes(shipTypes: number[] | undefined): DefinitionDoc {
+    return editDoc(before, (d) => {
+      const group = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+      group.nationalities = ["usa"];
+      if (shipTypes !== undefined) group.shipTypes = shipTypes;
+    });
+  }
+
+  it("艦種の追加と削除：「E2 ゲージ3 の特効「連合艦隊C」の艦種を変更（追加：駆逐／削除：軽巡）」、海域 E2", () => {
+    // 準備
+    const from = withShipTypes([3]);
+    const after = withShipTypes([2]);
+
+    // 実行
+    const changes = describeChanges(from, after);
+
+    // 検証
+    expect(changes).toEqual([
+      {
+        location: SHIP_TYPES_AT,
+        change: "modified",
+        text: "E2 ゲージ3 の特効「連合艦隊C」の艦種を変更（追加：駆逐／削除：軽巡）",
+        areaIds: ["E2"],
+      },
+    ]);
+  });
+
+  it("艦種を足しただけ：「…の艦種を変更（追加：軽巡、駆逐）」（表示名は選択肢の順）", () => {
+    const changes = describeChanges(withShipTypes(undefined), withShipTypes([2, 3]));
+
+    expect(changes.map((c) => c.text)).toEqual(["E2 ゲージ3 の特効「連合艦隊C」の艦種を変更（追加：軽巡、駆逐）"]);
+  });
+
+  it("艦種を外しただけ：「…の艦種を変更（削除：戦艦）」（艦種 8・9 は表示名「戦艦」1 つ。最後の艦種を外して項目がなくなった）", () => {
+    const changes = describeChanges(withShipTypes([8, 9]), withShipTypes(undefined));
+
+    expect(changes.map((c) => c.text)).toEqual(["E2 ゲージ3 の特効「連合艦隊C」の艦種を変更（削除：戦艦）"]);
+  });
+
+  it("省略と空の配列は同じ（変更なし）", () => {
+    expect(describeChanges(withShipTypes(undefined), withShipTypes([]))).toEqual([]);
+    expect(describeChanges(withShipTypes([]), withShipTypes(undefined))).toEqual([]);
+  });
+
+  it("艦種は集合として比べる（並びだけが変わっても変更にしない）", () => {
+    expect(describeChanges(withShipTypes([2, 3]), withShipTypes([3, 2]))).toEqual([]);
+  });
+
+  it("国籍と艦種を両方変えたら、国籍の文と艦種の文の 2 件になる（国籍が先）", () => {
+    // 準備：国籍も艦種もないグループに、国籍 アメリカと艦種 駆逐を入れる
+    const after = withShipTypes([2]);
+
+    // 実行
+    const changes = describeChanges(before, after);
+
+    // 検証
+    expect(changes.map((c) => c.location)).toEqual([
+      { kind: "boostGroup", stageId: "E2-3", groupId: "E2-3-C", field: "nationalities" },
+      SHIP_TYPES_AT,
+    ]);
+    expect(changes.map((c) => c.text)).toEqual([
+      "E2 ゲージ3 の特効「連合艦隊C」の国籍を変更（追加：アメリカ）",
+      "E2 ゲージ3 の特効「連合艦隊C」の艦種を変更（追加：駆逐）",
+    ]);
+  });
+
+  it("保存の記録の内容（summarizeSave）にも、艦種の変更の文が入る", () => {
+    const from = withShipTypes(undefined);
+    const after = withShipTypes([2]);
+
+    expect(summarizeSave(from, after)).toEqual({
+      text: "E2 ゲージ3 の特効「連合艦隊C」の艦種を変更（追加：駆逐）",
+      areaIds: ["E2"],
+      changes: describeChanges(from, after),
+    });
+  });
+});

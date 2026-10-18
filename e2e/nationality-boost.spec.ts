@@ -72,7 +72,7 @@ test.describe("国籍の条件の特効グループ（v1.1）", () => {
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("Iowa改");
     await expect(panel).toContainText(/連合艦隊\s*\+60/);
-    await expect(panel).toContainText(/E2 ゲージ3\s*×1\.20/);
+    await expect(panel).toContainText(/E2 ゲージ3[^×]*×1\.20/);
 
     // 実行：一覧を開く
     await page.goto("/list");

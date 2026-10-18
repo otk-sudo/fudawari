@@ -340,8 +340,9 @@
   font-size: 12px;
 }
 
-/* 国籍を選ぶ欄（特効グループの「＋ 国籍」。v1.1） */
-.nationalityPicker {
+/* 国籍を選ぶ欄（特効グループの「＋ 国籍」。v1.1）・艦種を選ぶ欄（「＋ 艦種」。v1.1。国籍の欄と同じ見た目） */
+.nationalityPicker,
+.shipTypePicker {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -356,6 +357,13 @@
 
 .nationalityPickerLegend {
   padding: 0 4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+/* 艦種を選ぶ欄の説明（選ばなければ国籍のすべての艦種に効く） */
+.pickerNote {
+  margin: 0;
   color: var(--color-text-secondary);
   font-size: 12px;
 }

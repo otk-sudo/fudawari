@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { BoostGroup } from "@/domain/definition";
 import { BOOST_NATIONALITIES, type BoostNationality, nationalityLabel } from "@/domain/nationality";
+import { BOOST_SHIP_TYPE_OPTIONS, type BoostShipTypeOption } from "@/domain/ship-type";
 import type { StageActions } from "./StageDetail";
 import controls from "./controls.module.css";
 import styles from "./StageDetail.module.css";
@@ -12,6 +13,49 @@ const MULTIPLIER_MIN = 1;
 const MULTIPLIER_MAX = 10;
 const MSG_MULTIPLIER_RANGE = `倍率は ${MULTIPLIER_MIN} 以上 ${MULTIPLIER_MAX} 以下の数で入力してください`;
 
+/** 選ぶ欄の開閉の状態（moveFocus：開閉したときにフォーカスを移すか） */
+interface PickerState {
+  readonly open: boolean;
+  readonly moveFocus: boolean;
+}
+
+const PICKER_CLOSED: PickerState = { open: false, moveFocus: false };
+
+/**
+ * 選ぶ欄（国籍・艦種）の開閉。開いたら欄の最初のチェックボックスへ、閉じたら開くボタンへフォーカスを移す。
+ * available が false の間（開くボタンごと出さないとき。艦種の欄で国籍が空になったときなど）は、
+ * フォーカスを動かさずに閉じた状態に戻す（後で available に戻っても、欄は開いて出ない）。描いた直後もフォーカスを動かさない
+ */
+function usePickerPanel(available = true) {
+  const [state, setState] = useState<PickerState>(PICKER_CLOSED);
+  const id = useId();
+  const panelRef = useRef<HTMLFieldSetElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  // 出せない間は閉じる（描く途中で状態を直す。文書が外から差し替わったときも同じ）
+  if (!available && state.open) setState(PICKER_CLOSED);
+
+  useEffect(() => {
+    if (!state.moveFocus) return;
+    if (state.open) {
+      panelRef.current?.querySelector<HTMLInputElement>("input[type=checkbox]")?.focus();
+    } else {
+      buttonRef.current?.focus();
+    }
+  }, [state]);
+
+  /** 開く・閉じる（フォーカスを移す） */
+  const toggle = (next: boolean): void => {
+    setState({ open: next, moveFocus: true });
+  };
+  return { open: available && state.open, toggle, id, panelRef, buttonRef };
+}
+
+/** 艦種の選択肢を選んでいるか（その選択肢の番号のどれかを含む） */
+function isOptionChosen(option: BoostShipTypeOption, shipTypes: readonly number[]): boolean {
+  return option.ids.some((id) => shipTypes.includes(id));
+}
+
 export type BoostGroupEditorProps = {
   group: BoostGroup;
   /** 段階の中での順番（0 から） */
@@ -19,7 +63,10 @@ export type BoostGroupEditorProps = {
   /** 描いたときにグループ名の欄へフォーカスを移す（追加した直後） */
   autoFocus: boolean;
   knownShipNames: ReadonlySet<string> | undefined;
-  actions: Pick<StageActions, "updateGroup" | "removeGroup" | "addShips" | "removeShip" | "setNationalities">;
+  actions: Pick<
+    StageActions,
+    "updateGroup" | "removeGroup" | "addShips" | "removeShip" | "setNationalities" | "setShipTypes"
+  >;
   /**
    * 倍率の欄に入力の誤りが残っているかを知らせる（誤りの間は保存・公開を押せなくするため）。
    * 誤りが消えたとき・この欄を描き直して消したときは invalid を false にして呼ぶ。同じ関数を渡し続けること
@@ -30,7 +77,9 @@ export type BoostGroupEditorProps = {
 /**
  * 特効グループ（group。名前は「特効グループ n：グループ名」）。
  * 倍率（確定したときに 1 以上 10 以下か確かめる）とグループ名をその場で編集し、艦名のタグとグループは × で外す（U16）。
- * 艦名のタグの下に国籍のタグ（v1.1）。「＋ 国籍」で国籍を選ぶ欄を開き、チェックを入れる・外すとすぐ文書に反映する
+ * 艦名のタグの下に国籍のタグ（v1.1）。「＋ 国籍」で国籍を選ぶ欄を開き、チェックを入れる・外すとすぐ文書に反映する。
+ * 国籍が 1 つ以上あるときだけ、その下に艦種のタグ（v1.1。国籍の条件を絞る）。「＋ 艦種」で艦種を選ぶ欄を開き、
+ * チェックを入れる・外すと、その選択肢の番号をすべて足す・外す（すぐ文書に反映する）
  */
 export function BoostGroupEditor({
   group,
@@ -50,14 +99,26 @@ export function BoostGroupEditor({
   const shipInputRef = useRef<HTMLInputElement | null>(null);
   // Esc で艦名の入力をやめたとき、続く blur で足さないための印
   const cancelShipRef = useRef(false);
-  // 国籍を選ぶ欄が開いているか。開いたら最初のチェックボックスへ、閉じたら「＋ 国籍」へフォーカスを移す
-  const [pickingNationality, setPickingNationality] = useState(false);
-  const pickerId = useId();
-  const pickerRef = useRef<HTMLFieldSetElement | null>(null);
-  const nationalityButtonRef = useRef<HTMLButtonElement | null>(null);
-  // 開閉の操作をしたか（描いた直後に「＋ 国籍」へフォーカスを移さないため）
-  const pickerToggledRef = useRef(false);
+  // 国籍・艦種を選ぶ欄が開いているか。開いたら最初のチェックボックスへ、閉じたら「＋ 国籍」「＋ 艦種」へフォーカスを移す
+  const {
+    open: pickingNationality,
+    toggle: toggleNationalityPicker,
+    id: nationalityPickerId,
+    panelRef: nationalityPickerRef,
+    buttonRef: nationalityButtonRef,
+  } = usePickerPanel();
   const nationalities = group.nationalities ?? [];
+  const shipTypes = group.shipTypes ?? [];
+  // 艦種の行は国籍があるときだけ出す（艦種だけのグループは作らない）。国籍が空になったら艦種を選ぶ欄も閉じる
+  const hasNationality = nationalities.length > 0;
+  const {
+    open: pickingShipType,
+    toggle: toggleShipTypePicker,
+    id: shipTypePickerId,
+    panelRef: shipTypePickerRef,
+    buttonRef: shipTypeButtonRef,
+  } = usePickerPanel(hasNationality);
+  const chosenShipTypeOptions = BOOST_SHIP_TYPE_OPTIONS.filter((option) => isOptionChosen(option, shipTypes));
   const groupName = group.name === "" ? "（名前なし）" : group.name;
   const unknownShips = knownShipNames === undefined ? [] : group.shipNames.filter((name) => !knownShipNames.has(name));
 
@@ -69,26 +130,21 @@ export function BoostGroupEditor({
     if (adding) shipInputRef.current?.focus();
   }, [adding]);
 
-  useEffect(() => {
-    if (!pickerToggledRef.current) return;
-    if (pickingNationality) {
-      pickerRef.current?.querySelector<HTMLInputElement>("input[type=checkbox]")?.focus();
-    } else {
-      nationalityButtonRef.current?.focus();
-    }
-  }, [pickingNationality]);
-
-  const togglePicker = (open: boolean): void => {
-    pickerToggledRef.current = true;
-    setPickingNationality(open);
-  };
-
-  /** 国籍を 1 つ入れる・外す（並べ直しと重複の除去は setGroupNationalities が行う） */
+  /**
+   * 国籍を 1 つ入れる・外す（並べ直しと重複の除去は setGroupNationalities が行う）。
+   * 国籍が空になると艦種も文書から消え（setGroupNationalities）、艦種を選ぶ欄も閉じる（usePickerPanel）
+   */
   const toggleNationality = (nationality: BoostNationality, checked: boolean): void => {
     const next = checked
       ? [...nationalities, nationality]
       : nationalities.filter((chosen) => chosen !== nationality);
     actions.setNationalities(group.id, next);
+  };
+
+  /** 艦種の選択肢を入れる・外す（その選択肢の番号をすべて。並べ直しと重複の除去は setGroupShipTypes が行う） */
+  const toggleShipType = (option: BoostShipTypeOption, checked: boolean): void => {
+    const next = checked ? [...shipTypes, ...option.ids] : shipTypes.filter((id) => !option.ids.includes(id));
+    actions.setShipTypes(group.id, next);
   };
 
   // 倍率の誤りが残っている間だけ、誤りがあることを知らせる（誤りが消えたとき・描き直して消えたときに取り消す）
@@ -241,8 +297,8 @@ export function BoostGroupEditor({
               type="button"
               className={styles.tagAdd}
               aria-expanded={pickingNationality}
-              aria-controls={pickingNationality ? pickerId : undefined}
-              onClick={() => togglePicker(!pickingNationality)}
+              aria-controls={pickingNationality ? nationalityPickerId : undefined}
+              onClick={() => toggleNationalityPicker(!pickingNationality)}
             >
               ＋ 国籍
             </button>
@@ -250,13 +306,13 @@ export function BoostGroupEditor({
         </ul>
         {pickingNationality && (
           <fieldset
-            ref={pickerRef}
-            id={pickerId}
+            ref={nationalityPickerRef}
+            id={nationalityPickerId}
             className={styles.nationalityPicker}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
-                togglePicker(false);
+                toggleNationalityPicker(false);
               }
             }}
           >
@@ -273,7 +329,67 @@ export function BoostGroupEditor({
                 </label>
               ))}
             </div>
-            <button type="button" className={controls.ghostButton} onClick={() => togglePicker(false)}>
+            <button type="button" className={controls.ghostButton} onClick={() => toggleNationalityPicker(false)}>
+              閉じる
+            </button>
+          </fieldset>
+        )}
+        {hasNationality && (
+          <ul className={styles.tags} aria-label="艦種">
+            {chosenShipTypeOptions.map((option) => (
+              <li key={option.label} className={styles.tag}>
+                <span>{option.label}</span>
+                <button
+                  type="button"
+                  aria-label={`${option.label}を外す`}
+                  className={styles.tagRemove}
+                  onClick={() => toggleShipType(option, false)}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+            <li className={styles.tagAddItem}>
+              <button
+                ref={shipTypeButtonRef}
+                type="button"
+                className={styles.tagAdd}
+                aria-expanded={pickingShipType}
+                aria-controls={pickingShipType ? shipTypePickerId : undefined}
+                onClick={() => toggleShipTypePicker(!pickingShipType)}
+              >
+                ＋ 艦種
+              </button>
+            </li>
+          </ul>
+        )}
+        {pickingShipType && (
+          <fieldset
+            ref={shipTypePickerRef}
+            id={shipTypePickerId}
+            className={styles.shipTypePicker}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                toggleShipTypePicker(false);
+              }
+            }}
+          >
+            <legend className={styles.nationalityPickerLegend}>艦種を選ぶ</legend>
+            <p className={styles.pickerNote}>選ばなければ、選んだ国籍のすべての艦種に効きます</p>
+            <div className={styles.nationalityOptions}>
+              {BOOST_SHIP_TYPE_OPTIONS.map((option) => (
+                <label key={option.label} className={styles.nationalityOption}>
+                  <input
+                    type="checkbox"
+                    checked={isOptionChosen(option, shipTypes)}
+                    onChange={(event) => toggleShipType(option, event.currentTarget.checked)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+            <button type="button" className={controls.ghostButton} onClick={() => toggleShipTypePicker(false)}>
               閉じる
             </button>
           </fieldset>

@@ -1,8 +1,12 @@
 // 特効グループの編集（要件 3.7「この段階のボスで効く特効」、U11・U16、roadmap T3-6）
 // 特効グループの ID は文書全体（すべての段階）で重複しないので、グループの操作は groupId だけで指定する。
 // 国籍（v1.1）は BOOST_NATIONALITIES の順に並べて持ち、空なら nationalities の項目ごと持たない（v1 の定義と同じ形）。
+// 艦種（v1.1。国籍の条件を絞る）は BOOST_SHIP_TYPE_IDS の順に並べて持ち、空なら shipTypes の項目ごと持たない。
+// 国籍のないグループには艦種を持たせない（艦種だけの特効は扱わない。国籍を空にしたら艦種も消す）。
 import type { BoostGroup, Stage } from "@/domain/definition/types";
+import { SHIP_TYPES_WITHOUT_NATIONALITIES_MESSAGE } from "@/domain/definition/validate";
 import { BOOST_NATIONALITIES, type BoostNationality, isBoostNationality } from "@/domain/nationality";
+import { isBoostShipTypeId, normalizeShipTypeIds } from "@/domain/ship-type";
 import { fail, ok } from "./result";
 import type { AddBoostGroupInput, BoostGroupPatch, DefinitionDoc, EditResult } from "./types";
 
@@ -15,6 +19,8 @@ const invalidMultiplier = (): EditResult => fail("invalid_value", "倍率は 1 �
 const emptyShipName = (): EditResult => fail("invalid_value", "空の艦名は追加できません");
 const groupNotFound = (): EditResult => fail("not_found", "特効グループが見つかりません");
 const invalidNationality = (): EditResult => fail("invalid_value", "選べない国籍があります");
+const invalidShipType = (): EditResult => fail("invalid_value", "選べない艦種があります");
+const shipTypesWithoutNationalities = (): EditResult => fail("invalid_value", SHIP_TYPES_WITHOUT_NATIONALITIES_MESSAGE);
 
 /** 重複を除く（先に出た順） */
 function unique(names: readonly string[]): string[] {
@@ -37,13 +43,37 @@ function normalizeNationalities(nationalities: readonly BoostNationality[]): Boo
   return BOOST_NATIONALITIES.filter((nationality) => chosen.has(nationality));
 }
 
-/** グループの国籍を置き換えたグループ（空なら nationalities の項目を持たない） */
+/**
+ * 艦種を BOOST_SHIP_TYPE_IDS の順に並べ直し、重複を除く。選べない番号（12・小数・NaN など）があれば undefined。
+ * 画面などから型を外れた値が来ても文書に入れないよう、実行時にも確かめる
+ */
+function normalizeShipTypes(shipTypes: readonly number[]): number[] | undefined {
+  if (!shipTypes.every((id) => isBoostShipTypeId(id))) return undefined;
+  return normalizeShipTypeIds(shipTypes);
+}
+
+/** 書き換えられる特効グループ（作り直すときだけ使う） */
+type MutableBoostGroup = { -readonly [K in keyof BoostGroup]: BoostGroup[K] };
+
+/** グループの国籍を置き換えたグループ（空なら nationalities の項目を持たず、艦種だけのグループにならないよう shipTypes も持たない） */
 function withNationalities(group: BoostGroup, nationalities: readonly BoostNationality[]): BoostGroup {
-  const next: { -readonly [K in keyof BoostGroup]: BoostGroup[K] } = { ...group };
+  const next: MutableBoostGroup = { ...group };
   if (nationalities.length > 0) {
     next.nationalities = nationalities;
   } else {
     delete next.nationalities;
+    delete next.shipTypes;
+  }
+  return next;
+}
+
+/** グループの艦種を置き換えたグループ（空なら shipTypes の項目を持たない。国籍があるかは呼び出し側で確かめる） */
+function withShipTypes(group: BoostGroup, shipTypes: readonly number[]): BoostGroup {
+  const next: MutableBoostGroup = { ...group };
+  if (shipTypes.length > 0) {
+    next.shipTypes = shipTypes;
+  } else {
+    delete next.shipTypes;
   }
   return next;
 }
@@ -77,7 +107,8 @@ function withGroup(doc: DefinitionDoc, at: GroupLocation, next: BoostGroup | und
  * 段階に特効グループを追加する（その段階の特効の最後）。
  * 省略時は 名前 ""・倍率 1・艦名なし・国籍なし。艦名は前後の空白を除き、重複を除く（先に出た順）。
  * 国籍は BOOST_NATIONALITIES の順に並べ直し、重複を除く（空なら nationalities の項目を持たない）。
- * - エラー：倍率が 1 未満・有限の数でない、空の艦名、選べない国籍 → invalid_value、
+ * 艦種は BOOST_SHIP_TYPE_IDS の順に並べ直し、重複を除く（空なら shipTypes の項目を持たない）。
+ * - エラー：倍率が 1 未満・有限の数でない、空の艦名、選べない国籍・艦種、国籍がないのに艦種がある → invalid_value、
  *   newGroupId が文書のどこかの特効グループの ID と同じ → duplicate_id、段階がない → not_found
  */
 export function addBoostGroup(doc: DefinitionDoc, input: AddBoostGroupInput): EditResult {
@@ -92,10 +123,16 @@ export function addBoostGroup(doc: DefinitionDoc, input: AddBoostGroupInput): Ed
   if (shipNames === undefined) return emptyShipName();
   const nationalities = normalizeNationalities(input.nationalities ?? []);
   if (nationalities === undefined) return invalidNationality();
+  const shipTypes = normalizeShipTypes(input.shipTypes ?? []);
+  if (shipTypes === undefined) return invalidShipType();
+  if (shipTypes.length > 0 && nationalities.length === 0) return shipTypesWithoutNationalities();
 
-  const group = withNationalities(
-    { id: input.newGroupId, name: input.name ?? "", multiplier, shipNames: unique(shipNames) },
-    nationalities,
+  const group = withShipTypes(
+    withNationalities(
+      { id: input.newGroupId, name: input.name ?? "", multiplier, shipNames: unique(shipNames) },
+      nationalities,
+    ),
+    shipTypes,
   );
   const updated: Stage = { ...stage, boosts: [...stage.boosts, group] };
   return ok({ ...doc, stages: doc.stages.map((s) => (s === stage ? updated : s)) });
@@ -145,6 +182,7 @@ export function removeShipName(doc: DefinitionDoc, groupId: string, shipName: st
 /**
  * 特効グループの国籍を選び直す（国籍を選ぶ欄のチェック、国籍タグの ×。v1.1）。渡した国籍だけに置き換える（足すのではない）。
  * BOOST_NATIONALITIES の順に並べ直し、重複を除く。空になったら nationalities の項目を消す（キーを持たない）。
+ * そのとき艦種（shipTypes）の項目も消す（艦種だけのグループを作らない）。
  * - エラー：選べない国籍（"unknown" を含む）がある → invalid_value、グループがない → not_found
  */
 export function setGroupNationalities(
@@ -158,6 +196,21 @@ export function setGroupNationalities(
   if (normalized === undefined) return invalidNationality();
 
   return ok(withGroup(doc, at, withNationalities(at.group, normalized)));
+}
+
+/**
+ * 特効グループの国籍を絞る艦種を選び直す（艦種を選ぶ欄のチェック、艦種タグの ×。v1.1）。渡した艦種だけに置き換える（足すのではない）。
+ * BOOST_SHIP_TYPE_IDS の順に並べ直し、重複を除く。空になったら shipTypes の項目を消す（キーを持たない）。
+ * - エラー：選べない番号がある、国籍のないグループに空でない艦種を入れる → invalid_value、グループがない → not_found
+ */
+export function setGroupShipTypes(doc: DefinitionDoc, groupId: string, shipTypes: readonly number[]): EditResult {
+  const at = locateGroup(doc, groupId);
+  if (at === undefined) return groupNotFound();
+  const normalized = normalizeShipTypes(shipTypes);
+  if (normalized === undefined) return invalidShipType();
+  if (normalized.length > 0 && (at.group.nationalities ?? []).length === 0) return shipTypesWithoutNationalities();
+
+  return ok(withGroup(doc, at, withShipTypes(at.group, normalized)));
 }
 
 /**

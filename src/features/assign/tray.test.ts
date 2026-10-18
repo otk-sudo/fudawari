@@ -776,7 +776,7 @@ describe("どの並び順にも共通", () => {
     const entry = result.groups.flatMap((g) => g.entries).find((e) => e.ship.uid === "yukikaze2");
     expect(entry?.ship).toEqual(shipByUid("yukikaze2"));
     expect(entry?.info).toMatchObject({ known: true, name: "雪風改" });
-    expect(entry?.boost).toEqual(shipBoostSummary(def, { baseName: "雪風", nationality: "japan" }));
+    expect(entry?.boost).toEqual(shipBoostSummary(def, { baseName: "雪風", nationality: "japan", shipTypeId: 2 }));
   });
 });
 
