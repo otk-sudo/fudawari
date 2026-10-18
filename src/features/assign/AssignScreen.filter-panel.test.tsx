@@ -42,9 +42,12 @@ function renderScreen() {
   return { user };
 }
 
-/** ボタン「絞り込み」（名前は「絞り込み」とバッジの数） */
+/**
+ * ボタン「絞り込み」（名前は「絞り込み」とバッジの数）。
+ * 欄の先頭の「絞り込みを閉じる」（PR #38 のレビュー M1）も「絞り込み」で始まるので、「絞り込み」と数だけの名前に限る
+ */
 function getFilterButton(): HTMLElement {
-  return within(getTray()).getByRole("button", { name: /^絞り込み/ });
+  return within(getTray()).getByRole("button", { name: /^絞り込み\s*\d*$/ });
 }
 
 /** 絞り込みの欄（「絞り込み」のボタンの aria-controls が指す要素）。開いていなければ投げる */
@@ -178,5 +181,55 @@ describe("控えの「絞り込み」の欄を閉じる（2026-10-17 の要望 1
     // 検証：開き直すとチェックが入っている
     await user.click(getFilterButton());
     expect(getFilterCheckbox("特効が効く札", "第六艦隊")).toBeChecked();
+  });
+});
+
+// ---- PR #38 のレビュー M1（親の決定：「閉じる」は欄の先頭〔「改造状態」の見出しの右など〕に置き、名前は「絞り込みを閉じる」）----
+// 札が多いと欄の下の端の「閉じる」はスクロールしないと見えないため、欄の先頭に移す。
+// 見た目の位置（開いた直後にスクロールせずに見えるか）は e2e/assign-tray-filter-layout.spec.ts で確かめる。
+// ここでは名前と、欄の中で最初に Tab で止まる操作（読み上げ・キーボードでも先頭）であることを確かめる
+
+/** 絞り込みの欄の中の、Tab で止まる操作（button・input・select。DOM の順） */
+function focusablesInFilterPanel(): HTMLElement[] {
+  return [...getFilterPanel().querySelectorAll<HTMLElement>("button, input, select, textarea, a[href]")].filter(
+    (element) => !element.hasAttribute("disabled") && element.tabIndex >= 0,
+  );
+}
+
+describe("控えの「絞り込み」の欄の先頭の「絞り込みを閉じる」（PR #38 のレビュー M1）", () => {
+  it("開いた欄の中に、名前が「絞り込みを閉じる」のボタンがある", async () => {
+    // 準備
+    const { user } = renderScreen();
+
+    // 実行
+    await user.click(getFilterButton());
+
+    // 検証
+    expect(within(getFilterPanel()).getByRole("button", { name: "絞り込みを閉じる" })).toBeVisible();
+  });
+
+  it("「絞り込みを閉じる」は、欄の中で最初に Tab で止まる操作（改造状態の「未改造」などのチェックボックスより前）", async () => {
+    // 準備
+    const { user } = renderScreen();
+
+    // 実行
+    await user.click(getFilterButton());
+
+    // 検証
+    const closeButton = within(getFilterPanel()).getByRole("button", { name: "絞り込みを閉じる" });
+    expect(focusablesInFilterPanel()[0]).toBe(closeButton);
+  });
+
+  it("「絞り込みを閉じる」を押すと、欄が閉じてフォーカスが「絞り込み」のボタンに戻る", async () => {
+    // 準備
+    const { user } = renderScreen();
+    await user.click(getFilterButton());
+
+    // 実行
+    await user.click(within(getFilterPanel()).getByRole("button", { name: "絞り込みを閉じる" }));
+
+    // 検証
+    expectFilterClosed();
+    expect(getFilterButton()).toHaveFocus();
   });
 });
