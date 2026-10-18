@@ -27,6 +27,8 @@ export interface StageActions {
   removeShip: (groupId: string, shipName: string) => void;
   /** 特効グループの国籍を選び直す（渡した国籍だけにする。v1.1） */
   setNationalities: (groupId: string, nationalities: readonly BoostNationality[]) => void;
+  /** 特効グループの国籍を絞る艦種を選び直す（渡した艦種の番号だけにする。v1.1） */
+  setShipTypes: (groupId: string, shipTypes: readonly number[]) => void;
 }
 
 export type StageDetailProps = {

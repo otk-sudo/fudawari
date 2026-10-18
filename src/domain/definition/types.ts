@@ -59,7 +59,8 @@ export interface Fuda {
 
 /**
  * 特効グループ（この段階のボスで効く艦名・国籍の集合 × 倍率）。
- * shipNames に艦の baseName がある、または nationalities に艦の国籍があるグループが、その艦に効く
+ * shipNames に艦の baseName がある、または（nationalities に艦の国籍があり、かつ shipTypes が省略・空か艦の艦種を含む）
+ * グループが、その艦に効く
  */
 export interface BoostGroup {
   /** グループ ID（定義全体で重複しない） */
@@ -75,6 +76,12 @@ export interface BoostGroup {
    * 検証後の値では、省略・空の配列なら項目を持たない。編集（setGroupNationalities）・マージは BOOST_NATIONALITIES の順に並べる
    */
   readonly nationalities?: readonly BoostNationality[];
+  /**
+   * 艦種の番号（api_stype。任意。v1.1）。国籍の条件をこの艦種の艦だけに絞る（例「アメリカ・駆逐」）。艦名の条件は絞らない。
+   * 国籍がないグループには持たせない（艦種だけの特効は扱わない）。
+   * 検証後の値では、省略・空の配列なら項目を持たない。編集（setGroupShipTypes）・マージは BOOST_SHIP_TYPE_IDS の順に並べる
+   */
+  readonly shipTypes?: readonly number[];
 }
 
 /** 攻略段階（段階） */

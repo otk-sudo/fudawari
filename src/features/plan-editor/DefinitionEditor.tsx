@@ -27,6 +27,7 @@ import {
   removeArea,
   removeShipName,
   setGroupNationalities,
+  setGroupShipTypes,
   type StagePatch,
   type StagePosition,
   toDateTimeLocalValue,
@@ -558,6 +559,9 @@ export function DefinitionEditor({
     },
     setNationalities: (groupId: string, nationalities: readonly BoostNationality[]): void => {
       edit((doc) => setGroupNationalities(doc, groupId, nationalities));
+    },
+    setShipTypes: (groupId: string, shipTypes: readonly number[]): void => {
+      edit((doc) => setGroupShipTypes(doc, groupId, shipTypes));
     },
   };
 

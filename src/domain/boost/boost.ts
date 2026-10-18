@@ -2,14 +2,17 @@
 //
 // 艦の指定は「改装段階を問わない艦名と国籍」（BoostTarget）で行う。個体からは
 // boostTargetOf(master, ship.shipId)（@/domain/master）で求める。マスタにない艦は null（どこにも効かない）。
-// グループは「shipNames に艦の baseName がある、または nationalities に艦の国籍がある」ときにその艦に効く（v1.1）。
+// グループは「shipNames に艦の baseName がある、または（nationalities に艦の国籍があり、かつ shipTypes が省略・空か、
+// 艦の艦種〔shipTypeId〕を含む）」ときにその艦に効く（v1.1。shipTypes は国籍の条件を艦種で絞る）。
 // 1 つのグループは両方に当てはまっても 1 回だけ掛け、別のグループどうしは掛け合わせる（U12）。
-// 国籍が "unknown" の艦は国籍の条件には当てはまらない。
+// 国籍が "unknown" の艦は国籍の条件には当てはまらない。国籍のない（艦種だけの）グループは国籍・艦種ではどの艦にも当てはまらない。
 //
 // 性能の考え方（割り振り画面が 600 隻規模で毎回の描画のたびに呼んでも重くならないように）
 // - 定義ごとに「札 → その札を使う段階（並び順どおり）」「段階 ID → 段階」「海域 ID → 海域名」の索引を、
-//   段階ごとに「艦名 → 当てはまるグループと倍率の積」「国籍 → 当てはまるグループと倍率の積」の索引を、
+//   段階ごとに「艦名 → 当てはまるグループと倍率の積」「国籍 → その国籍を持つグループ」の索引を、
 //   初めて使うときに 1 回だけ作って覚えておく。艦名と国籍は別々の索引にする（同じ文字列でも混ざらない）。
+//   国籍・艦種で当てはまるグループと倍率の積は（国籍, 艦種）ごとに初めて引いたときに求め、段階の索引の中に覚えておく
+//   （組み合わせは高々 国籍 12 × 艦種 数十 なので、600 隻を照合しても毎回グループを走査することはない）。
 //   以後の呼び出しは、段階の全探索や艦名の配列の走査をせずに索引を引くだけで済む。
 //   艦名と国籍の両方で当てはまる艦だけは、両方のグループの番号の並びを合わせて、同じグループを 1 回だけ掛ける。
 // - 覚えておく先は WeakMap（定義・段階のオブジェクトが不要になれば一緒に捨てられる）。
@@ -44,12 +47,24 @@ interface GroupMatches {
   readonly multiplier: number;
 }
 
+/** 国籍の条件を持つグループ（索引を作る途中・照合で使う） */
+interface NationalityGroup {
+  /** 段階の boosts の位置 */
+  readonly position: number;
+  /** 倍率 */
+  readonly multiplier: number;
+  /** 艦種の条件（省略・空なら null＝その国籍のすべての艦種） */
+  readonly shipTypes: ReadonlySet<number> | null;
+}
+
 /** 段階の特効グループの索引。艦名と国籍は別々に持つ */
 interface StageBoostIndex {
   /** 艦名 → 当てはまるグループ */
   readonly byName: ReadonlyMap<string, GroupMatches>;
-  /** 国籍 → 当てはまるグループ（選べる国籍だけ。"unknown" などは入れない） */
-  readonly byNationality: ReadonlyMap<BoostNationality, GroupMatches>;
+  /** 国籍 → その国籍を持つグループ（位置の昇順。選べる国籍だけ。"unknown" などは入れない） */
+  readonly groupsByNationality: ReadonlyMap<BoostNationality, readonly NationalityGroup[]>;
+  /** （国籍, 艦種）→ 当てはまるグループ（初めて引いたときに求めて覚える。当てはまらなければ null） */
+  readonly byNationalityShipType: Map<string, GroupMatches | null>;
 }
 
 /** 索引を作る途中の、書き換えられる GroupMatches */
@@ -118,18 +133,51 @@ function stageBoostIndexOf(stage: Stage): StageBoostIndex {
   if (cached !== undefined) return cached;
 
   const byName = new Map<string, MutableGroupMatches>();
-  const byNationality = new Map<BoostNationality, MutableGroupMatches>();
+  const groupsByNationality = new Map<BoostNationality, NationalityGroup[]>();
   stage.boosts.forEach((group, position) => {
     for (const name of new Set(group.shipNames)) {
       addMatch(byName, name, position, group.multiplier);
     }
+    const shipTypes = group.shipTypes !== undefined && group.shipTypes.length > 0 ? new Set(group.shipTypes) : null;
+    const entry: NationalityGroup = { position, multiplier: group.multiplier, shipTypes };
     for (const nationality of new Set(group.nationalities ?? [])) {
-      if (isBoostNationality(nationality)) addMatch(byNationality, nationality, position, group.multiplier);
+      if (!isBoostNationality(nationality)) continue;
+      const list = groupsByNationality.get(nationality);
+      if (list === undefined) {
+        groupsByNationality.set(nationality, [entry]);
+      } else {
+        list.push(entry);
+      }
     }
   });
-  const index: StageBoostIndex = { byName, byNationality };
+  const index: StageBoostIndex = { byName, groupsByNationality, byNationalityShipType: new Map() };
   stageBoostIndexes.set(stage, index);
   return index;
+}
+
+/**
+ * 国籍・艦種で当てはまるグループ（艦種の条件がない、または艦種を含むもの）。（国籍, 艦種）ごとに 1 回だけ求めて段階の索引に覚える。
+ * 当てはまるグループがなければ undefined
+ */
+function nationalityMatchesOf(
+  index: StageBoostIndex,
+  nationality: BoostNationality,
+  shipTypeId: number,
+): GroupMatches | undefined {
+  const key = `${nationality}:${shipTypeId}`;
+  const cached = index.byNationalityShipType.get(key);
+  if (cached !== undefined) return cached ?? undefined;
+
+  const groups: number[] = [];
+  let multiplier = 1;
+  for (const group of index.groupsByNationality.get(nationality) ?? []) {
+    if (group.shipTypes !== null && !group.shipTypes.has(shipTypeId)) continue;
+    groups.push(group.position);
+    multiplier *= group.multiplier;
+  }
+  const matches: GroupMatches | null = groups.length > 0 ? { groups, multiplier } : null;
+  index.byNationalityShipType.set(key, matches);
+  return matches ?? undefined;
 }
 
 /**
@@ -160,15 +208,16 @@ function roundScore(total: number): number {
 }
 
 /**
- * 艦 × 段階の倍率。段階の特効グループのうち、shipNames に艦の baseName を含む、または nationalities に艦の国籍を含む
- * ものの倍率を掛け合わせる（U12）。1 つのグループは両方に当てはまっても 1 回だけ掛ける。
+ * 艦 × 段階の倍率。段階の特効グループのうち、shipNames に艦の baseName を含む、または（nationalities に艦の国籍を含み、
+ * かつ shipTypes が省略・空か艦の艦種を含む）ものの倍率を掛け合わせる（U12）。1 つのグループは両方に当てはまっても 1 回だけ掛ける。
  * 国籍が "unknown" の艦は国籍の条件には当てはまらない。どれにも当てはまらない、または target が null なら 1
  */
 export function stageMultiplier(stage: Stage, target: BoostTarget | null): number {
   if (target === null) return 1;
   const index = stageBoostIndexOf(stage);
   const byName = index.byName.get(target.baseName);
-  const byNationality = target.nationality === "unknown" ? undefined : index.byNationality.get(target.nationality);
+  const byNationality =
+    target.nationality === "unknown" ? undefined : nationalityMatchesOf(index, target.nationality, target.shipTypeId);
   if (byNationality === undefined) return byName?.multiplier ?? 1;
   if (byName === undefined) return byNationality.multiplier;
   return combinedMultiplier(stage, byName.groups, byNationality.groups);

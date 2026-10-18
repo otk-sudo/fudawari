@@ -17,6 +17,10 @@
 //   - 特効グループの国籍（nationalities。v1.1）も艦名と同じく集合として合わせる。衝突にしない
 //     （並びは BOOST_NATIONALITIES の順。省略は空として扱い、結果が空なら項目を持たない。
 //     相手が足した・外した国籍があれば autoMerged に field "nationalities" で入れる）
+//   - 特効グループの艦種（shipTypes。v1.1。国籍の条件を絞る）も国籍と同じく集合として合わせる。衝突にしない
+//     （並びは BOOST_SHIP_TYPE_IDS の順。省略は空として扱い、結果が空なら項目を持たない。
+//     相手が足した・外した艦種があれば autoMerged に field "shipTypes" で入れる）。
+//     合わせた国籍が空なら艦種も持たない（艦種だけのグループを作らない）
 //
 // ■ 追加と削除
 //   - 片方だけが追加した → 残す（相手が追加したものは autoMerged に change "added"）。新しい ID は呼び出し側が作るので重ならない。
@@ -71,6 +75,7 @@ import type { Area, BoostGroup, EventInfo, Fuda, Stage } from "@/domain/definiti
 import { findDocumentIssues } from "@/domain/definition-edit/issues";
 import type { DefinitionDoc } from "@/domain/definition-edit/types";
 import { BOOST_NATIONALITIES, type BoostNationality } from "@/domain/nationality";
+import { BOOST_SHIP_TYPE_IDS } from "@/domain/ship-type";
 import {
   areaNameIn,
   eventFieldLabel,
@@ -469,24 +474,20 @@ function mergeShipNames(reports: Reports, place: Place, names: Three<readonly st
 }
 
 /**
- * 特効グループの国籍を集合として合わせる（base ＋ 2 人が足した国籍 − 2 人が外した国籍。衝突にしない。v1.1）。
- * 並びは BOOST_NATIONALITIES の順（base・足した順によらない）
+ * 正規の並び（order）を持つ値の集合を合わせる（base ＋ 2 人が足した値 − 2 人が外した値。衝突にしない）。
+ * 特効グループの国籍・艦種（v1.1）に使う。並びは order の順（base・足した順によらない。order にない値は捨てる）
  */
-function mergeNationalities(
-  reports: Reports,
-  place: Place,
-  nationalities: Three<readonly BoostNationality[]>,
-): BoostNationality[] {
-  const base = new Set(nationalities.base);
-  const mine = new Set(nationalities.mine);
-  const theirs = new Set(nationalities.theirs);
-  // 相手だけが足した・外した国籍があれば、自動で合わせた所に入れる（2 人とも同じ変更なら入れない）
-  const theirsAdded = [...theirs].some((nationality) => !base.has(nationality) && !mine.has(nationality));
-  const theirsRemoved = [...base].some((nationality) => !theirs.has(nationality) && mine.has(nationality));
+function mergeOrderedSet<T>(reports: Reports, place: Place, order: readonly T[], values: Three<readonly T[]>): T[] {
+  const base = new Set(values.base);
+  const mine = new Set(values.mine);
+  const theirs = new Set(values.theirs);
+  // 相手だけが足した・外した値があれば、自動で合わせた所に入れる（2 人とも同じ変更なら入れない）
+  const theirsAdded = [...theirs].some((value) => !base.has(value) && !mine.has(value));
+  const theirsRemoved = [...base].some((value) => !theirs.has(value) && mine.has(value));
   if (theirsAdded || theirsRemoved) addAutoMerged(reports, place, "modified");
-  // base にあった国籍は 2 人とも残したものだけ、base になかった国籍はどちらかが足したもの
-  return BOOST_NATIONALITIES.filter((nationality) =>
-    base.has(nationality) ? mine.has(nationality) && theirs.has(nationality) : mine.has(nationality) || theirs.has(nationality),
+  // base にあった値は 2 人とも残したものだけ、base になかった値はどちらかが足したもの
+  return order.filter((value) =>
+    base.has(value) ? mine.has(value) && theirs.has(value) : mine.has(value) || theirs.has(value),
   );
 }
 
@@ -516,13 +517,20 @@ function mergeGroup(
     multiplier: mergeValue(ctx, reports, place("multiplier"), field("multiplier"), multiplierText),
     shipNames: mergeShipNames(reports, place("shipNames"), field("shipNames")),
   };
-  // 国籍は省略を空として扱い、結果が空なら項目を持たない（v1 の定義と同じ形）
-  const nationalities = mergeNationalities(reports, place("nationalities"), {
+  // 国籍・艦種は省略を空として扱い、結果が空なら項目を持たない（v1 の定義と同じ形）
+  const nationalities = mergeOrderedSet<BoostNationality>(reports, place("nationalities"), BOOST_NATIONALITIES, {
     base: base.nationalities ?? [],
     mine: mine.nationalities ?? [],
     theirs: theirs.nationalities ?? [],
   });
-  return nationalities.length > 0 ? { ...merged, nationalities } : merged;
+  const shipTypes = mergeOrderedSet(reports, place("shipTypes"), BOOST_SHIP_TYPE_IDS, {
+    base: base.shipTypes ?? [],
+    mine: mine.shipTypes ?? [],
+    theirs: theirs.shipTypes ?? [],
+  });
+  // 国籍が空なら艦種も持たない（艦種だけのグループを作らない）
+  if (nationalities.length === 0) return merged;
+  return shipTypes.length > 0 ? { ...merged, nationalities, shipTypes } : { ...merged, nationalities };
 }
 
 /** 段階の項目と特効グループを合わせる（段階が 3 つすべてにあるとき） */

@@ -38,6 +38,7 @@ const GROUP_FIELD_NAMES: Readonly<Record<BoostGroupField, string>> = {
   multiplier: "倍率",
   shipNames: "艦名",
   nationalities: "国籍",
+  shipTypes: "艦種",
 };
 
 /** 札の並び順の表示名 */

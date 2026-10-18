@@ -113,6 +113,8 @@ export interface AddBoostGroupInput {
   shipNames?: readonly string[];
   /** 国籍（省略時はなし。v1.1。BOOST_NATIONALITIES の順に並べ直し、重複を除く。選べない国籍は不可） */
   nationalities?: readonly BoostNationality[];
+  /** 艦種（省略時はなし。v1.1。国籍の条件を絞る。BOOST_SHIP_TYPE_IDS の順に並べ直し、重複を除く。選べない番号、国籍なしでの指定は不可） */
+  shipTypes?: readonly number[];
 }
 
 /** 特効グループの変更（U16：倍率と名前をその場で編集） */

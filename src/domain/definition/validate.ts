@@ -23,6 +23,11 @@
 //   nationalities は省略可の配列（v1.1。配列でなければ invalid_type）。要素は BOOST_NATIONALITIES のどれか
 //   （文字列以外は invalid_type、選べない値〔"unknown" を含む〕は invalid_value）で、グループの中で重複しない
 //   （duplicate_value は 2 つ目以降の場所）。検証後の値は、省略・空の配列なら nationalities の項目を持たず、あれば入力の順のまま
+//   shipTypes は省略可の配列（v1.1。国籍の条件を艦種で絞る。配列でなければ invalid_type）。要素は選べる艦種の番号
+//   （BOOST_SHIP_TYPE_IDS のどれか。整数の数でなければ invalid_type、選べない番号〔12 など〕は invalid_value）で、
+//   グループの中で重複しない（duplicate_value は 2 つ目以降の場所。文は表示名）。
+//   空でない shipTypes があるのに nationalities が省略・空なら invalid_value（path はグループの shipTypes。艦種だけの特効は扱わない）。
+//   検証後の値は、省略・空の配列なら shipTypes の項目を持たず、あれば入力の順のまま
 // - 知らない項目は無視してよい（誤りにしない）
 // - 見つかった誤りはまとめて返す（最初の 1 件で止めない）
 //
@@ -34,6 +39,7 @@
 // - 検証を通った値は、入力から読み取った値で作り直したもの（入力のオブジェクト・配列を使い回さない）で、
 //   返す前に深く凍結する（特効の計算が定義のオブジェクトごとに索引を覚えるため）。入力の値は凍結せず、書き換えもしない。
 import { type BoostNationality, isBoostNationality, nationalityLabel } from "@/domain/nationality";
+import { isBoostShipTypeId, shipTypeOptionLabelsOf } from "@/domain/ship-type";
 import { deepFreeze } from "./freeze";
 import { isImportance } from "./importance";
 import type {
@@ -502,6 +508,48 @@ function readNationalities(errors: Errors, group: JsonObject, parent: string): B
   });
 }
 
+/** 国籍のないグループに艦種があるときの文（定義の編集〔setGroupShipTypes・addBoostGroup〕も同じ文を使う） */
+export const SHIP_TYPES_WITHOUT_NATIONALITIES_MESSAGE = "艦種は国籍と一緒に選んでください（艦種だけの特効は扱いません）";
+
+/** 艦種の要素を 1 つ読む。選べる艦種の番号（BOOST_SHIP_TYPE_IDS のどれか）だけを通す */
+function readShipTypeId(errors: Errors, value: unknown, path: string): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    report(errors, "invalid_type", path, "艦種は整数の番号にしてください");
+    return undefined;
+  }
+  if (!isBoostShipTypeId(value)) {
+    report(errors, "invalid_value", path, "艦種は選べる艦種の番号（api_stype。12 は選べません）にしてください");
+    return undefined;
+  }
+  return value;
+}
+
+/**
+ * 特効グループの艦種（省略可。v1.1）を読む。省略なら空の配列。
+ * 同じグループの中で同じ番号が 2 回以上あれば、2 つ目以降の場所を duplicate_value にする（読めなかった要素は重複の確認に入れない）
+ */
+function readShipTypes(errors: Errors, group: JsonObject, parent: string): number[] | undefined {
+  const path = fieldPath(parent, "shipTypes");
+  const value = readField(group, "shipTypes");
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    report(errors, "invalid_type", path, "配列（[ … ]）にしてください");
+    return undefined;
+  }
+  const seen = new Set<number>();
+  return readItems(value, path, (item, childPath) => {
+    const shipTypeId = readShipTypeId(errors, item, childPath);
+    if (shipTypeId === undefined) return undefined;
+    if (seen.has(shipTypeId)) {
+      const label = shipTypeOptionLabelsOf([shipTypeId]).join("・");
+      report(errors, "duplicate_value", childPath, `艦種「${label}」が重複しています`);
+      return undefined;
+    }
+    seen.add(shipTypeId);
+    return shipTypeId;
+  });
+}
+
 function readBoostGroup(
   errors: Errors,
   value: unknown,
@@ -521,20 +569,27 @@ function readBoostGroup(
     shipNames = readItems(rawNames, namesPath, (item, childPath) => readShipName(errors, item, childPath));
   }
   const nationalities = readNationalities(errors, group, path);
+  let shipTypes = readShipTypes(errors, group, path);
+  if (shipTypes !== undefined && shipTypes.length > 0 && nationalities !== undefined && nationalities.length === 0) {
+    report(errors, "invalid_value", fieldPath(path, "shipTypes"), SHIP_TYPES_WITHOUT_NATIONALITIES_MESSAGE);
+    shipTypes = undefined;
+  }
 
   if (
     id === undefined ||
     name === undefined ||
     multiplier === undefined ||
     shipNames === undefined ||
-    nationalities === undefined
+    nationalities === undefined ||
+    shipTypes === undefined
   ) {
     return undefined;
   }
-  // 国籍がなければ項目ごと持たない（v1 の定義と同じ形のまま）
-  return nationalities.length > 0
-    ? { id, name, multiplier, shipNames, nationalities }
-    : { id, name, multiplier, shipNames };
+  // 国籍・艦種がなければ項目ごと持たない（v1 の定義と同じ形のまま）
+  if (nationalities.length === 0) return { id, name, multiplier, shipNames };
+  return shipTypes.length > 0
+    ? { id, name, multiplier, shipNames, nationalities, shipTypes }
+    : { id, name, multiplier, shipNames, nationalities };
 }
 
 function readStage(errors: Errors, value: unknown, path: string, context: StageContext): Stage | undefined {
