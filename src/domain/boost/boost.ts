@@ -21,7 +21,7 @@
 //   validatePublicDefinition で検証した値は実行時にも深く凍結してある。
 //   内容を変えるときは新しいオブジェクトを作る（React・Zustand の更新の作法と同じ）。
 import { importanceWeight } from "@/domain/definition/importance";
-import type { PublicDefinition, Stage } from "@/domain/definition/types";
+import type { BoostGroup, PublicDefinition, Stage } from "@/domain/definition/types";
 import { boostTargetOf } from "@/domain/master/master";
 import type { ShipMaster } from "@/domain/master/types";
 import { type BoostNationality, isBoostNationality } from "@/domain/nationality";
@@ -221,6 +221,21 @@ export function stageMultiplier(stage: Stage, target: BoostTarget | null): numbe
   if (byNationality === undefined) return byName?.multiplier ?? 1;
   if (byName === undefined) return byNationality.multiplier;
   return combinedMultiplier(stage, byName.groups, byNationality.groups);
+}
+
+/**
+ * その段階で target に国籍（・艦種）の条件で効くグループのうち、艦名の条件では当てはまらないものを、段階の boosts の順に返す
+ * （割り振り画面の段階の行の内訳に使う。艦名で当てはまるグループは内訳に出さない）。
+ * 国籍が "unknown" の艦・target が null・当てはまるものがなければ空。
+ * 倍率の計算（stageMultiplier）とは別の道筋で、開いた艦カード・選んだ艦のパネルの行を作るときだけ呼ぶ前提
+ */
+export function nationalityBoostGroups(stage: Stage, target: BoostTarget | null): readonly BoostGroup[] {
+  if (target === null || target.nationality === "unknown") return [];
+  const index = stageBoostIndexOf(stage);
+  const byNationality = nationalityMatchesOf(index, target.nationality, target.shipTypeId);
+  if (byNationality === undefined) return [];
+  const byName = new Set(index.byName.get(target.baseName)?.groups ?? []);
+  return byNationality.groups.filter((position) => !byName.has(position)).map((position) => stage.boosts[position]);
 }
 
 /**

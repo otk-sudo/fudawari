@@ -245,7 +245,7 @@ export function AssignScreen({
         stripeColor={best === undefined ? null : (fudas.get(best.fudaId)?.color ?? null)}
         selected={ship.uid === selectedUid}
         expanded={expanded}
-        lines={expanded ? boostLines(definition, fudas, boost.effective) : EMPTY_LINES}
+        lines={expanded ? boostLines(definition, fudas, boost.effective, info.known ? info : null) : EMPTY_LINES}
         noBoostText={TRAY_NO_BOOST_TEXT}
         onPress={pressShip}
       />
@@ -269,7 +269,11 @@ export function AssignScreen({
         stripeColor={color}
         selected={ship.uid === selectedUid}
         expanded={expanded}
-        lines={expanded && boost !== undefined ? boostLines(definition, fudas, [boost]) : EMPTY_LINES}
+        lines={
+          expanded && boost !== undefined
+            ? boostLines(definition, fudas, [boost], info.known ? info : null)
+            : EMPTY_LINES
+        }
         noBoostText={COLUMN_NO_BOOST_TEXT}
         onPress={pressShip}
       />

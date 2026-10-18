@@ -101,6 +101,7 @@ export const ShipCard = memo(function ShipCard({
             <span key={line.key} className={styles.line}>
               <span className={styles.dot} style={{ background: line.color }} aria-hidden="true" />
               <span className={styles.lineLabel}>{line.label}</span>
+              {line.note !== null && <span className={styles.lineNote}>{line.note}</span>}
               <span className={styles.multiplier}>{formatMultiplier(line.multiplier)}</span>
             </span>
           ))}

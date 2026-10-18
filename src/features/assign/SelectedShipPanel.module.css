@@ -122,6 +122,14 @@
   flex: 1;
 }
 
+/* 国籍（・艦種）の条件で効いたグループの内訳（v1.1。モックの段階の行の「艦種 …」の小さい二次の文字） */
+.lineNote {
+  min-width: 0;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
 .multiplier {
   padding: 0 6px;
   border-radius: var(--radius-sm);
