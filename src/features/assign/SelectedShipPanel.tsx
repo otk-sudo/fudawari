@@ -6,6 +6,7 @@
 // - 「この艦の特効（効く札の順）」：特効がある札ごとのブロック（スコアの高い順）。札の色・札名・スコア・効く段階の倍率と、
 //   「（札名）に置く」ボタン（いまその札にいるときは代わりに「いまこの札にいます」）
 // - 特効がない札は最後に「特効なし：札A、札B」と 1 行にまとめる（定義の札の順）
+// - 段階の行は「段階名・内訳・倍率」。内訳は国籍（・艦種）の条件で効いたグループ（例「米駆逐（アメリカ・駆逐）」。v1.1）。艦名だけで効く行は出さない
 // 艦種補正は扱わない（U5・U11）。札のブロックは region にしない（札の列と名前がぶつかるため）。
 import type { ReactNode } from "react";
 import type { Fuda, PublicDefinition } from "@/domain/definition/types";
@@ -40,6 +41,8 @@ export function SelectedShipPanel({
   const { ship, info, boost } = entry;
   const placedName = placedFudaId === null ? "控え" : (fudas.get(placedFudaId)?.name ?? "控え");
   const noBoostNames = boost.ineffectiveFudaIds.flatMap((fudaId) => fudas.get(fudaId)?.name ?? []);
+  // 国籍（・艦種）の条件で効いたグループの内訳を作るための照合の対象（マスタにない艦はなし）
+  const target = info.known ? info : null;
 
   return (
     <section aria-label="選択中の艦" className={styles.panel}>
@@ -73,9 +76,10 @@ export function SelectedShipPanel({
                 <span className={styles.score}>+{fudaBoost.score}</span>
               </div>
               <ul className={styles.lines}>
-                {boostLines(definition, fudas, [fudaBoost]).map((line) => (
+                {boostLines(definition, fudas, [fudaBoost], target).map((line) => (
                   <li key={line.key} className={styles.line}>
                     <span className={styles.lineLabel}>{line.label}</span>
+                    {line.note !== null && <span className={styles.lineNote}>{line.note}</span>}
                     <span className={styles.multiplier}>{formatMultiplier(line.multiplier)}</span>
                   </li>
                 ))}

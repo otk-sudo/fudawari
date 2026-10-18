@@ -36,6 +36,7 @@ export {
   parseShipNameList,
   removeShipName,
   setGroupNationalities,
+  setGroupShipTypes,
   updateBoostGroup,
 } from "./boosts";
 export { createDefinition } from "./create";

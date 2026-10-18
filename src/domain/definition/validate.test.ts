@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { cloneSummer2026Definition, type Mutable, summer2026Definition } from "@/test/fixtures";
+import {
+  cloneSummer2026Definition,
+  type Mutable,
+  summer2026Definition,
+  summer2026DefinitionWithUsaBoost,
+} from "@/test/fixtures";
 import type {
   BoostGroup,
   DefinitionErrorCode,
@@ -550,6 +555,203 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
       // 検証
       expect(value.stages[E2_3].boosts[0].nationalities).toEqual(["usa"]);
       expect(Object.hasOwn(value.stages[E2_3].boosts[1], "nationalities")).toBe(false);
+    });
+  });
+
+  describe("特効グループの艦種（v1.1。国籍の条件を絞る shipTypes）", () => {
+    /** 国籍だけのグループの誤りの文（仕様 2 章） */
+    const MSG_SHIP_TYPES_WITHOUT_NATIONALITIES = "艦種は国籍と一緒に選んでください（艦種だけの特効は扱いません）";
+
+    /** E2 ゲージ3 の最初のグループに、国籍（既定はアメリカ）と艦種（中身の分からない値）を入れた入力 */
+    function withShipTypes(value: unknown, nationalities: unknown = ["usa"]): unknown {
+      return broken((d) => {
+        const group = d.stages[E2_3].boosts[0] as unknown as Record<string, unknown>;
+        group.nationalities = nationalities;
+        group.shipTypes = value;
+      });
+    }
+
+    /** E2 ゲージ3 の最初のグループに艦種だけを入れた入力（国籍は書かない＝省略） */
+    function withShipTypesOnly(value: unknown): unknown {
+      return broken((d) => {
+        (d.stages[E2_3].boosts[0] as unknown as Record<string, unknown>).shipTypes = value;
+      });
+    }
+
+    /** E2 ゲージ3 の最初のグループに国籍だけを入れた入力（艦種は書かない） */
+    function withNationalitiesOnly(nationalities: unknown): unknown {
+      return broken((d) => {
+        (d.stages[E2_3].boosts[0] as unknown as Record<string, unknown>).nationalities = nationalities;
+      });
+    }
+
+    const groupPath = `stages[${E2_3}].boosts[0]`;
+
+    it("国籍と艦種を持つグループは通り、検証後の値の艦種は入力の順のまま（正規の順に並べ直さない）", () => {
+      // 準備：正規の順（戦艦 → 駆逐）とは逆の順で入れる
+      const input = withShipTypes([2, 8]);
+
+      // 実行
+      const value = expectOk(validatePublicDefinition(input));
+
+      // 検証
+      expect(value.stages[E2_3].boosts[0]).toMatchObject({ nationalities: ["usa"], shipTypes: [2, 8] });
+    });
+
+    it("選べる 21 個の番号（12 を除く）はどれも選べる。戦艦の 8・9 のように同じ選択肢の別の番号は重複にしない", () => {
+      const all = [8, 9, 10, 11, 18, 7, 5, 6, 3, 4, 21, 2, 1, 13, 14, 16, 20, 17, 15, 22, 19];
+
+      const value = expectOk(validatePublicDefinition(withShipTypes(all)));
+
+      expect(value.stages[E2_3].boosts[0].shipTypes).toEqual(all);
+    });
+
+    it("艦種を省略したグループは通り、検証後の値は shipTypes の項目を持たない（キー自体がない）", () => {
+      // 実行：国籍だけを持つグループ
+      const value = expectOk(validatePublicDefinition(withNationalitiesOnly(["usa"])));
+
+      // 検証
+      expect(value.stages[E2_3].boosts[0].nationalities).toEqual(["usa"]);
+      const groups = value.stages.flatMap((s) => s.boosts);
+      expect(groups.filter((g) => Object.hasOwn(g, "shipTypes")).map((g) => g.id)).toEqual([]);
+    });
+
+    it("艦種が空の配列なら通り、検証後の値は shipTypes の項目を持たない（省略と同じ）", () => {
+      const value = expectOk(validatePublicDefinition(withShipTypes([])));
+
+      expect(Object.hasOwn(value.stages[E2_3].boosts[0], "shipTypes")).toBe(false);
+      expect(value.stages[E2_3].boosts[0].nationalities).toEqual(["usa"]);
+    });
+
+    it("国籍のないグループで艦種が空の配列なら通る（艦種だけのグループにはならない）。shipTypes の項目は持たない", () => {
+      const value = expectOk(validatePublicDefinition(withShipTypesOnly([])));
+
+      expect(Object.hasOwn(value.stages[E2_3].boosts[0], "shipTypes")).toBe(false);
+      expect(value.stages[E2_3].boosts[0]).toEqual(summer2026Definition.stages[E2_3].boosts[0]);
+    });
+
+    it("艦種を持つグループの艦種の配列も深く凍結されている", () => {
+      const value = expectOk(validatePublicDefinition(withShipTypes([2])));
+
+      expect(value.stages[E2_3].boosts[0].shipTypes).toEqual([2]);
+      expect(Object.isFrozen(value.stages[E2_3].boosts[0].shipTypes)).toBe(true);
+      expect(unfrozenPaths(value)).toEqual([]);
+    });
+
+    it.each<[string, unknown]>([
+      ["数", 2],
+      ["文字列", "2"],
+      ["オブジェクト", { 2: true }],
+      ["null", null],
+    ])("艦種が配列でない（%s）と invalid_type（path はグループの shipTypes）になる", (_label, value) => {
+      expectError(validatePublicDefinition(withShipTypes(value)), "invalid_type", `${groupPath}.shipTypes`);
+    });
+
+    it.each<[string, unknown]>([
+      ["数の文字列", "2"],
+      ["表示名", "駆逐"],
+      ["小数", 2.5],
+      ["NaN", Number.NaN],
+      ["Infinity", Number.POSITIVE_INFINITY],
+      ["null", null],
+      ["配列", [2]],
+      ["オブジェクト", { id: 2 }],
+    ])("艦種の要素が整数の数でない（%s）と、その要素の場所で invalid_type になる", (_label, item) => {
+      expectError(validatePublicDefinition(withShipTypes([2, item])), "invalid_type", `${groupPath}.shipTypes[1]`);
+    });
+
+    it.each<[string, number]>([
+      ["12（超弩級戦艦。選べない）", 12],
+      ["0", 0],
+      ["99", 99],
+      ["負の数", -2],
+    ])("艦種の要素が選べない番号（%s）だと、その要素の場所で invalid_value になる", (_label, item) => {
+      expectError(validatePublicDefinition(withShipTypes([2, item])), "invalid_value", `${groupPath}.shipTypes[1]`);
+    });
+
+    it("艦種が重複していると、2 つ目以降の場所で duplicate_value になる（1 つ目の場所は誤りにしない）", () => {
+      // 実行
+      const result = validatePublicDefinition(withShipTypes([2, 3, 2, 2]));
+
+      // 検証
+      expectError(result, "duplicate_value", `${groupPath}.shipTypes[2]`);
+      expectError(result, "duplicate_value", `${groupPath}.shipTypes[3]`);
+      if (!result.ok) {
+        const paths = result.errors.map((e) => e.path);
+        expect(paths).not.toContain(`${groupPath}.shipTypes[0]`);
+        expect(paths).not.toContain(`${groupPath}.shipTypes[1]`);
+      }
+    });
+
+    it.each<[number, string]>([
+      [2, "艦種「駆逐」が重複しています"],
+      [9, "艦種「戦艦」が重複しています"],
+      [22, "艦種「補給」が重複しています"],
+    ])("艦種の重複の誤りの文は表示名を使う（%s の重複 →「%s」）", (id, message) => {
+      // 実行
+      const result = validatePublicDefinition(withShipTypes([id, id]));
+
+      // 検証
+      expectError(result, "duplicate_value", `${groupPath}.shipTypes[1]`);
+      if (result.ok) return;
+      const error = result.errors.find((e) => e.path === `${groupPath}.shipTypes[1]`);
+      // 検証の文は「場所：理由」の形（report）
+      expect(error?.message).toBe(`${groupPath}.shipTypes[1]：${message}`);
+    });
+
+    it.each<[string, () => unknown]>([
+      ["国籍を省略", () => withShipTypesOnly([2])],
+      ["国籍が空の配列", () => withShipTypes([2], [])],
+    ])("艦種があるのに国籍がない（%s）と、グループの shipTypes の場所で invalid_value（艦種だけの特効は扱わない）", (_label, input) => {
+      // 実行
+      const result = validatePublicDefinition(input());
+
+      // 検証
+      expectError(result, "invalid_value", `${groupPath}.shipTypes`);
+      if (result.ok) return;
+      const error = result.errors.find((e) => e.path === `${groupPath}.shipTypes`);
+      // 検証の文は「場所：理由」の形（report）
+      expect(error?.message).toBe(`${groupPath}.shipTypes：${MSG_SHIP_TYPES_WITHOUT_NATIONALITIES}`);
+    });
+
+    it("別のグループどうしで同じ艦種を持つのは重複にしない", () => {
+      const input = broken((d) => {
+        for (const position of [0, 1]) {
+          const group = d.stages[E2_3].boosts[position] as unknown as Record<string, unknown>;
+          group.nationalities = ["usa"];
+          group.shipTypes = [2];
+        }
+      });
+
+      expectOk(validatePublicDefinition(input));
+    });
+
+    it("v1 の定義（国籍も艦種もない）・v1.1 の国籍の定義（艦種なし）はそのまま通り、値も変わらない", () => {
+      // 準備：v1.1 の国籍の定義（E2 ゲージ3 に「米艦」〔国籍だけ〕を足したもの）
+      const v11 = JSON.parse(JSON.stringify(summer2026DefinitionWithUsaBoost)) as unknown;
+
+      // 実行
+      const v1Value = expectOk(validatePublicDefinition(cloneSummer2026Definition()));
+      const v11Value = expectOk(validatePublicDefinition(v11));
+
+      // 検証
+      expect(v1Value).toEqual(summer2026Definition);
+      expect(v11Value).toEqual(summer2026DefinitionWithUsaBoost);
+      for (const value of [v1Value, v11Value]) {
+        expect(value.stages.flatMap((s) => s.boosts).some((g) => Object.hasOwn(g, "shipTypes"))).toBe(false);
+      }
+    });
+
+    it("parsePublicDefinition（JSON の文字列）でも、国籍と艦種を持つグループは通り、艦種のないグループはキーを持たない", () => {
+      // 準備
+      const input = withShipTypes([3, 2]);
+
+      // 実行
+      const value = expectOk(parsePublicDefinition(JSON.stringify(input)));
+
+      // 検証
+      expect(value.stages[E2_3].boosts[0].shipTypes).toEqual([3, 2]);
+      expect(Object.hasOwn(value.stages[E2_3].boosts[1], "shipTypes")).toBe(false);
     });
   });
 

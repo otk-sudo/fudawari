@@ -69,7 +69,7 @@ describe("割り振り画面：国籍の条件の特効グループ（v1.1）", 
     // 検証
     const panel = getPanel();
     expect(panel).toHaveTextContent("この艦の特効（効く札の順）");
-    expect(panel).toHaveTextContent(/連合艦隊\s*\+60.*E2 ゲージ3\s*×1\.20.*連合艦隊に置く/);
+    expect(panel).toHaveTextContent(/連合艦隊\s*\+60.*E2 ゲージ3[^×]*×1\.20.*連合艦隊に置く/);
     expect(within(panel).getByRole("button", { name: "連合艦隊に置く" })).toBeInTheDocument();
     expect(panel).toHaveTextContent(/特効なし：\s*第三十一戦隊、多号作戦部隊、ウルシー攻撃部隊、第六艦隊/);
   });
@@ -84,7 +84,7 @@ describe("割り振り画面：国籍の条件の特効グループ（v1.1）", 
     // 検証
     const card = getCard(getTray(), "Samuel B.Roberts改");
     expect(card).toHaveAttribute("aria-expanded", "true");
-    expect(card).toHaveTextContent(/E2 ゲージ3\s*×1\.20/);
+    expect(card).toHaveTextContent(/E2 ゲージ3[^×]*×1\.20/);
   });
 
   it("英艦（国籍のグループに当てはまらない）を選ぶと、倍率を出さず「特効なし」にすべての札を並べる", async () => {

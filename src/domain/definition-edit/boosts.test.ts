@@ -9,10 +9,12 @@ import {
   parseShipNameList,
   removeShipName,
   setGroupNationalities,
+  setGroupShipTypes,
   updateBoostGroup,
 } from "./boosts";
 import * as definitionEdit from "./index";
-import { expectEditError, expectOk, groupOf, hasGroup, stageOf } from "./test-helpers";
+import { editDoc, expectEditError, expectOk, groupOf, hasGroup, stageOf } from "./test-helpers";
+import type { DefinitionDoc } from "./types";
 
 const def = summer2026Definition;
 
@@ -269,5 +271,173 @@ describe("setGroupNationalities（特効グループの国籍を選び直す。v
   it("定義の編集の入口（@/domain/definition-edit）からも呼べる（同じ関数）", () => {
     expect(typeof setGroupNationalities).toBe("function");
     expect(definitionEdit.setGroupNationalities).toBe(setGroupNationalities);
+  });
+});
+
+// ---- 国籍の特効を艦種で絞る（v1.1。shipTypes） ----
+
+/** 国籍なしで艦種を入れようとしたときの文（検証の文と同じ。仕様 2・4 章） */
+const MSG_SHIP_TYPES_WITHOUT_NATIONALITIES = "艦種は国籍と一緒に選んでください（艦種だけの特効は扱いません）";
+
+/** 連合艦隊C（E2-3-C）に国籍 アメリカ を入れた文書 */
+const withUsa = expectOk(setGroupNationalities(def, "E2-3-C", ["usa"]));
+
+/** グループの艦種（項目がなければ undefined） */
+function shipTypesOf(doc: DefinitionDoc, groupId: string): unknown {
+  const group = groupOf(doc, groupId) as unknown as Record<string, unknown>;
+  return Object.hasOwn(group, "shipTypes") ? group.shipTypes : undefined;
+}
+
+describe("setGroupShipTypes（特効グループの国籍を絞る艦種を選び直す。v1.1）", () => {
+  it("国籍を持つグループに艦種を入れる", () => {
+    const doc = expectOk(setGroupShipTypes(withUsa, "E2-3-C", [2]));
+
+    expect(groupOf(doc, "E2-3-C")).toEqual({ ...groupOf(withUsa, "E2-3-C"), shipTypes: [2] });
+  });
+
+  it("正規の順（戦艦・航戦・…・軽巡・…・駆逐の順）に並べ直し、重複を除く", () => {
+    const doc = expectOk(setGroupShipTypes(withUsa, "E2-3-C", [2, 3, 2, 9, 8]));
+
+    expect(shipTypesOf(doc, "E2-3-C")).toEqual([8, 9, 3, 2]);
+  });
+
+  it("艦種を持つグループの艦種を、渡した艦種だけに置き換える（足すのではない）", () => {
+    const withDd = expectOk(setGroupShipTypes(withUsa, "E2-3-C", [2, 3]));
+
+    const doc = expectOk(setGroupShipTypes(withDd, "E2-3-C", [8, 9]));
+
+    expect(shipTypesOf(doc, "E2-3-C")).toEqual([8, 9]);
+  });
+
+  it("空にすると shipTypes の項目を消す（キーを持たない。国籍はそのまま）", () => {
+    const withDd = expectOk(setGroupShipTypes(withUsa, "E2-3-C", [2]));
+
+    const doc = expectOk(setGroupShipTypes(withDd, "E2-3-C", []));
+
+    expect(shipTypesOf(doc, "E2-3-C")).toBeUndefined();
+    expect(groupOf(doc, "E2-3-C")).toEqual(groupOf(withUsa, "E2-3-C"));
+  });
+
+  it("艦種のないグループを空にしても、項目は作らない（国籍のないグループでも誤りにしない）", () => {
+    for (const from of [withUsa, def]) {
+      const doc = expectOk(setGroupShipTypes(from, "E2-3-C", []));
+
+      expect(shipTypesOf(doc, "E2-3-C")).toBeUndefined();
+    }
+  });
+
+  it("艦名・倍率・名前・国籍と、同じ段階・ほかの段階のグループは変わらない", () => {
+    const doc = expectOk(setGroupShipTypes(withUsa, "E2-3-C", [2]));
+
+    expect(groupOf(doc, "E2-3-C")).toMatchObject({
+      name: groupOf(def, "E2-3-C").name,
+      multiplier: groupOf(def, "E2-3-C").multiplier,
+      shipNames: groupOf(def, "E2-3-C").shipNames,
+      nationalities: ["usa"],
+    });
+    expect(groupOf(doc, "E2-3-B")).toEqual(groupOf(def, "E2-3-B"));
+    expect(doc.stages.filter((s) => s.id !== "E2-3")).toEqual(def.stages.filter((s) => s.id !== "E2-3"));
+  });
+
+  it.each<[string, number]>([
+    ["12（超弩級戦艦。選べない）", 12],
+    ["0", 0],
+    ["99", 99],
+    ["小数", 2.5],
+    ["NaN", Number.NaN],
+  ])("選べない番号（%s）があれば invalid_value（文書は変えない）", (_label, value) => {
+    expectEditError(setGroupShipTypes(withUsa, "E2-3-C", [2, value]), "invalid_value");
+  });
+
+  it("国籍のないグループに艦種を入れようとすると invalid_value（文は検証と同じ。艦種だけのグループを作らない）", () => {
+    const error = expectEditError(setGroupShipTypes(def, "E2-3-C", [2]), "invalid_value");
+
+    expect(error.message).toBe(MSG_SHIP_TYPES_WITHOUT_NATIONALITIES);
+  });
+
+  it("ないグループは変えられない（not_found）", () => {
+    expectEditError(setGroupShipTypes(withUsa, "no-such-group", [2]), "not_found");
+  });
+
+  it("定義の編集の入口（@/domain/definition-edit）からも呼べる（同じ関数）", () => {
+    expect(typeof setGroupShipTypes).toBe("function");
+    expect(definitionEdit.setGroupShipTypes).toBe(setGroupShipTypes);
+  });
+});
+
+describe("setGroupNationalities と艦種（v1.1。艦種だけのグループを作らない）", () => {
+  /** 連合艦隊C に国籍 アメリカ・イギリスと艦種 駆逐を入れた文書（編集の関数を通さず直接入れる） */
+  const withUsaUkDd = editDoc(def, (d) => {
+    const group = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+    group.nationalities = ["usa", "uk"];
+    group.shipTypes = [2];
+  });
+
+  it("国籍を空にすると、shipTypes の項目も消す（国籍・艦種ともキーを持たない。艦名・倍率はそのまま）", () => {
+    const doc = expectOk(setGroupNationalities(withUsaUkDd, "E2-3-C", []));
+
+    const group = groupOf(doc, "E2-3-C");
+    expect(Object.hasOwn(group, "nationalities")).toBe(false);
+    expect(Object.hasOwn(group, "shipTypes")).toBe(false);
+    expect(group).toEqual(groupOf(def, "E2-3-C"));
+  });
+
+  it("国籍を減らしても空でなければ、艦種はそのまま", () => {
+    const doc = expectOk(setGroupNationalities(withUsaUkDd, "E2-3-C", ["uk"]));
+
+    expect(groupOf(doc, "E2-3-C").nationalities).toEqual(["uk"]);
+    expect(shipTypesOf(doc, "E2-3-C")).toEqual([2]);
+  });
+});
+
+describe("addBoostGroup の艦種（v1.1）", () => {
+  it("国籍と艦種を指定して追加する（艦種は正規の順に並べ直し、重複を除く）", () => {
+    const doc = expectOk(
+      addBoostGroup(def, {
+        stageId: "E3-G",
+        newGroupId: "E3-G-X",
+        name: "米駆逐・軽巡",
+        multiplier: 1.2,
+        nationalities: ["usa"],
+        shipTypes: [2, 3, 2],
+      }),
+    );
+
+    expect(groupOf(doc, "E3-G-X")).toEqual({
+      id: "E3-G-X",
+      name: "米駆逐・軽巡",
+      multiplier: 1.2,
+      shipNames: [],
+      nationalities: ["usa"],
+      shipTypes: [3, 2],
+    });
+  });
+
+  it("艦種を省略・空にしたら shipTypes の項目を持たない", () => {
+    for (const shipTypes of [undefined, []]) {
+      const doc = expectOk(
+        addBoostGroup(def, { stageId: "E3-G", newGroupId: "E3-G-X", nationalities: ["usa"], shipTypes }),
+      );
+
+      expect(shipTypesOf(doc, "E3-G-X")).toBeUndefined();
+    }
+  });
+
+  it("国籍がないのに艦種があれば invalid_value（文は検証と同じ）", () => {
+    for (const nationalities of [undefined, []]) {
+      const error = expectEditError(
+        addBoostGroup(def, { stageId: "E3-G", newGroupId: "E3-G-X", nationalities, shipTypes: [2] }),
+        "invalid_value",
+      );
+
+      expect(error.message).toBe(MSG_SHIP_TYPES_WITHOUT_NATIONALITIES);
+    }
+  });
+
+  it("選べない艦種の番号があれば invalid_value", () => {
+    expectEditError(
+      addBoostGroup(def, { stageId: "E3-G", newGroupId: "E3-G-X", nationalities: ["usa"], shipTypes: [2, 12] }),
+      "invalid_value",
+    );
   });
 });

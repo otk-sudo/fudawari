@@ -240,6 +240,7 @@ const GROUP_FIELD_LABELS: Readonly<Record<string, string>> = {
   multiplier: "倍率",
   shipNames: "艦名",
   nationalities: "国籍",
+  shipTypes: "艦種",
 };
 const FUDA_FIELD_LABELS: Readonly<Record<string, string>> = { name: "名前", color: "色", gameNumber: "札番号" };
 const EVENT_FIELD_LABELS: Readonly<Record<string, string>> = {

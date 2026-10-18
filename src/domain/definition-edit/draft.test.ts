@@ -222,4 +222,85 @@ describe("validateDraftDefinition（共有の下書きの検証）", () => {
       ]);
     });
   });
+
+  describe("特効グループの艦種（v1.1。国籍の条件を絞る shipTypes。公開用の検証と同じ規則）", () => {
+    /** 特効グループのある、イベント名・開始日時・版の日付が空の下書き（テスト用データのイベントの情報だけを空にした） */
+    const relaxedDraft = withEvent({ name: "", startAt: "", versionDate: "" });
+
+    it("国籍と艦種を持つグループの下書きは通り、艦種は入力の順のまま残る", () => {
+      // 準備：空のイベント名などがある下書き（仮の値を通る道）と、空の欄がない文書（公開用の検証をそのまま返す道）
+      const withShipTypes = (doc: DefinitionDoc): DefinitionDoc =>
+        editDoc(doc, (d) => {
+          const group = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+          group.nationalities = ["usa"];
+          group.shipTypes = [2, 3];
+        });
+
+      // 実行・検証
+      for (const doc of [withShipTypes(relaxedDraft), withShipTypes(def)]) {
+        const value = expectValid(validateDraftDefinition(doc));
+        expect(groupOf(value, "E2-3-C")).toMatchObject({ nationalities: ["usa"], shipTypes: [2, 3] });
+        expect(value).toEqual(doc);
+      }
+    });
+
+    it("艦種が空の配列のグループは、検証後の値で shipTypes の項目を持たない", () => {
+      const doc = editDoc(relaxedDraft, (d) => {
+        const group = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+        group.nationalities = ["usa"];
+        group.shipTypes = [];
+      });
+
+      const value = expectValid(validateDraftDefinition(doc));
+
+      expect(Object.hasOwn(groupOf(value, "E2-3-C"), "shipTypes")).toBe(false);
+      expect(groupOf(value, "E2-3-C").nationalities).toEqual(["usa"]);
+    });
+
+    it("v1 の下書き・v1.1 の国籍の下書き（艦種なし）は、そのまま通り、値も変わらない（どのグループも shipTypes の項目を持たない）", () => {
+      // 準備：国籍だけのグループを持つ v1.1 の下書き
+      const v11Draft = editDoc(relaxedDraft, (d) => {
+        groupOf(d, "E2-3-C").nationalities = ["usa", "uk"];
+      });
+
+      // 実行・検証
+      for (const doc of [relaxedDraft, v11Draft]) {
+        const value = expectValid(validateDraftDefinition(doc));
+        expect(value).toEqual(doc);
+        expect(value.stages.flatMap((s) => s.boosts).some((g) => Object.hasOwn(g, "shipTypes"))).toBe(false);
+      }
+    });
+
+    it("艦種の誤り（選べない番号・重複・配列でない・国籍なし）は、公開用の検証と同じエラー（code・path・message）を返す", () => {
+      // 準備：空のイベント名などがある下書きで、4 つのグループの艦種を壊す（E2 ゲージ2 の連合艦隊B は国籍なし）
+      const broken = editDoc(relaxedDraft, (d) => {
+        const groupC = groupOf(d, "E2-3-C") as unknown as Record<string, unknown>;
+        groupC.nationalities = ["usa"];
+        groupC.shipTypes = [12];
+        const groupB = groupOf(d, "E2-3-B") as unknown as Record<string, unknown>;
+        groupB.nationalities = ["usa"];
+        groupB.shipTypes = [2, 2];
+        const groupA = groupOf(d, "E2-3-A") as unknown as Record<string, unknown>;
+        groupA.nationalities = ["usa"];
+        groupA.shipTypes = 2;
+        (groupOf(d, "E2-2-B") as unknown as Record<string, unknown>).shipTypes = [2];
+      });
+
+      // 実行
+      const draft = validateDraftDefinition(broken);
+      const pub = validatePublicDefinition(broken);
+
+      // 検証
+      expect(draft.ok).toBe(false);
+      expect(pub.ok).toBe(false);
+      if (draft.ok || pub.ok) return;
+      expect(draft.errors).toEqual(withoutRelaxedFields(pub.errors));
+      expect(draft.errors.map((e) => [e.path, e.code])).toEqual([
+        ["stages[3].boosts[0].shipTypes", "invalid_value"],
+        ["stages[4].boosts[0].shipTypes[0]", "invalid_value"],
+        ["stages[4].boosts[1].shipTypes[1]", "duplicate_value"],
+        ["stages[4].boosts[2].shipTypes", "invalid_type"],
+      ]);
+    });
+  });
 });
