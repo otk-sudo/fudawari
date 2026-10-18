@@ -80,7 +80,7 @@ test.describe("艦種で絞った国籍の特効グループ（v1.1）", () => {
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("Johnston改");
     await expect(panel).toContainText(/連合艦隊\s*\+60/);
-    await expect(panel).toContainText(/E2 ゲージ3\s*×1\.20/);
+    await expect(panel).toContainText(/E2 ゲージ3[^×]*×1\.20/);
 
     // 実行：連合艦隊の Iowa改 を選ぶ
     await cardIn(rengo, "iowa").click();
@@ -101,5 +101,39 @@ test.describe("艦種で絞った国籍の特効グループ（v1.1）", () => {
     const iowa = rengoRow.getByRole("listitem").filter({ hasText: "Iowa改" });
     await expect(iowa).toHaveCount(1);
     await expect(iowa).not.toContainText(/×\s*\d/);
+  });
+
+  test("割り振りの開いた艦カードと選んだ艦のパネルの E2 ゲージ3 の行に「米駆逐（アメリカ・駆逐）」と ×1.20 が出て、一覧に倍率と特効の隻数が出る", async ({
+    page,
+  }) => {
+    // 準備：Johnston改 だけを連合艦隊に置く（連合艦隊は 9 隻。全員に特効がある）
+    await seedPlan(page, {
+      ships: [...summer2026Ships, ...nationalityShips, ...shipTypeShips],
+      assignments: { ...summer2026Assignments, johnston: "rengo" },
+    });
+
+    // 実行：割り振りを開き、連合艦隊の Johnston改 を選ぶ（選ぶとカードも開く）
+    await page.goto(ASSIGN_PATH);
+    const rengo = columnOf(page, "連合艦隊");
+    const card = cardIn(rengo, "johnston");
+    await card.click();
+
+    // 検証：開いたカードと選んだ艦のパネルの行は「E2 ゲージ3 米駆逐（アメリカ・駆逐） ×1.20」（段階名・内訳・倍率の順）
+    const usDestroyerLine = /E2 ゲージ3\s*米駆逐（アメリカ・駆逐）\s*×1\.20/;
+    await expect(card).toHaveAttribute("aria-expanded", "true");
+    await expect(card).toContainText(usDestroyerLine);
+    const panel = panelOf(page);
+    await expect(panel).toContainText("Johnston改");
+    await expect(panel).toContainText(usDestroyerLine);
+
+    // 実行：一覧を開く
+    await page.goto("/list");
+
+    // 検証：連合艦隊の行は 9 隻すべてが特効あり、Johnston改 のバッジは ×1.20
+    const rengoRow = page.getByRole("region", { name: "連合艦隊", exact: true });
+    await expect(rengoRow).toContainText(/9\s*隻\s*・\s*特効\s*9\s*隻/);
+    const johnston = rengoRow.getByRole("listitem").filter({ hasText: "Johnston改" });
+    await expect(johnston).toHaveCount(1);
+    await expect(johnston).toContainText("×1.20");
   });
 });

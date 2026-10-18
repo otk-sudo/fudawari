@@ -71,7 +71,7 @@ describe("割り振り画面：艦種で絞った国籍の特効グループ（v
 
     // 検証
     const panel = getPanel();
-    expect(panel).toHaveTextContent(/連合艦隊\s*\+60.*E2 ゲージ3\s*×1\.20.*連合艦隊に置く/);
+    expect(panel).toHaveTextContent(/連合艦隊\s*\+60.*E2 ゲージ3[^×]*×1\.20.*連合艦隊に置く/);
     expect(within(panel).getByRole("button", { name: "連合艦隊に置く" })).toBeInTheDocument();
     expect(panel).toHaveTextContent(/特効なし：\s*第三十一戦隊、多号作戦部隊、ウルシー攻撃部隊、第六艦隊/);
   });
@@ -111,5 +111,53 @@ describe("割り振り画面：艦種で絞った国籍の特効グループ（v
     const rengo = getColumn("連合艦隊");
     expect(getCard(rengo, "Johnston改")).toHaveTextContent("特効あり");
     expect(getCard(rengo, "Iowa改")).toHaveTextContent("特効なし");
+  });
+});
+
+describe("割り振り画面：特効の行の国籍・艦種の内訳（v1.1「割り振りの特効の行に国籍・艦種の内訳を出す」）", () => {
+  /** 米駆逐のグループで効く行（段階名・内訳の文・倍率の順） */
+  const US_DESTROYER_LINE = /E2 ゲージ3\s*米駆逐（アメリカ・駆逐）\s*×1\.20/;
+
+  it("控えの米駆逐艦（Johnston改）を選ぶと、開いたカードと選んだ艦のパネルに「E2 ゲージ3 米駆逐（アメリカ・駆逐） ×1.20」を出す", async () => {
+    // 準備
+    const { user } = renderScreen();
+
+    // 実行
+    await user.click(getCard(getTray(), "Johnston改"));
+
+    // 検証
+    const card = getCard(getTray(), "Johnston改");
+    expect(card).toHaveAttribute("aria-expanded", "true");
+    expect(card).toHaveTextContent(US_DESTROYER_LINE);
+    expect(getPanel()).toHaveTextContent(US_DESTROYER_LINE);
+  });
+
+  it("連合艦隊に置いた米駆逐艦を選ぶと、札の列の開いたカードにも内訳を出す", async () => {
+    // 準備
+    const { user } = renderScreen({ ...summer2026Assignments, johnston: "rengo" });
+
+    // 実行
+    await user.click(getCard(getColumn("連合艦隊"), "Johnston改"));
+
+    // 検証
+    const card = getCard(getColumn("連合艦隊"), "Johnston改");
+    expect(card).toHaveAttribute("aria-expanded", "true");
+    expect(card).toHaveTextContent(US_DESTROYER_LINE);
+  });
+
+  it("艦名の特効だけの日本の駆逐艦（時雨改二）の行は今の文のまま「E2 ゲージ3 ×1.24」で、内訳を出さない", async () => {
+    // 準備
+    const { user } = renderScreen();
+
+    // 実行
+    await user.click(getCard(getColumn("連合艦隊"), "時雨改二"));
+
+    // 検証
+    const card = getCard(getColumn("連合艦隊"), "時雨改二");
+    expect(card).toHaveTextContent(/E2 ゲージ2\s*×1\.19\s*E2 ゲージ3\s*×1\.24/);
+    expect(card).not.toHaveTextContent("米駆逐");
+    const panel = getPanel();
+    expect(panel).toHaveTextContent(/E2 ゲージ2\s*×1\.19\s*E2 ゲージ3\s*×1\.24/);
+    expect(panel).not.toHaveTextContent("米駆逐");
   });
 });
