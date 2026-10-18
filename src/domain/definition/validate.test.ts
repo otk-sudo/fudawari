@@ -695,7 +695,8 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
       expectError(result, "duplicate_value", `${groupPath}.shipTypes[1]`);
       if (result.ok) return;
       const error = result.errors.find((e) => e.path === `${groupPath}.shipTypes[1]`);
-      expect(error?.message).toBe(message);
+      // 検証の文は「場所：理由」の形（report）
+      expect(error?.message).toBe(`${groupPath}.shipTypes[1]：${message}`);
     });
 
     it.each<[string, () => unknown]>([
@@ -709,7 +710,8 @@ describe("validatePublicDefinition（公開定義 JSON の検証）", () => {
       expectError(result, "invalid_value", `${groupPath}.shipTypes`);
       if (result.ok) return;
       const error = result.errors.find((e) => e.path === `${groupPath}.shipTypes`);
-      expect(error?.message).toBe(MSG_SHIP_TYPES_WITHOUT_NATIONALITIES);
+      // 検証の文は「場所：理由」の形（report）
+      expect(error?.message).toBe(`${groupPath}.shipTypes：${MSG_SHIP_TYPES_WITHOUT_NATIONALITIES}`);
     });
 
     it("別のグループどうしで同じ艦種を持つのは重複にしない", () => {
