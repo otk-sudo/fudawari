@@ -63,8 +63,8 @@ interface StageBoostIndex {
   readonly byName: ReadonlyMap<string, GroupMatches>;
   /** 国籍 → その国籍を持つグループ（位置の昇順。選べる国籍だけ。"unknown" などは入れない） */
   readonly groupsByNationality: ReadonlyMap<BoostNationality, readonly NationalityGroup[]>;
-  /** （国籍, 艦種）→ 当てはまるグループ（初めて引いたときに求めて覚える。当てはまらなければ null） */
-  readonly byNationalityShipType: Map<string, GroupMatches | null>;
+  /** 国籍 → 艦種 → 当てはまるグループ（初めて引いたときに求めて覚える。当てはまらなければ null） */
+  readonly byNationalityShipType: Map<BoostNationality, Map<number, GroupMatches | null>>;
 }
 
 /** 索引を作る途中の、書き換えられる GroupMatches */
@@ -164,19 +164,26 @@ function nationalityMatchesOf(
   nationality: BoostNationality,
   shipTypeId: number,
 ): GroupMatches | undefined {
-  const key = `${nationality}:${shipTypeId}`;
-  const cached = index.byNationalityShipType.get(key);
+  // その国籍のグループがない段階（国籍の条件のない段階など）は、覚える表を引かずに返す
+  const candidates = index.groupsByNationality.get(nationality);
+  if (candidates === undefined) return undefined;
+  let byShipType = index.byNationalityShipType.get(nationality);
+  if (byShipType === undefined) {
+    byShipType = new Map();
+    index.byNationalityShipType.set(nationality, byShipType);
+  }
+  const cached = byShipType.get(shipTypeId);
   if (cached !== undefined) return cached ?? undefined;
 
   const groups: number[] = [];
   let multiplier = 1;
-  for (const group of index.groupsByNationality.get(nationality) ?? []) {
+  for (const group of candidates) {
     if (group.shipTypes !== null && !group.shipTypes.has(shipTypeId)) continue;
     groups.push(group.position);
     multiplier *= group.multiplier;
   }
   const matches: GroupMatches | null = groups.length > 0 ? { groups, multiplier } : null;
-  index.byNationalityShipType.set(key, matches);
+  byShipType.set(shipTypeId, matches);
   return matches ?? undefined;
 }
 

@@ -238,4 +238,3 @@ export function parseShipNameList(text: string): string[] {
     .filter((name) => name !== "");
   return unique(names);
 }
-

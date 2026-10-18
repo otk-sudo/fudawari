@@ -523,13 +523,13 @@ function mergeGroup(
     mine: mine.nationalities ?? [],
     theirs: theirs.nationalities ?? [],
   });
+  // 国籍が空なら艦種も持たない（艦種だけのグループを作らない）。結果に艦種がないので、艦種の自動の取り込みも伝えない
+  if (nationalities.length === 0) return merged;
   const shipTypes = mergeOrderedSet(reports, place("shipTypes"), BOOST_SHIP_TYPE_IDS, {
     base: base.shipTypes ?? [],
     mine: mine.shipTypes ?? [],
     theirs: theirs.shipTypes ?? [],
   });
-  // 国籍が空なら艦種も持たない（艦種だけのグループを作らない）
-  if (nationalities.length === 0) return merged;
   return shipTypes.length > 0 ? { ...merged, nationalities, shipTypes } : { ...merged, nationalities };
 }
 

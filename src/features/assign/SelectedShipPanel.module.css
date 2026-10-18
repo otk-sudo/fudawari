@@ -119,11 +119,13 @@
 }
 
 .lineLabel {
-  flex: 1;
+  /* 段階名は縮めない（内訳があっても 1 行に収める。縮めて折り返すのは内訳だけ） */
+  flex: 1 0 auto;
 }
 
 /* 国籍（・艦種）の条件で効いたグループの内訳（v1.1。モックの段階の行の「艦種 …」の小さい二次の文字） */
 .lineNote {
+  flex: 0 1 auto;
   min-width: 0;
   font-size: calc(11px * var(--font-scale));
   color: var(--color-text-muted);

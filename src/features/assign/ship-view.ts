@@ -144,7 +144,8 @@ function groupConditionText(group: BoostGroup): string {
 
 /**
  * 段階の行の内訳の文。グループごとに「{グループ名}（{条件}）」を「、」でつなぐ（名前が空なら条件だけ）。
- * 行の倍率とグループの倍率が違う（ほかのグループと掛け合わせている）ときだけ、グループ名の後に倍率を付ける。
+ * 行の倍率とグループの倍率が違う（ほかのグループと掛け合わせている）ときだけ、グループ名の後に倍率を付ける
+ * （名前が空なら条件の後に「アメリカ ×1.10」）。
  * 倍率が 1 以下のグループは効いていないので出さない。出すものがなければ null
  */
 function boostNote(groups: readonly BoostGroup[], lineMultiplier: number): string | null {
@@ -154,8 +155,10 @@ function boostNote(groups: readonly BoostGroup[], lineMultiplier: number): strin
       const condition = groupConditionText(group);
       const multiplier =
         Math.abs(group.multiplier - lineMultiplier) > SAME_MULTIPLIER_EPSILON ? formatMultiplier(group.multiplier) : null;
-      const head = [group.name, multiplier].filter((text): text is string => text !== null && text !== "").join(" ");
-      return head === "" ? condition : `${head}（${condition}）`;
+      // 名前が空なら条件を名前の代わりにする（倍率を付けるときは「アメリカ ×1.10」）
+      if (group.name === "") return multiplier === null ? condition : `${condition} ${multiplier}`;
+      const head = multiplier === null ? group.name : `${group.name} ${multiplier}`;
+      return `${head}（${condition}）`;
     });
   return parts.length > 0 ? parts.join("、") : null;
 }
