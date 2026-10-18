@@ -144,7 +144,7 @@ test.describe("艦種で絞った国籍の特効グループ（v1.1）", () => {
 
 // ---- 内訳のある段階の行の見た目（PR #39 のレビュー指摘 B1） ----
 //
-// 段階の行は「段階名・内訳・倍率」を横に並べる。内訳があっても段階名（「E2 ゲージ3」）が細く縮んで
+// 段階の行の HTML の並びは「段階名・内訳・倍率」（見た目は内訳を下の段に回す）。内訳があっても段階名（「E2 ゲージ3」）が細く縮んで
 // 1 文字ずつ折り返さず、1 行に収まることを、ビルドした画面の大きさで測る（Desktop Chrome の既定の幅）。
 // 内訳の文は長ければ折り返してよい（段階名だけを測る）。
 
@@ -275,3 +275,76 @@ test("長い内訳でも、開いた艦カードと選んだ艦のパネルで�
   await expectNoteNotSqueezed(card.getByText(note, { exact: true }), "艦カード");
   await expectNoteNotSqueezed(panel.getByText(note, { exact: true }), "選んだ艦のパネル");
 });
+
+// ---- 報告と同じ条件（1366×768 の艦カード・長い段階名・文字「大」）で、■・段階名・倍率が同じ段に残る ----
+// 内訳を下の段に回すと、段階名が縮まないため長い段階名では ■ だけが 1 段目に取り残され、倍率も下の段へ落ちていた（PR #41 のレビュー M1）。
+
+/** E2 ゲージ3 の段階名を本番の報告と同じくらい長くした定義（表示は「E2 E2-2 第二ゲージ（戦車輸送）」） */
+const longLabelDefinition: PublicDefinition = {
+  ...longNoteDefinition,
+  stages: longNoteDefinition.stages.map((stage) =>
+    stage.id === "E2-3" ? { ...stage, name: "E2-2 第二ゲージ（戦車輸送）" } : stage,
+  ),
+};
+
+/** 段階の行の中の ■・段階名・倍率・内訳の位置と、行があふれていないか */
+async function measureRow(label: Locator): Promise<{
+  sameRow: boolean;
+  noteBelow: boolean;
+  overflow: number;
+  detail: Record<string, number>;
+}> {
+  return label.evaluate((element) => {
+    const line = element.parentElement;
+    if (line === null) throw new Error("段階の行がない");
+    const children = [...line.children] as HTMLElement[];
+    const labelBox = element.getBoundingClientRect();
+    const multiplier = children.find((child) => /^×/.test(child.textContent ?? ""));
+    const note = children.find((child) => child !== element && child !== multiplier && (child.textContent ?? "") !== "");
+    const dot = children.find((child) => child.getAttribute("aria-hidden") === "true");
+    const top = (el: Element | undefined) => (el === undefined ? Number.NaN : el.getBoundingClientRect().top);
+    const bottom = (el: Element | undefined) => (el === undefined ? Number.NaN : el.getBoundingClientRect().bottom);
+    // 同じ段：■ と倍率の縦の中心が段階名の高さの範囲に入る（段階名が 2 行に折り返しても、その段の中にそろう）
+    const center = (el: Element) => (el.getBoundingClientRect().top + el.getBoundingClientRect().bottom) / 2;
+    const inFirstRow = (el: Element | undefined) => el === undefined || (center(el) >= labelBox.top && center(el) <= labelBox.bottom);
+    return {
+      sameRow: inFirstRow(dot) && inFirstRow(multiplier),
+      noteBelow: note === undefined || top(note) >= labelBox.bottom - 1,
+      overflow: line.scrollWidth - line.clientWidth,
+      detail: { labelTop: labelBox.top, labelBottom: labelBox.bottom, dotTop: top(dot), multiplierTop: top(multiplier), noteTop: top(note), noteBottom: bottom(note) },
+    };
+  });
+}
+
+for (const fontSize of ["標準", "大"] as const) {
+  test(`1366×768・文字${fontSize}・長い段階名で、艦カードと選んだ艦のパネルの段階の行が崩れない`, async ({ page }) => {
+    // 準備：1366×768、Johnston改 を連合艦隊に置く（長い段階名・長い内訳の定義）
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.clock.setFixedTime(WHILE_RUNNING);
+    await routeShipTypeData(page, longLabelDefinition);
+    await seedPlan(page, {
+      ships: [...summer2026Ships, ...nationalityShips, ...shipTypeShips],
+      assignments: { ...summer2026Assignments, johnston: "rengo" },
+    });
+
+    // 実行：割り振りを開き、文字の大きさを変え、連合艦隊の Johnston改 を選ぶ（カードも開く）
+    await page.goto(ASSIGN_PATH);
+    if (fontSize === "大") {
+      await page.evaluate(() => document.documentElement.setAttribute("data-font-size", "large"));
+    }
+    const card = cardIn(columnOf(page, "連合艦隊"), "johnston");
+    await card.click();
+    await expect(card).toHaveAttribute("aria-expanded", "true");
+    const panel = panelOf(page);
+    await expect(panel).toContainText("Johnston改");
+
+    // 検証：■・段階名・倍率が同じ段にあり、内訳は段階名の下の段、行はあふれない
+    for (const [where, scope] of [["艦カード", card], ["選んだ艦のパネル", panel]] as const) {
+      const row = await measureRow(scope.getByText("E2 E2-2 第二ゲージ（戦車輸送）", { exact: true }));
+      const detail = `${where}（${JSON.stringify(row)}）`;
+      expect.soft(row.sameRow, `${detail}：■・段階名・倍率が同じ段`).toBe(true);
+      expect.soft(row.noteBelow, `${detail}：内訳は段階名の下の段`).toBe(true);
+      expect.soft(row.overflow, `${detail}：行があふれない`).toBeLessThanOrEqual(1);
+    }
+  });
+}
