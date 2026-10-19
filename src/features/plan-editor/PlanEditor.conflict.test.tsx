@@ -5,6 +5,7 @@ import type { DefinitionDoc } from "@/domain/definition-edit";
 import type { Mutable } from "@/test/fixtures";
 import {
   boostGroupNamed,
+  confirmPublish,
   createFakeRepository,
   detailRegion,
   DRAFT_VERSION,
@@ -507,6 +508,7 @@ describe("イベント定義の画面（PlanEditor）：保存時の衝突の確
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       await findConfirmDialog();

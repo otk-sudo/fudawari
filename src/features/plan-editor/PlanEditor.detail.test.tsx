@@ -18,6 +18,7 @@ import {
   saveDraftButton,
   savedDraftInput,
   selectStage,
+  shipNameInput,
   stageButton,
   stageButtons,
   stageIn,
@@ -396,7 +397,7 @@ describe("イベント定義の画面（PlanEditor）：段階の詳細", () => 
       // 実行
       await user.click(within(boostGroupNamed("連合艦隊C")).getByRole("button", { name: "＋ 艦名" }));
       await user.type(
-        within(boostGroupNamed("連合艦隊C")).getByRole("textbox", { name: "追加する艦名" }),
+        shipNameInput(boostGroupNamed("連合艦隊C")),
         " 雪風 {Enter}",
       );
 
@@ -459,7 +460,7 @@ describe("イベント定義の画面（PlanEditor）：段階の詳細", () => 
       // 実行
       await user.click(within(boostGroupNamed("連合艦隊C")).getByRole("button", { name: "＋ 艦名" }));
       await user.type(
-        within(boostGroupNamed("連合艦隊C")).getByRole("textbox", { name: "追加する艦名" }),
+        shipNameInput(boostGroupNamed("連合艦隊C")),
         "ユキカゼ{Enter}",
       );
 
@@ -501,7 +502,7 @@ describe("イベント定義の画面（PlanEditor）：段階の詳細", () => 
       // 実行
       await user.click(within(boostGroupNamed("連合艦隊C")).getByRole("button", { name: "＋ 艦名" }));
       await user.type(
-        within(boostGroupNamed("連合艦隊C")).getByRole("textbox", { name: "追加する艦名" }),
+        shipNameInput(boostGroupNamed("連合艦隊C")),
         "ユキカゼ{Enter}",
       );
 

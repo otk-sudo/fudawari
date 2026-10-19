@@ -8,6 +8,7 @@ import {
   ADMIN,
   autumn2025Definition,
   blurInput,
+  confirmPublish,
   createFakeRepository,
   detailRegion,
   DRAFT_VERSION,
@@ -270,6 +271,7 @@ describe("イベント定義の画面（PlanEditor）：PR-11b のレビュー�
       );
       await setImportance(user, "E2", "ゲージ3", "普通");
       await user.click(publishButton());
+      await confirmPublish(user);
       const dialog = await findConfirmDialog();
 
       // 実行
@@ -538,6 +540,7 @@ describe("イベント定義の画面（PlanEditor）：PR-11b のレビュー�
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       await savedDraftInput(repository, 2);
@@ -575,6 +578,7 @@ describe("イベント定義の画面（PlanEditor）：PR-11b のレビュー�
       const { user } = await renderWithSaveResults(conflictResult(DRAFT_VERSION + 1, makeDoc(makeE23Important), NAME_B));
       await setImportance(user, "E2", "ゲージ3", "普通");
       await user.click(publishButton());
+      await confirmPublish(user);
       const dialog = await findConfirmDialog();
 
       // 実行

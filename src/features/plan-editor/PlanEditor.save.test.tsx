@@ -7,6 +7,7 @@ import {
   autumn2025Definition,
   blurInput,
   COLLAB,
+  confirmPublish,
   createFakeRepository,
   CREATED_EVENT_ID,
   detailRegion,
@@ -221,6 +222,7 @@ describe("イベント定義の画面（PlanEditor）：下書きの保存・公
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       await waitFor(() => {
@@ -244,6 +246,7 @@ describe("イベント定義の画面（PlanEditor）：下書きの保存・公
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       await waitFor(() => {
@@ -262,6 +265,7 @@ describe("イベント定義の画面（PlanEditor）：下書きの保存・公
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       await waitFor(() => {
@@ -276,6 +280,7 @@ describe("イベント定義の画面（PlanEditor）：下書きの保存・公
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       await waitFor(() => {
@@ -292,6 +297,7 @@ describe("イベント定義の画面（PlanEditor）：下書きの保存・公
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       expect(await screen.findByRole("alert")).toHaveTextContent("下書きの版が違うため、公開できません");
@@ -476,6 +482,7 @@ describe("イベント定義の画面（PlanEditor）：下書きの保存・公
 
       // 実行
       await user.click(publishAsLatestButton());
+      await confirmPublish(user);
 
       // 検証
       await waitFor(() => {
@@ -574,6 +581,7 @@ describe("イベント定義の画面（PlanEditor）：下書きの保存・公
 
         // 実行
         await user.click(publishAsLatestButton());
+        await confirmPublish(user);
 
         // 検証
         await waitFor(() => {
