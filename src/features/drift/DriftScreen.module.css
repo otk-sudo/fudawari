@@ -173,6 +173,18 @@
   outline-offset: 2px;
 }
 
+/* 札番号についての帯（UI／UX レビュー 高2。全札に札番号がない・一部の札だけ札番号がない。画面に 1 つだけ出す） */
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--drift-warning-bg);
+  color: var(--drift-warning-text);
+  border: 1px solid var(--drift-warning-border);
+  border-radius: 6px;
+  font-size: 13px; /* 差分の画面は文字の倍率（--font-scale）の対象外（theme.css）。画面のほかの文字と同じく px で書く */
+  overflow-wrap: anywhere;
+}
+
 /* ---- 件数のまとめ ---- */
 
 .summary {

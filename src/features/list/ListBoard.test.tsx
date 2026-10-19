@@ -226,6 +226,26 @@ describe("一覧の本文（ListBoard）", () => {
       expect(rengo).toHaveAttribute("data-fuda-color", "#4C8DF6");
     });
 
+    it("段階名が海域名で始まる定義（本番の「E2-2 第二ゲージ」の形）では、札の色帯の段階に海域を二重に付けない（UI／UX レビュー 中6）", () => {
+      // 準備：連合艦隊の段階（E2-2・E2-3）の段階名を、本番の定義と同じく海域名で始まる形にする
+      const definition: PublicDefinition = {
+        ...summer2026Definition,
+        stages: summer2026Definition.stages.map((stage) => {
+          if (stage.id === "E2-2") return { ...stage, name: "E2-2 第二ゲージ" };
+          if (stage.id === "E2-3") return { ...stage, name: "E2-3 第三ゲージ" };
+          return stage;
+        }),
+      };
+
+      // 実行
+      renderBoard({ definition });
+
+      // 検証
+      const rengo = row("連合艦隊");
+      expect(rengo).toHaveTextContent(/E2-2 第二ゲージ\s*・\s*E2-3 第三ゲージ/);
+      expect(rengo).not.toHaveTextContent(/E2\s+E2-/);
+    });
+
     it("各艦に艦名・「Lv 運」・その札での最大倍率のバッジ（例「×1.12」）を出す", () => {
       // 準備・実行
       renderBoard();

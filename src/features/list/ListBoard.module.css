@@ -11,13 +11,14 @@
 /* ダーク（既定。モックの値） */
 .board {
   --list-ship-bg: #2c2f36; /* 艦の下地 */
-  --list-faint-text: #6b717c; /* 薄い文字（「まだ割り当てがありません」、特効なしの「–」） */
+  --list-faint-text: #6b717c; /* 薄い文字（特効なしの「–」） */
   --list-on-accent: #101114; /* 強調の金の上の文字（倍率のバッジ） */
   --list-toggle-on-bg: #22304a; /* 押してある表示の切り替えの下地 */
   --list-toggle-on-border: #6aa8ff; /* 押してある表示の切り替えの枠 */
   --list-toggle-on-text: #ffffff; /* 押してある表示の切り替えの文字 */
-  --list-ink-dark: #101114; /* 札の色の上の暗い文字（札の色は定義の値なので、画面モードで変えない） */
-  --list-ink-light: #ffffff; /* 札の色の上の白い文字 */
+  /* 札の色の上の文字（札の色は定義の値なので、画面モードで変えない）。黒と白のうちコントラスト比の高い方を部品で選ぶ（中12） */
+  --list-ink-black: #000000; /* 札の色の上の黒い文字 */
+  --list-ink-white: #ffffff; /* 札の色の上の白い文字 */
 
   display: flex;
   flex-direction: column;
@@ -47,12 +48,12 @@
 }
 
 /* 札の色の上の文字 */
-.inkDark {
-  color: var(--list-ink-dark);
+.inkBlack {
+  color: var(--list-ink-black);
 }
 
-.inkLight {
-  color: var(--list-ink-light);
+.inkWhite {
+  color: var(--list-ink-white);
 }
 
 /* ---- 攻略の流れ ---- */
@@ -89,40 +90,58 @@
   list-style: none;
 }
 
+/*
+ * 段階のセル（UI／UX レビュー 中5）：段階名・札名・「特効 n隻」・難所の印を 1 行に横並びにして、攻略の流れの高さを詰める。
+ * 長ければ省略記号で切る（縮むのは段階名を先に〔2 文字分は残す〕。札名はなるべく残し、「特効 n隻」は縮めない）。
+ * 段階名は 12px 以上・不透明のまま（コントラスト比 4.5:1 以上。中12）。画像で保存の画像（src/features/export-image）は別の CSS で変えない
+ */
 .step {
-  position: relative;
   display: flex;
   flex: 1 1 0;
-  flex-direction: column;
-  gap: 1px;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
-  padding: 6px 8px;
+  overflow: hidden;
+  padding: 4px 8px;
   background: var(--color-border-strong);
   border-radius: var(--radius-md);
+  white-space: nowrap;
 }
 
-.stepStage {
-  font-size: calc(11px * var(--font-scale));
-  opacity: 0.85;
-}
-
-.stepFuda {
+.stepStage,
+.stepFuda,
+.stepBoost {
+  min-width: 0;
   overflow: hidden;
   font-size: calc(12px * var(--font-scale));
-  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.stepBoost {
-  font-size: calc(11px * var(--font-scale));
+/*
+ * 段階名は札名より先に縮むが、2 文字分（2em）より細くしない（幅 1024px の 5 段階の海域〔セル約 175px〕で 0px まで縮んで
+ * 消えていた。PR #43 の独立レビュー）。残りは札名が縮む
+ */
+.stepStage {
+  flex: 0 2 auto;
+  min-width: 2em;
 }
 
-/* 難所の印（管理の橙。モックの値と同じ） */
+.stepFuda {
+  flex: 0 1 auto;
+  font-weight: 700;
+}
+
+/* 「特効 n隻」は短いので縮めない（数が省略記号で消えないように。段階名・札名が先に縮む） */
+.stepBoost {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* 難所の印（管理の橙。モックの値と同じ）。1 行に並べるため、セルの右上に重ねず行の最後に置く */
 .hard {
-  position: absolute;
-  top: 4px;
-  right: 6px;
+  flex: 0 0 auto;
+  align-self: center;
   padding: 0 4px;
   background: var(--color-admin);
   border-radius: var(--radius-sm);
@@ -203,8 +222,8 @@
 }
 
 .rowStages {
-  font-size: calc(11px * var(--font-scale));
-  opacity: 0.9;
+  /* 札の色の上の文字は黒白のうち読みやすいほうを選ぶ。不透明度を下げると 4.5:1 を割るので掛けない */
+  font-size: calc(12px * var(--font-scale));
 }
 
 .rowCount {
@@ -221,10 +240,11 @@
   padding: 8px;
 }
 
+/* 「まだ割り当てがありません」「特効艦はいません」（補助の文字。面の上でダーク 6.1:1・ライト 6.1:1。中12） */
 .empty {
   padding: 8px 4px;
   font-size: calc(12px * var(--font-scale));
-  color: var(--list-faint-text);
+  color: var(--color-text-muted);
 }
 
 /* 艦種のまとまり */
