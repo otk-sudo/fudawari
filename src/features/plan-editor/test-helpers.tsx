@@ -428,6 +428,38 @@ export function publishAsLatestButton(): HTMLElement {
   return screen.getByRole("button", { name: "公開して最新にする" });
 }
 
+/** 公開の確認のウィンドウ（role="alertdialog"）の名前（UI／UX の指摘 中8） */
+export const PUBLISH_CONFIRM_NAME = "公開の確認";
+
+/** 公開の確認のウィンドウが出るまで待って返す（「変更を公開する」「公開して最新にする」を押した後に出る） */
+export async function findPublishConfirm(): Promise<HTMLElement> {
+  return screen.findByRole("alertdialog", { name: PUBLISH_CONFIRM_NAME });
+}
+
+/** 公開の確認のウィンドウ（なければ null） */
+export function queryPublishConfirm(): HTMLElement | null {
+  return screen.queryByRole("alertdialog", { name: PUBLISH_CONFIRM_NAME });
+}
+
+/** 公開の確認のウィンドウで「公開する」を押す（ウィンドウが出るまで待つ） */
+export async function confirmPublish(user: UserEvent): Promise<void> {
+  const dialog = await findPublishConfirm();
+  await user.click(within(dialog).getByRole("button", { name: "公開する" }));
+}
+
+/**
+ * 特効グループの「追加する艦名」の入力欄（「＋ 艦名」を押した後に出る）。
+ * 艦名の候補（datalist など）を付けると role が textbox から combobox に変わるため、ラベルで探す（UI／UX の指摘 中10）
+ */
+export function shipNameInput(group: HTMLElement): HTMLInputElement {
+  return within(group).getByLabelText("追加する艦名") as HTMLInputElement;
+}
+
+/** 特効グループの「追加する艦名」の入力欄（なければ null） */
+export function queryShipNameInput(group: HTMLElement): HTMLInputElement | null {
+  return within(group).queryByLabelText("追加する艦名") as HTMLInputElement | null;
+}
+
 /** 新規作成に切り替える（管理者） */
 export async function switchToCreate(user: UserEvent): Promise<void> {
   await user.click(screen.getByRole("radio", { name: "新規作成" }));

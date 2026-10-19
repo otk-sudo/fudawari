@@ -19,7 +19,7 @@
   --pe-success-bg: #17291f; /* 保存・公開したときの知らせ */
   --pe-success-border: #2e6b4a;
   --pe-success-text: #bfe8d0;
-  --pe-pending: #f2c98a; /* 未公開の変更・知らない艦名の警告 */
+  --pe-pending: var(--color-warning); /* 未公開の変更・知らない艦名の警告（theme.css の共通の警告色。ライトもそちらで切り替わる） */
   --pe-chip-bg: #26292f; /* 操作の説明・「＋」のメニューの下地 */
   --pe-chip-border: #33363d;
   --pe-inset-bg: #1a1c20; /* 札の行・特効グループの下地 */
@@ -66,7 +66,6 @@
   --pe-success-bg: #e7f5ec; /* 仮 */
   --pe-success-border: #9fd1b4; /* 仮 */
   --pe-success-text: #1d5a37; /* 仮 */
-  --pe-pending: #8a5a00; /* 仮 */
   --pe-chip-bg: #f3f4f6; /* 仮 */
   --pe-chip-border: #d5d8de; /* 仮 */
   --pe-inset-bg: #f7f8fa; /* 仮 */
@@ -109,7 +108,6 @@
     --pe-success-bg: #e7f5ec; /* 仮 */
     --pe-success-border: #9fd1b4; /* 仮 */
     --pe-success-text: #1d5a37; /* 仮 */
-    --pe-pending: #8a5a00; /* 仮 */
     --pe-chip-bg: #f3f4f6; /* 仮 */
     --pe-chip-border: #d5d8de; /* 仮 */
     --pe-inset-bg: #f7f8fa; /* 仮 */

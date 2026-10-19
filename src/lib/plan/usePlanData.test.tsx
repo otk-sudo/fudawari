@@ -11,7 +11,7 @@ import { type ReactNode, StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssignmentMap } from "@/domain/plan/types";
 import { getPlanStorage, type PlanData, resetPlanDataCache, usePlanData } from "@/lib/plan";
-import type { FudawariStorage, SaveImportResult } from "@/lib/storage";
+import type { FudawariStorage, SaveImportInput, SaveImportResult } from "@/lib/storage";
 import { shipByUid, summer2026Assignments, summer2026Definition, summer2026Ships } from "@/test/fixtures";
 import {
   byUid,
@@ -884,6 +884,106 @@ describe("札割りのデータのフック（usePlanData）", () => {
       // 検証：未保存の割り当ては、取り込みの後の艦（初霜改二・明石改）で絞って残り、保存先にも入る
       expect(expectReady(result.current).assignments).toEqual({ hatsushimo: "rengo" });
       expect(await storage.loadAssignments(EVENT_ID)).toEqual({ hatsushimo: "rengo" });
+    });
+  });
+
+  // 取り込み直しの「札割り n 隻を引き継ぎました」の n（UI／UX の指摘 中7、PR #44 の Codex の指摘 P2）。
+  // 外した件数と同じく、保存に失敗した割り当てが残っているイベントは、その割り当て（画面に出ていて、読み直しても残る）で数える
+  describe("取り込みの保存で引き継いだ割り当ての数と、未保存の割り当て（getPlanStorage）", () => {
+    it.each([
+      {
+        label: "保存先は 1 件（初霜改二）だが、未保存の割り当ては 2 件（初霜改二・明石改）",
+        saved: { hatsushimo: "s31" },
+        unsaved: { hatsushimo: "s31", akashi: "sixth" },
+        ships: ["hatsushimo", "akashi"],
+        expected: 2,
+      },
+      {
+        label: "保存先では残る（初霜改二）が、未保存の割り当て（明石改だけ）では取り込みにいないので残らない",
+        saved: { hatsushimo: "s31" },
+        unsaved: { akashi: "s31" },
+        ships: ["hatsushimo"],
+        expected: 0,
+      },
+    ])(
+      "未保存の割り当てがあるイベントの引き継いだ数は、未保存の割り当てのうち取り込んだ個体に残るもので数える（$label）",
+      async ({ saved, unsaved, ships, expected }) => {
+        // 準備：初霜改二と明石改を取り込み、保存先の割り当てを置いてから、未保存の割り当て（保存に失敗した変更）を作る
+        await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+        await storage.saveAssignments(EVENT_ID, saved);
+        const { result } = await renderReady();
+        await setAssignmentsFailingOnce(result, unsaved);
+        const input = importInput(ships.map(shipByUid), { importedAt: NEXT_IMPORTED_AT, keptCountEventId: EVENT_ID });
+
+        // 実行
+        let saveResult: SaveImportResult | undefined;
+        await act(async () => {
+          saveResult = await getPlanStorage().saveImport(input);
+        });
+
+        // 検証
+        expect(saveResult?.keptAssignmentCount).toBe(expected);
+      },
+    );
+
+    it("未保存の割り当てがないときは、保存先で数えた引き継いだ数を返す", async () => {
+      // 準備
+      await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+      await storage.saveAssignments(EVENT_ID, { hatsushimo: "s31", akashi: "sixth" });
+      await renderReady();
+      const input = importInput([shipByUid("hatsushimo")], { importedAt: NEXT_IMPORTED_AT, keptCountEventId: EVENT_ID });
+
+      // 実行
+      let saveResult: SaveImportResult | undefined;
+      await act(async () => {
+        saveResult = await getPlanStorage().saveImport(input);
+      });
+
+      // 検証
+      expect(saveResult).toEqual({ removedAssignmentCount: 1, keptAssignmentCount: 1 });
+    });
+
+    it("未保存の割り当てがあっても、保存先の割り当ての読み取り（数え直しの準備）が失敗したら、引き継いだ数は未保存の割り当てで数える", async () => {
+      // 準備
+      await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+      await storage.saveAssignments(EVENT_ID, { hatsushimo: "s31" });
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, { hatsushimo: "s31", akashi: "sixth" });
+      vi.spyOn(storage, "loadAssignments").mockRejectedValueOnce(new Error("UnknownError"));
+      const input = importInput([shipByUid("hatsushimo"), shipByUid("akashi")], {
+        importedAt: NEXT_IMPORTED_AT,
+        keptCountEventId: EVENT_ID,
+      });
+
+      // 実行
+      let saveResult: SaveImportResult | undefined;
+      await act(async () => {
+        saveResult = await getPlanStorage().saveImport(input);
+      });
+
+      // 検証
+      expect(saveResult?.keptAssignmentCount).toBe(2);
+    });
+
+    it("未保存の割り当てがあっても、個体 ID がない古い形式の取り込みでは引き継がないので 0（U9）", async () => {
+      // 準備
+      await storage.saveImport(importInput([shipByUid("hatsushimo"), shipByUid("akashi")]));
+      await storage.saveAssignments(EVENT_ID, { hatsushimo: "s31" });
+      const { result } = await renderReady();
+      await setAssignmentsFailingOnce(result, { hatsushimo: "s31", akashi: "sixth" });
+      const input: SaveImportInput = {
+        ...legacyImportInput(legacyShips(shipByUid("hatsushimo")), NEXT_IMPORTED_AT),
+        keptCountEventId: EVENT_ID,
+      };
+
+      // 実行
+      let saveResult: SaveImportResult | undefined;
+      await act(async () => {
+        saveResult = await getPlanStorage().saveImport(input);
+      });
+
+      // 検証
+      expect(saveResult?.keptAssignmentCount).toBe(0);
     });
   });
 

@@ -19,11 +19,13 @@ import {
   type EditResult,
   type EventInfoError,
   findDocumentIssues,
+  findPublishWarnings,
   formatDateTimeJst,
   fromDateTimeLocalValue,
   isEventEnded,
   moveFuda,
   moveStage,
+  type PublishWarning,
   removeArea,
   removeShipName,
   setGroupNationalities,
@@ -71,6 +73,7 @@ import {
 import { EventPanel, type EventField, type FieldTexts } from "./EventPanel";
 import { FlowSection, type StageMark } from "./FlowSection";
 import { FudaSection } from "./FudaSection";
+import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { EditingPresence } from "./presence/EditingPresence";
 import type { PresenceConnector } from "./presence/types";
 import { SaveLogDialog } from "./save-log/SaveLogDialog";
@@ -326,6 +329,8 @@ function eventInfoErrors(mode: EditMode, meta: EventMeta, now: Date): EventInfoE
  *   更新は列にして 1 つずつ順に送り（後の更新はそれまでに確定した値をすべて持つ）、前の更新が失敗しても続ける
  * - 「下書きを保存」「変更を公開する」は、それまでに確定したイベント名・日時の更新が終わってから保存・公開する。
  *   保存・公開の途中は、イベント名・日時の欄を操作できなくする
+ * - 「変更を公開する」「公開して最新にする」は、入力の検証を通ったら公開の前の確認（警告の一覧と「公開する」「やめる」）を出し、
+ *   「公開する」を押してから保存・公開する。「やめる」なら何もしない（UI／UX の指摘 中8）
  * - 「変更を公開する」は、保存していない変更があれば先に下書きを保存し、返った版を公開する
  * - 新規作成の「下書きを保存」は 1 回目にイベントを作成し、2 回目からはその下書きを保存する。
  *   「公開して最新にする」は、まだ作成していなければ作成してから、返った版を最新にして公開する。
@@ -362,6 +367,15 @@ export function DefinitionEditor({
   const baseRequestRef = useRef(0);
   // 保存の確認のウィンドウ（同じ所を 2 人が変えていたとき）
   const [conflict, setConflict] = useState<ConflictState | null>(null);
+  // 公開の前の確認に出している警告（null なら確認を出していない。UI／UX の指摘 中8）
+  const [publishWarnings, setPublishWarnings] = useState<readonly PublishWarning[] | null>(null);
+  // 段階の詳細へのスクロールの要求（攻略の流れで段階を選ぶたびに増やす。0 は要求なし。UI／UX の指摘 中11）
+  const [detailScrollRequest, setDetailScrollRequest] = useState(0);
+  const detailRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (detailScrollRequest === 0) return;
+    detailRef.current?.scrollIntoView({ block: "start" });
+  }, [detailScrollRequest]);
   // 確認のウィンドウを閉じた後にフォーカスを戻す先（保存・公開を押したボタン）
   const returnFocusRef = useRef<HTMLElement | null>(null);
   // 前の描画で確認のウィンドウが開いていたか（閉じたときだけフォーカスを戻すため）
@@ -373,6 +387,21 @@ export function DefinitionEditor({
     if (!dialogOpen && dialogWasOpenRef.current) returnFocusRef.current?.focus();
     dialogWasOpenRef.current = dialogOpen;
   }, [dialogOpen]);
+  // 公開の前の確認で「公開する」を押した後、公開が終わったら押した公開のボタンへフォーカスを戻す
+  // （確認を閉じた時点では公開の途中でボタンを押せず、フォーカスを置けないため。PR #44 のレビュー）。
+  // 保存の確認のウィンドウが出たときは、そのウィンドウが閉じたときに戻す（上の効果）ので、ここでは戻さない
+  // （確認を閉じた描画でも効果を走らせるため、確認の警告も依存に入れる。公開を始める前に止まったときは、その場で戻す）
+  const focusAfterPublishRef = useRef(false);
+  const publishSettled = busy === null;
+  useEffect(() => {
+    if (!focusAfterPublishRef.current || !publishSettled || publishWarnings !== null) return;
+    focusAfterPublishRef.current = false;
+    // 公開の途中も本文は編集できる。ほかの欄へ移っていたら（フォーカスが body・なし以外）奪わない
+    // （打ちかけの艦名の欄からフォーカスを外すと、その欄の確定でタグが足されてしまうため。PR #44 の再レビュー）
+    const active = document.activeElement;
+    const focusLost = active === null || active === document.body;
+    if (!dialogOpen && focusLost) returnFocusRef.current?.focus();
+  }, [publishSettled, dialogOpen, publishWarnings]);
   // 今のモード（保存の途中に切り替えた後で衝突が返ったとき、衝突したワークスペースのモードに戻すかを見る）
   const modeRef = useRef(state.mode);
   useEffect(() => {
@@ -492,6 +521,8 @@ export function DefinitionEditor({
 
   const selectStage = (stageId: string): void => {
     updateWorkspace(mode, (current) => ({ ...current, selectedStageId: stageId }));
+    // 選んだ段階の詳細が画面の外にあることが多いので、描き直した後にそこへスクロールする（UI／UX の指摘 中11）
+    setDetailScrollRequest((count) => count + 1);
   };
 
   const addStageAt = (fudaId: string, position: StagePosition): void => {
@@ -906,11 +937,34 @@ export function DefinitionEditor({
     }
   };
 
+  /**
+   * 「変更を公開する」「公開して最新にする」：入力の検証を先に行い、通ったら公開の前の確認を出す（UI／UX の指摘 中8）。
+   * 警告は文書全体から集める（findPublishWarnings）。確認で「公開する」を押したら handlePublish で公開する
+   */
+  const requestPublish = (): void => {
+    if (publishDisabled) return;
+    rememberTrigger();
+    setNotice(null);
+    if (prepare(mode, ws) === null) return;
+    setPublishWarnings(findPublishWarnings(ws.doc, knownShipNames));
+  };
+
+  const confirmPublish = (): void => {
+    focusAfterPublishRef.current = true;
+    setPublishWarnings(null);
+    void handlePublish();
+  };
+
+  /** 公開の前の確認で「やめる」（保存も公開もしない。フォーカスは確認のウィンドウが公開のボタンへ戻す） */
+  const cancelPublish = (): void => {
+    setPublishWarnings(null);
+  };
+
+  /** 公開する（公開の前の確認で「公開する」を押した後。押したボタンは requestPublish で覚えている） */
   const handlePublish = async (): Promise<void> => {
     if (publishDisabled) return;
     const target = mode;
     const current = ws;
-    rememberTrigger();
     setNotice(null);
     const prepared = prepare(target, current);
     if (prepared === null) return;
@@ -1107,7 +1161,7 @@ export function DefinitionEditor({
         publishDisabled={publishDisabled}
         publishLabel={publishLabel}
         onSaveDraft={() => void handleSaveDraft()}
-        onPublish={() => void handlePublish()}
+        onPublish={requestPublish}
         draftLogSlot={draftLogSlot}
         presenceSlot={presenceSlot}
       />
@@ -1171,6 +1225,13 @@ export function DefinitionEditor({
         />
       )}
 
+      <PublishConfirmDialog
+        warnings={publishWarnings}
+        onConfirm={confirmPublish}
+        onCancel={cancelPublish}
+        returnFocusRef={returnFocusRef}
+      />
+
       <EditorDndProvider onDrop={handleDrop}>
         <div
           className={styles.workArea}
@@ -1206,6 +1267,7 @@ export function DefinitionEditor({
                 knownShipNames={knownShipNames}
                 actions={stageActions}
                 onGroupInvalidChange={reportGroupInvalid}
+                sectionRef={detailRef}
               />
             )}
           </div>
