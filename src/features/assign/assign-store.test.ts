@@ -150,13 +150,17 @@ describe("「ここに置く」「（札名）に置く」", () => {
     expect(store.getState().selectedUid).toBeNull();
   });
 
-  it("置いた後も、開いたカードは開いたままになる（選択だけが外れる。モックの placeTo どおり）", () => {
+  it("置いても、置いた艦のほかに開いていたカードは開いたまま（置いた艦のカードだけを閉じる）", () => {
+    // 準備：伊168改を開き、続けて雪風改を選ぶ（伊168改は開いたまま）
     const { store } = setup();
+    store.getState().pressShip("i168");
     store.getState().pressShip("yukikaze2");
 
+    // 実行
     store.getState().placeSelected("rengo");
 
-    expect(openSet(store)).toEqual(new Set(["yukikaze2"]));
+    // 検証
+    expect(openSet(store)).toEqual(new Set(["i168"]));
   });
 
   it("艦を選んでいないときは、置く操作をしても何も変わらない", () => {
@@ -296,6 +300,73 @@ describe("ドラッグ＆ドロップ", () => {
   });
 });
 
+// 札へ移したら閉じる（「ここに置く」・札の列へ落とすは assign-store.place-close.test.ts）。ここでは入れ替え・控えへ戻す・動かないとき
+describe("ドラッグで落としたときのカードの開閉", () => {
+  /** uids を開き、選択だけをやめる（「×」と同じ。開いたまま） */
+  function openOnly(store: AssignStore, ...uids: string[]): void {
+    for (const uid of uids) store.getState().pressShip(uid);
+    store.getState().clearSelection();
+  }
+
+  it("入れ替えでドラッグした艦が札へ移ると、その艦のカードは閉じ、押し出された艦の開閉は変わらない", () => {
+    // 準備：控えの雪風改と、連合艦隊の時雨改二を開く
+    const { store } = setup();
+    openOnly(store, "yukikaze2", "shigure2");
+
+    // 実行：雪風改を時雨改二に重ねて落とす（雪風改が連合艦隊へ、時雨改二が控えへ）
+    store.getState().startDrag("yukikaze2");
+    store.getState().dropOnShip("yukikaze2", "shigure2");
+
+    // 検証
+    expect(fudaOf(store, "yukikaze2")).toBe("rengo");
+    expect(openSet(store)).toEqual(new Set(["shigure2"]));
+  });
+
+  it("札どうしの入れ替えでも、ドラッグした艦のカードだけを閉じる", () => {
+    const { store } = setup();
+    openOnly(store, "hatsushimo", "shigure2");
+
+    store.getState().startDrag("hatsushimo");
+    store.getState().dropOnShip("hatsushimo", "shigure2");
+
+    expect(fudaOf(store, "hatsushimo")).toBe("rengo");
+    expect(openSet(store)).toEqual(new Set(["shigure2"]));
+  });
+
+  it("控えの艦に重ねてドラッグした艦が控えへ戻ったときは、閉じない", () => {
+    const { store } = setup();
+    openOnly(store, "hatsushimo");
+
+    store.getState().startDrag("hatsushimo");
+    store.getState().dropOnShip("hatsushimo", "yukikaze2");
+
+    expect(fudaOf(store, "hatsushimo")).toBeUndefined();
+    expect(openSet(store)).toEqual(new Set(["hatsushimo"]));
+  });
+
+  it("控えへ落として割り当てを外しても、閉じない", () => {
+    const { store } = setup();
+    openOnly(store, "hatsushimo");
+
+    store.getState().startDrag("hatsushimo");
+    store.getState().dropOnTray("hatsushimo");
+
+    expect(fudaOf(store, "hatsushimo")).toBeUndefined();
+    expect(openSet(store)).toEqual(new Set(["hatsushimo"]));
+  });
+
+  it("今の札の列に落とした・同じ札の艦に重ねた（札が変わらない）ときは、閉じない", () => {
+    const { store } = setup();
+    openOnly(store, "hatsushimo");
+
+    store.getState().startDrag("hatsushimo");
+    store.getState().dropOnFuda("hatsushimo", "s31");
+    store.getState().dropOnShip("hatsushimo", "fuyuzuki");
+
+    expect(openSet(store)).toEqual(new Set(["hatsushimo"]));
+  });
+});
+
 describe("元に戻す（U22：割り振り画面の中で 20 手まで）", () => {
   it("初めは戻すものがなく、「元に戻す」は押せない状態で、押しても何も変わらない", () => {
     const { store, save } = setup();
@@ -394,7 +465,7 @@ describe("元に戻す（U22：割り振り画面の中で 20 手まで）", () 
   });
 
   it("選択・開閉は「元に戻す」の対象にしない：戻しても今の選択と開いたカードはそのまま", () => {
-    // 準備：雪風改を置いた後、別の艦を選んで開く
+    // 準備：雪風改を置いた（雪風改のカードは閉じる）後、別の艦を選んで開く
     const { store } = setup();
     store.getState().pressShip("yukikaze2");
     store.getState().placeSelected("rengo");
@@ -403,10 +474,10 @@ describe("元に戻す（U22：割り振り画面の中で 20 手まで）", () 
     // 実行
     store.getState().undo();
 
-    // 検証：割り当てだけが戻る
+    // 検証：割り当てだけが戻る（置いたときに閉じた雪風改のカードも開き直さない）
     expect(fudaOf(store, "yukikaze2")).toBeUndefined();
     expect(store.getState().selectedUid).toBe("i168");
-    expect(openSet(store)).toEqual(new Set(["yukikaze2", "i168"]));
+    expect(openSet(store)).toEqual(new Set(["i168"]));
   });
 
   it("画面を移る（ストアを作り直す）と履歴は消え、初めは戻せない", () => {

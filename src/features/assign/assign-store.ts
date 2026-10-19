@@ -4,9 +4,13 @@
 // 画面からは zustand の useStore(store, selector) で状態を読み、状態の中の関数で操作する。
 //
 // - 選択と開閉：艦を押すと選んで特効を開く。別の艦を選んでも前に開いた艦は閉じない。同じ艦をもう一度押すと選択を外して閉じる。
-// - 置く：「ここに置く」「（札名）に置く」で選択中の艦をその札へ移し、選択を外す。
+// - 置く：「ここに置く」「（札名）に置く」で選択中の艦をその札へ移し、選択を外して、その艦のカードを閉じる。
 // - ドラッグ＆ドロップ：札の列へ落とすと移動、別の艦に重ねると入れ替え（相手が控えなら自分が控えへ）、控えへ落とすと割り当てを外す。
 //   自分に落としても変わらない。ドラッグを始めると選択が外れる。
+//   ドラッグした艦が別の札へ移ったら（札の列へ落とす・入れ替えで札に入る）、その艦のカードを閉じる。控えへ戻したときと、
+//   入れ替えで押し出された艦の開閉は変えない。
+// - 札へ移した艦のカードを閉じるのは、続けて置いても「特効を表示中：n 隻」が増え続けず、札の列が開いたカードで伸び続けないため
+//   （UI／UX レビュー 2026-10-19。閉じるのは置いた艦だけで、ほかの開いた艦はそのまま）。
 // - 元に戻す：割り当ての変更だけが対象（選択・開閉は対象外）。20 手まで。
 // - 外からの置き換え：画面の外（設定の札割りの読み込みなど）で割り当てが変わったら、新しい割り当てに替えて履歴を捨てる
 //   （replaceAssignments。保存はしない。保存先はもう新しい割り当てになっている。保存の失敗の知らせを消し、
@@ -58,15 +62,18 @@ export interface AssignState {
   clearSelection(): void;
   /** 「すべて閉じる」：開いたカードをすべて閉じ、選択も外す */
   closeAll(): void;
-  /** 「ここに置く」「（札名）に置く」：選択中の艦をその札へ移し、選択を外す。選択がなければ何もしない */
+  /** 「ここに置く」「（札名）に置く」：選択中の艦をその札へ移し、選択を外して、その艦のカードを閉じる。選択がなければ何もしない */
   placeSelected(fudaId: string): void;
   /** ドラッグを始めた（選択が外れる） */
   startDrag(uid: ShipUid): void;
-  /** 札の列の空いている所に落とした：その札へ移す */
+  /** 札の列の空いている所に落とした：その札へ移し、移ったらその艦のカードを閉じる */
   dropOnFuda(uid: ShipUid, fudaId: string): void;
-  /** 別の艦のカードに重ねて落とした：2 隻の札を入れ替える（相手が控えなら自分が控えに戻り、相手がその札に入る） */
+  /**
+   * 別の艦のカードに重ねて落とした：2 隻の札を入れ替える（相手が控えなら自分が控えに戻り、相手がその札に入る）。
+   * ドラッグした艦が別の札へ移ったら、その艦のカードを閉じる（押し出された艦の開閉は変えない）
+   */
   dropOnShip(uid: ShipUid, targetUid: ShipUid): void;
-  /** 控えに落とした：割り当てを外す */
+  /** 控えに落とした：割り当てを外す（カードの開閉は変えない） */
   dropOnTray(uid: ShipUid): void;
   /** 「元に戻す」：直前の割り当ての変更を戻す。戻すものがなければ何もしない */
   undo(): void;
@@ -137,14 +144,24 @@ export function createAssignStore(options: AssignStoreOptions): AssignStore {
       }
     };
 
-    /** 札を変える。1 隻も変わらなければ何もしない。変わったら前の割り当てを履歴に積んで保存する */
-    const reassign = (changes: readonly Reassignment[]): void => {
+    /**
+     * 札を変える。1 隻も変わらなければ何もしない。変わったら前の割り当てを履歴に積んで保存する。
+     * 戻り値は割り当てが変わったか
+     */
+    const reassign = (changes: readonly Reassignment[]): boolean => {
       const current = get().assignments;
-      if (changes.every(([uid, fudaId]) => fudaOf(current, uid) === fudaId)) return;
+      if (changes.every(([uid, fudaId]) => fudaOf(current, uid) === fudaId)) return false;
       const next = applyReassignments(current, changes);
       past = [...past, current].slice(-UNDO_LIMIT);
       set({ assignments: next, canUndo: true });
       persist(next);
+      return true;
+    };
+
+    /** 札へ移した艦のカードを閉じる（ほかの開いた艦はそのまま） */
+    const closeCard = (uid: ShipUid): void => {
+      const { openUids } = get();
+      if (openUids.includes(uid)) set({ openUids: openUids.filter((open) => open !== uid) });
     };
 
     return {
@@ -169,20 +186,27 @@ export function createAssignStore(options: AssignStoreOptions): AssignStore {
         const { selectedUid } = get();
         if (selectedUid === null) return;
         reassign([[selectedUid, fudaId]]);
-        // 開いたカードは開いたまま（モック Assign.dc.html の placeTo どおり）
-        set({ selectedUid: null });
+        // 置いた艦のカードは閉じる（モック Assign.dc.html の placeTo は開いたままだが、UI／UX レビュー 2026-10-19 で変えた。
+        // ほかの開いた艦は閉じない）
+        set({ selectedUid: null, openUids: get().openUids.filter((open) => open !== selectedUid) });
       },
       // ドラッグ中の艦は画面（dnd-kit）が持つ。ストアは選択を外すだけ
       startDrag: () => set({ selectedUid: null }),
-      dropOnFuda: (uid, fudaId) => reassign([[uid, fudaId]]),
+      dropOnFuda: (uid, fudaId) => {
+        // 今の札に落としただけ（移っていない）なら、開閉も変えない
+        if (reassign([[uid, fudaId]])) closeCard(uid);
+      },
       dropOnShip: (uid, targetUid) => {
         if (uid === targetUid) return;
         const { assignments } = get();
+        const destination = fudaOf(assignments, targetUid);
         // 控えどうし・同じ札どうしなら札は変わらない（reassign が何もしない）
-        reassign([
-          [uid, fudaOf(assignments, targetUid)],
+        const changed = reassign([
+          [uid, destination],
           [targetUid, fudaOf(assignments, uid)],
         ]);
+        // ドラッグした艦が札へ移ったときだけ閉じる（相手が控えで、自分が控えに戻ったときは閉じない）
+        if (changed && destination !== undefined) closeCard(uid);
       },
       dropOnTray: (uid) => reassign([[uid, undefined]]),
       replaceAssignments: (assignments) => {

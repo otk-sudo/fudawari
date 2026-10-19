@@ -50,13 +50,13 @@
   list-style: none;
 }
 
-/* 区切りの見出し */
+/* 区切りの見出し（高さは控えの .tray の --tray-group-header-height。一覧の scroll-padding-top とそろえる） */
 .header {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  min-height: 28px;
+  min-height: var(--tray-group-header-height, 28px);
   padding: 0 4px;
   background: var(--color-surface);
   color: var(--color-text-secondary);

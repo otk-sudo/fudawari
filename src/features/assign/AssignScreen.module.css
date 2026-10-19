@@ -29,11 +29,19 @@
   --assign-band-text: #cfe0ff; /* 「特効を表示中」の帯・お知らせの文字 */
   --assign-band-button-border: #4a6a9a; /* 「すべて閉じる」・パネルの「×」の枠、検索欄の下線 */
   --assign-panel-sub: #b9c8e0; /* パネルの「艦種 ・ Lv ・ いま：」 */
-  --assign-faint-text: #6b717c; /* 薄い文字（「条件に合う艦はいません」「特効なし：」「ここに置く（特効なし）」） */
   --assign-select-underline: #5a606a; /* 並び順のプルダウンの下線 */
   --assign-place-boost-bg: #3a3220; /* 「ここに置く（特効あり）」の下地 */
   --assign-place-boost-text: #f6e2b3; /* 「ここに置く（特効あり）」の文字 */
   --assign-place-boost-border: #6e5520; /* 「ここに置く（特効あり）」の枠 */
+
+  /*
+   * 画面に留める部品（ヘッダー帯・控え・選択中の艦のパネル）の位置と高さ。テーマで変わらない。
+   * ヘッダー帯の高さは AssignScreen が測って style で上書きする（狭い画面で折り返したときも、その下に留めるため）。
+   * ここの値は測る前に使う値（上下の余白 8px×2 ＋ ボタンの高さ 34px ＋ 下の線 1px）
+   */
+  --assign-header-height: 51px;
+  --assign-sticky-gap: 12px; /* ヘッダー帯の下と、留めた控え・パネルの間（本文の上の余白と同じ） */
+  --assign-body-bottom: 16px; /* 本文の下の余白（控えの下端と画面の下端の間） */
 
   display: flex;
   flex-direction: column;
@@ -60,7 +68,6 @@
   --assign-band-text: #1f3a66;
   --assign-band-button-border: #7f9fd6;
   --assign-panel-sub: #4a5a75;
-  --assign-faint-text: #737a85;
   --assign-select-underline: #9aa0aa;
   --assign-place-boost-bg: #fbf1dc;
   --assign-place-boost-text: #6b4a00;
@@ -88,7 +95,6 @@
     --assign-band-text: #1f3a66;
     --assign-band-button-border: #7f9fd6;
     --assign-panel-sub: #4a5a75;
-    --assign-faint-text: #737a85;
     --assign-select-underline: #9aa0aa;
     --assign-place-boost-bg: #fbf1dc;
     --assign-place-boost-text: #6b4a00;
@@ -97,6 +103,16 @@
 }
 
 /* ---- ヘッダー ---- */
+
+/*
+ * ヘッダー帯（元に戻す・一覧で確認）を包む箱。ページをスクロールしても画面の上端に留める（UI／UX レビュー 2026-10-19）。
+ * 札の列・控え・パネルより上に重ねる（ヘッダー帯の下地は ScreenHeader の面の色なので、下を流れる部品は透けない）
+ */
+.headerBar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
 
 .headerNote {
   font-size: calc(12px * var(--font-scale));
@@ -195,7 +211,7 @@
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 12px;
-  padding: 12px 14px 16px;
+  padding: var(--assign-sticky-gap) 14px var(--assign-body-bottom);
 }
 
 .columns {
@@ -207,12 +223,30 @@
   min-width: 0;
 }
 
+/*
+ * 札の列の艦カードにフォーカスが移ったとき（置いた後・「×」の後）にブラウザがページをスクロールしても、
+ * 留めたヘッダー帯の下に隠さない
+ */
+.columns [data-ship-uid] {
+  scroll-margin-top: calc(var(--assign-header-height) + var(--assign-sticky-gap));
+}
+
+/*
+ * 選択中の艦のパネルの置き場所。ページをスクロールしても、ヘッダー帯の下に留める（UI／UX レビュー 2026-10-19）。
+ * 高さは画面の高さから上（ヘッダー帯と間）と下（本文の下の余白）を除いた分まで（ページの一番下まで
+ * スクロールしても、本文の終わりに押し上げられてヘッダー帯に寄らない）。入りきらないときは、パネルの中（札ごとのブロック）を
+ * スクロールさせる（SelectedShipPanel.module.css。艦名と「×」は上に残す）。ここの overflow は念のため
+ */
 .side {
+  position: sticky;
+  top: calc(var(--assign-header-height) + var(--assign-sticky-gap));
   display: flex;
   flex: 1 1 300px;
   flex-direction: column;
   gap: 10px;
   max-width: 340px;
+  max-height: calc(100dvh - var(--assign-header-height) - var(--assign-sticky-gap) - var(--assign-body-bottom));
+  overflow-y: auto;
 }
 
 /* ---- ドラッグ中にポインターにつける艦カードの写し ---- */

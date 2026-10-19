@@ -559,3 +559,106 @@ for (const theme of ["dark", "light"] as const) {
     });
   });
 }
+
+// ---- 【中12 の割り振りの分・追加】控えの「条件に合う艦はいません」とパネルの「特効なし：」のコントラスト ----
+// 親の追加の決定（2026-10-19）：薄い文字の色（--assign-faint-text。ダーク 3.28・ライト 4.33）をやめ、4.5:1 以上にする。
+// 測り方は上の sampleColumnTexts と同じ（祖先の背景を重ね、祖先の opacity も掛けた見え方。WCAG 2 の相対輝度）
+
+/** 要素 1 つの文字と背景のコントラスト比（実際の見え方）。ブラウザで評価する */
+function measureTextContrast(element: Element): { ratio: number; fontSize: number } {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (context === null) throw new Error("canvas が使えない");
+  type Rgba = { r: number; g: number; b: number; a: number };
+  const parse = (value: string): Rgba => {
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = "#000";
+    context.fillStyle = value;
+    context.fillRect(0, 0, 1, 1);
+    const [r = 0, g = 0, b = 0, a = 0] = context.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
+  };
+  const over = (top: Rgba, bottom: Rgba, alpha: number): Rgba => ({
+    r: top.r * alpha + bottom.r * (1 - alpha),
+    g: top.g * alpha + bottom.g * (1 - alpha),
+    b: top.b * alpha + bottom.b * (1 - alpha),
+    a: 1,
+  });
+  const luminance = (color: Rgba): number => {
+    const channel = (value: number): number => {
+      const v = value / 255;
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+  };
+  const chain: Element[] = [];
+  for (let node: Element | null = element; node !== null; node = node.parentElement) chain.unshift(node);
+  let background: Rgba = { r: 255, g: 255, b: 255, a: 1 };
+  const groups: { opacity: number; backdrop: Rgba }[] = [];
+  for (const node of chain) {
+    const style = getComputedStyle(node);
+    const opacity = Number(style.opacity);
+    if (opacity < 1) groups.unshift({ opacity, backdrop: background });
+    const color = parse(style.backgroundColor);
+    if (color.a > 0) background = over(color, background, color.a);
+  }
+  const textColor = parse(getComputedStyle(element).color);
+  let foreground = over(textColor, background, textColor.a);
+  let backgroundSeen = background;
+  for (const group of groups) {
+    foreground = over(foreground, group.backdrop, group.opacity);
+    backgroundSeen = over(backgroundSeen, group.backdrop, group.opacity);
+  }
+  const [high, low] = [luminance(foreground), luminance(backgroundSeen)].sort((x, y) => y - x);
+  return {
+    ratio: Math.round((((high ?? 0) + 0.05) / ((low ?? 0) + 0.05)) * 100) / 100,
+    fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+  };
+}
+
+for (const theme of ["dark", "light"] as const) {
+  test.describe(`【中12・追加】${theme === "dark" ? "ダーク" : "ライト"}で、控えとパネルの薄い文字が読める`, () => {
+    test.use({ viewport: { width: 1920, height: 1080 } });
+
+    /** テスト用データで開き、画面モードを決める */
+    async function openWithTheme(page: Page): Promise<void> {
+      await seedPlan(page, { ships: summer2026Ships, assignments: summer2026Assignments });
+      await openAssignScreen(page);
+      if (theme === "light") await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    }
+
+    test("控えの「条件に合う艦はいません」の文字と背景のコントラスト比が 4.5 以上", async ({ page }) => {
+      // 準備
+      await openWithTheme(page);
+
+      // 実行：どの艦にも当たらない文字で検索する
+      await trayOf(page).getByRole("searchbox", { name: "図鑑ID・名称で検索" }).fill("該当なしの艦名");
+      const empty = trayOf(page).getByText("条件に合う艦はいません", { exact: true });
+      await expect(empty).toBeVisible();
+
+      // 検証
+      const sample = await empty.evaluate(measureTextContrast);
+      test.info().annotations.push({ type: "計測", description: `${sample.ratio}:1（${sample.fontSize}px）` });
+      expect(sample.ratio, `${sample.ratio}:1`).toBeGreaterThanOrEqual(4.5);
+    });
+
+    test("選んだ艦のパネルの「特効なし：」の文字と背景のコントラスト比が 4.5 以上", async ({ page }) => {
+      // 準備
+      await openWithTheme(page);
+
+      // 実行：利根改二（第三十一戦隊・多号作戦部隊・第六艦隊で特効なし）を選ぶ
+      await cardIn(trayOf(page), "tone").click();
+      const none = panelOf(page).getByText(/^特効なし：/);
+      await expect(none).toBeVisible();
+
+      // 検証
+      const sample = await none.evaluate(measureTextContrast);
+      test.info().annotations.push({ type: "計測", description: `${sample.ratio}:1（${sample.fontSize}px）` });
+      expect(sample.ratio, `${sample.ratio}:1`).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+}

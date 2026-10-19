@@ -1101,13 +1101,15 @@ describe("割り振り画面の中身（AssignScreen）", () => {
       expect(save).toHaveBeenLastCalledWith(EVENT_ID, { ...summer2026Assignments, tone: "rengo" });
     });
 
-    it("置いた艦のカードは開いたままで、移った札の段階の倍率だけを並べる", async () => {
+    it("置いた艦のカードは閉じ、押して開き直すと、移った札の段階の倍率だけを並べる", async () => {
       // 準備
       const { user } = renderAssignScreen();
       await user.click(getCard(getTray(), "利根改二"));
 
-      // 実行
+      // 実行：置く（カードは閉じる）→ 移った札の列のカードを押して開く
       await user.click(within(getColumn("連合艦隊")).getByRole("button", { name: "ここに置く（特効あり）" }));
+      expect(getCard(getColumn("連合艦隊"), "利根改二")).toHaveAttribute("aria-expanded", "false");
+      await user.click(getCard(getColumn("連合艦隊"), "利根改二"));
 
       // 検証
       const card = getCard(getColumn("連合艦隊"), "利根改二");

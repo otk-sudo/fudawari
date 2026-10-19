@@ -173,7 +173,13 @@ export function AssignScreen({
   const screenRef = useRef<HTMLDivElement>(null);
   // お知らせの欄の高さ。控えの高さの上限から引く（お知らせが出ていても、ページの一番上で控えが画面に収まるように。PR-14b）
   const [noticesRef, noticesHeight] = useElementHeight<HTMLDivElement>();
-  const screenStyle: StyleWithVariables = { "--assign-notices-height": `${noticesHeight}px` };
+  // 画面の上に留めるヘッダー帯の高さ。控えと選択中の艦のパネルを留める位置と高さの上限に使う（狭い画面でヘッダー帯が折り返しても
+  // その下に留めるため、測った高さを使う。測る前は AssignScreen.module.css の既定値）
+  const [headerRef, headerHeight] = useElementHeight<HTMLDivElement>();
+  const screenStyle: StyleWithVariables = {
+    "--assign-notices-height": `${noticesHeight}px`,
+    ...(headerHeight > 0 ? { "--assign-header-height": `${headerHeight}px` } : {}),
+  };
   const searchRef = useRef<HTMLInputElement>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
 
@@ -316,17 +322,20 @@ export function AssignScreen({
     <DndContext {...dndContextProps}>
       <DragLookupContext.Provider value={dragLookup}>
         <div ref={screenRef} className={styles.screen} style={screenStyle}>
-          <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
-            <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
-            <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
-            <span className={styles.headerSpacer} />
-            <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
-              元に戻す
-            </button>
-            <Link href={ROUTES.list} className={styles.listLink}>
-              一覧で確認
-            </Link>
-          </ScreenHeader>
+          {/* ヘッダー帯（元に戻す・一覧で確認）は、ページをスクロールしても画面の上に留める */}
+          <div ref={headerRef} className={styles.headerBar}>
+            <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
+              <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
+              <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
+              <span className={styles.headerSpacer} />
+              <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
+                元に戻す
+              </button>
+              <Link href={ROUTES.list} className={styles.listLink}>
+                一覧で確認
+              </Link>
+            </ScreenHeader>
+          </div>
 
           {(saveError !== null || returnedCount > 0) && (
             <div ref={noticesRef} className={styles.notices}>

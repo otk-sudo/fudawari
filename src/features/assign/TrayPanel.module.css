@@ -5,16 +5,27 @@
 
 /*
  * 控えは画面の高さいっぱいの高さにし（モックの控えも高さが決まっている）、艦の一覧の中だけをスクロールさせる（PR-14・PR-14b・PR #38）。
- * 高さ（--tray-max-height）は、画面の高さから、ページの一番上にいるときの控えの上（ヘッダー帯と本文の上の余白、約 63px）と
- * 本文の下の余白（16px）と、お知らせの欄の高さ（--assign-notices-height。AssignScreen が測って入れる。なければ 0）を除いた分。
+ * 高さ（--tray-max-height）は、画面の高さから、ページの一番上にいるときの控えの上（ヘッダー帯〔--assign-header-height〕と
+ * 本文の上の余白〔--assign-sticky-gap〕）と、本文の下の余白（--assign-body-bottom）と、お知らせの欄の高さ
+ * （--assign-notices-height。AssignScreen が測って入れる。なければ 0）を除いた分。変数は AssignScreen.module.css の .screen。
  * 中身に合わせて縮まないよう、上限ではなく高さそのものにする（艦が少なくても控えは画面の高さいっぱいになる）。
- * 札の列が高くてページがスクロールするときは、控えを画面の上端から 12px 離して留める（sticky）
+ * 札の列が高くてページがスクロールするときは、控えを画面の上に留めたヘッダー帯の下から 12px 離して留める（sticky。
+ * ヘッダー帯の下に潜らない）
  */
 .tray {
-  --tray-max-height: calc(100dvh - 84px - var(--assign-notices-height, 0px));
+  --tray-max-height: calc(
+    100dvh - var(--assign-header-height) - var(--assign-sticky-gap) - var(--assign-body-bottom) -
+      var(--assign-notices-height, 0px)
+  );
+  /*
+   * 控えの一覧の区切りの見出し（TrayGroupList.module.css の .header）の高さ。一覧の一番上に固定する見出しの下に
+   * 艦カードを隠さないよう、一覧の scroll-padding-top（.list）にも使う。
+   * 28px か、文字（12px × 文字の倍率 × 行の高さ 1.5）＋下の線 1px の高いほう（文字を大きくしても見出しの高さとそろう）
+   */
+  --tray-group-header-height: max(28px, calc(12px * var(--font-scale) * 1.5 + 1px));
 
   position: sticky;
-  top: 12px;
+  top: calc(var(--assign-header-height) + var(--assign-sticky-gap));
   display: flex;
   flex: 1 1 280px;
   flex-direction: column;
@@ -342,7 +353,10 @@
  * 上の余白は内側（padding）ではなく外側（margin）に取る：固定した区切りの見出しを一覧の上端ちょうどに留め、
  * スクロールしていないときと位置をそろえるため。下の余白は TrayGroupList が最後の行の下に足す。
  * 高さは控えの残り（上の操作の分を除いた全部）。基準を 0 にして、中身（全艦分）の高さで上の操作を押しつぶさない。
- * 欄を開いても数行は見えるよう、最小の高さ（160px）を持つ
+ * 欄を開いても数行は見えるよう、最小の高さ（160px）を持つ。
+ * 艦カードにフォーカスが移ったとき（「×」の後・押したとき）にブラウザがカードを一覧の上端にそろえても、一番上に固定した
+ * 区切りの見出しの下に艦名の行を隠さないよう、見出しの高さと見出しの行の下の間（4px。TrayGroupList.module.css の
+ * .spaceHeader）の分を上に空けてそろえさせる（scroll-padding-top。UI／UX レビュー 2026-10-19）
  */
 .list {
   flex: 1 1 0;
@@ -351,13 +365,15 @@
   padding: 0 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scroll-padding-top: calc(var(--tray-group-header-height) + 4px);
 }
 
+/* 「条件に合う艦はいません」。文字は補助の文字の色（面の上で 4.5:1 以上。UI／UX レビュー 2026-10-19） */
 .empty {
   margin: 0;
   padding: 16px 4px;
   font-size: calc(12px * var(--font-scale));
-  color: var(--assign-faint-text);
+  color: var(--color-text-muted);
   text-align: center;
 }
 

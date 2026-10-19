@@ -1,6 +1,6 @@
 /*
  * 札の列（モック Assign.dc.html の札ごとの <section>）。
- * 見出しの下地は札の色（style で渡す）。文字の色は札の色に合わせて暗い文字か白い文字を選ぶ（ship-view.ts の inkOn）
+ * 見出しの下地は札の色（style の --fuda-color）。文字の色は札の色に合わせて暗い文字か白い文字を選ぶ（ship-view.ts の inkOn）
  */
 
 .column {
@@ -10,9 +10,23 @@
   border-radius: 6px;
 }
 
-/* 選んだ艦に特効がない札の列 */
+/*
+ * 選んだ艦に特効がない札の列（薄い列）。
+ * モックは列ごと opacity で薄くしていたが、文字のコントラストが約 2:1 になるため（UI／UX レビュー 2026-10-19）、
+ * 下地・枠・見出しの札の色だけを抑え、文字は読める濃さ（4.5:1 以上）のままにする：
+ * - 列の下地は面より一段沈んだ下地の色、枠は破線
+ * - 見出しは札の色で塗らず、札の色は左端の線だけに残す（どの札かは見分けられる）。文字は控えめな文字の色
+ */
 .column[data-dimmed="true"] {
-  opacity: 0.55;
+  background: var(--color-bg);
+  border-style: dashed;
+}
+
+.column[data-dimmed="true"] .head {
+  background: var(--color-bg);
+  box-shadow: inset 4px 0 0 var(--fuda-color);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
 }
 
 /* ドラッグ中の落とす先の強調 */
@@ -26,6 +40,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
+  background: var(--fuda-color);
 }
 
 /* 札の色の上の文字（テーマで変えない。下地が札の色のため） */
@@ -43,9 +58,9 @@
   font-weight: 700;
 }
 
+/* 使う段階・隻数（文字を薄くするとコントラストが下がるので、opacity は付けない） */
 .meta {
-  font-size: calc(11px * var(--font-scale));
-  opacity: 0.9;
+  font-size: calc(12px * var(--font-scale));
 }
 
 /* 「ここに置く」 */
@@ -72,9 +87,10 @@
   border: 1px solid var(--assign-place-boost-border);
 }
 
+/* 特効なし（薄い列に出る）。文字は控えめな文字の色（モックの薄い文字の色 #6b717c では 4.5:1 に届かないため） */
 .placeNoBoost {
   background: transparent;
-  color: var(--assign-faint-text);
+  color: var(--color-text-secondary);
   border: 1px dashed var(--color-border-strong);
   font-weight: 400;
 }
