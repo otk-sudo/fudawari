@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useId, useState } from "react";
 import {
   type EditMode,
   type EditPermissions,
@@ -155,6 +155,9 @@ export function EventPanel(props: EventPanelProps): ReactNode {
   const baseSelectId = useId();
   const modeLockedId = useId();
   const modeLocked = props.modeLock !== null;
+  // 欄を開いているか（閉じると、新規か更新か・日時の欄・状態の表示を隠す。UI／UX の指摘 中11）
+  const [expanded, setExpanded] = useState(true);
+  const collapsibleId = useId();
 
   const startValue = texts.startAt ?? toDateTimeLocalValue(meta.startAt) ?? "";
   const endValue = texts.endAt ?? toDateTimeLocalValue(meta.endAt) ?? "";
@@ -166,206 +169,232 @@ export function EventPanel(props: EventPanelProps): ReactNode {
 
   return (
     <section className={styles.panel} aria-label="イベントの情報">
-      <div className={styles.topRow}>
-        {isAdmin && (
-          <div
-            role="radiogroup"
-            aria-label="新規か更新か"
-            aria-describedby={modeLocked ? modeLockedId : undefined}
-            className={controls.segment}
-          >
-            {MODE_CHOICES.map(([value, label]) => (
-              <label key={value} className={controls.segmentItem}>
-                <input
-                  type="radio"
-                  name={radioName}
-                  value={value}
-                  className={controls.segmentInput}
-                  checked={mode === value}
-                  disabled={modeLocked || (value === "update" && !props.canSwitchToUpdate)}
-                  onChange={() => props.onSwitchMode(value)}
+      <div className={styles.panelHead}>
+        <button
+          type="button"
+          className={styles.toggle}
+          aria-expanded={expanded}
+          aria-controls={collapsibleId}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+          {expanded ? "イベントの情報を閉じる" : "イベントの情報を開く"}
+        </button>
+        {!expanded && (
+          <span className={styles.collapsedName}>{meta.name === "" ? "（イベント名は未入力）" : meta.name}</span>
+        )}
+      </div>
+
+      {/* 閉じている間は hidden で隠す（描くのをやめると、編集中の表示のチャンネルなどがつなぎ直しになるため） */}
+      <div id={collapsibleId} className={styles.collapsible} hidden={!expanded}>
+        <div className={styles.topRow}>
+          {isAdmin && (
+            <div
+              role="radiogroup"
+              aria-label="新規か更新か"
+              aria-describedby={modeLocked ? modeLockedId : undefined}
+              className={controls.segment}
+            >
+              {MODE_CHOICES.map(([value, label]) => (
+                <label key={value} className={controls.segmentItem}>
+                  <input
+                    type="radio"
+                    name={radioName}
+                    value={value}
+                    className={controls.segmentInput}
+                    checked={mode === value}
+                    disabled={modeLocked || (value === "update" && !props.canSwitchToUpdate)}
+                    onChange={() => props.onSwitchMode(value)}
+                  />
+                  <span className={controls.segmentLabel}>{label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {isAdmin && props.modeLock !== null && (
+            <span id={modeLockedId} className={styles.hint}>
+              {MODE_LOCK_MESSAGES[props.modeLock]}
+            </span>
+          )}
+
+          {!isCreate && props.latestName !== null && (
+            <>
+              <span className={styles.target}>
+                更新するイベント：<b>{props.latestName}（最新）</b>
+              </span>
+              <span className={styles.hint}>
+                {isAdmin
+                  ? "札割りできるのは最新のイベントだけなので、更新も最新のイベントだけです"
+                  : "協力者は最新イベントの更新だけができます。新規作成は管理者が行います"}
+              </span>
+            </>
+          )}
+
+          {!isCreate && permissions.canEditEndAt && (
+            <>
+              <span className={styles.break} aria-hidden="true" />
+              {permissions.canEditStartAt ? (
+                <DateField
+                  label="開始日時"
+                  required
+                  value={startValue}
+                  disabled={props.metaLocked}
+                  onChange={(value) => props.onChangeText("startAt", value)}
+                  onCommit={() => props.onCommitText("startAt")}
                 />
-                <span className={controls.segmentLabel}>{label}</span>
-              </label>
-            ))}
-          </div>
-        )}
-        {isAdmin && props.modeLock !== null && (
-          <span id={modeLockedId} className={styles.hint}>
-            {MODE_LOCK_MESSAGES[props.modeLock]}
-          </span>
-        )}
+              ) : (
+                <span className={styles.readonlyDate}>
+                  開始日時 <b>{dateText(meta.startAt)}</b>
+                </span>
+              )}
+              <DateField
+                label="終了日時"
+                required={false}
+                badge="任意"
+                value={endValue}
+                disabled={props.metaLocked}
+                onChange={(value) => props.onChangeText("endAt", value)}
+                onCommit={() => props.onCommitText("endAt")}
+              />
+              {meta.endAt !== null && (
+                <button type="button" className={controls.ghostButton} disabled={props.metaLocked} onClick={props.onClearEnd}>
+                  終了日時を消す
+                </button>
+              )}
+              <span className={styles.hint}>終了日時を過ぎると「開催中」でなくなります。延長されたときはここで直せます</span>
+            </>
+          )}
 
-        {!isCreate && props.latestName !== null && (
-          <>
-            <span className={styles.target}>
-              更新するイベント：<b>{props.latestName}（最新）</b>
-            </span>
-            <span className={styles.hint}>
-              {isAdmin
-                ? "札割りできるのは最新のイベントだけなので、更新も最新のイベントだけです"
-                : "協力者は最新イベントの更新だけができます。新規作成は管理者が行います"}
-            </span>
-          </>
-        )}
-
-        {!isCreate && permissions.canEditEndAt && (
-          <>
-            <span className={styles.break} aria-hidden="true" />
-            {permissions.canEditStartAt ? (
+          {isCreate && (
+            <>
+              <span className={styles.dateField}>
+                <label htmlFor={baseSelectId} className={styles.fieldLabel}>
+                  元にするイベント
+                </label>
+                <select
+                  id={baseSelectId}
+                  className={controls.input}
+                  value={
+                    workspace.eventId !== null ? CREATED_VALUE : (workspace.loadingBaseEventId ?? workspace.baseEventId)
+                  }
+                  disabled={!props.canChooseBase}
+                  onChange={(event) => props.onChooseBase(event.currentTarget.value)}
+                >
+                  {workspace.eventId !== null && (
+                    <option value={CREATED_VALUE}>
+                      {baseName === undefined ? "作成済み（変えられません）" : `作成済み（${baseName}を元に作成）`}
+                    </option>
+                  )}
+                  <option value="">使わない（空から作る）</option>
+                  {props.baseEventOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <span className={styles.hint}>元にすると札と段階をコピーして始めます（特効は空）</span>
+              <span className={styles.break} aria-hidden="true" />
               <DateField
                 label="開始日時"
                 required
+                badge="必須"
                 value={startValue}
                 disabled={props.metaLocked}
                 onChange={(value) => props.onChangeText("startAt", value)}
                 onCommit={() => props.onCommitText("startAt")}
               />
-            ) : (
-              <span className={styles.readonlyDate}>
-                開始日時 <b>{dateText(meta.startAt)}</b>
+              <DateField
+                label="終了日時"
+                required={false}
+                badge="任意"
+                value={endValue}
+                disabled={props.metaLocked}
+                onChange={(value) => props.onChangeText("endAt", value)}
+                onCommit={() => props.onCommitText("endAt")}
+              />
+              <span className={styles.hint}>終了日時は未定なら空欄で構いません（あとから入れられます）</span>
+            </>
+          )}
+
+          {props.fieldError !== null && (
+            <p role="alert" className={styles.fieldError}>
+              {props.fieldError}
+            </p>
+          )}
+        </div>
+
+        <div className={styles.info}>
+          {permissions.canEditName ? (
+            <span className={styles.nameRow}>
+              <span className={styles.fieldLabel}>
+                イベント名{isCreate && <span className={styles.requiredBadge}>必須</span>}
+              </span>
+              <input
+                type="text"
+                aria-label="イベント名"
+                className={`${controls.input} ${styles.nameInput}`}
+                placeholder="例：2026秋イベ"
+                value={nameValue}
+                disabled={props.metaLocked}
+                onChange={(event) => props.onChangeText("name", event.currentTarget.value)}
+                onBlur={() => props.onCommitText("name")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) props.onCommitText("name");
+                }}
+              />
+              {props.nameSuffix !== null && <span className={styles.nameSuffix}>{props.nameSuffix}</span>}
+            </span>
+          ) : (
+            <span className={styles.eventTitle}>{meta.name}</span>
+          )}
+          {period !== null && <span className={styles.line}>{period}</span>}
+          <span className={styles.line}>
+            {workspace.published === null
+              ? `まだ公開していません${isCreate && baseName !== undefined ? `（${baseName}を元に作成）` : ""}`
+              : `公開中：${versionLabel(workspace.published.versionDate)}`}
+            {firstPending !== undefined && (
+              <span>
+                {" ／ "}
+                <span className={styles.pending}>未公開の変更 {props.pending.length} 件</span>（{firstPending.text}
+                {props.pending.length > 1 ? " ほか" : ""}）
               </span>
             )}
-            <DateField
-              label="終了日時"
-              required={false}
-              badge="任意"
-              value={endValue}
-              disabled={props.metaLocked}
-              onChange={(value) => props.onChangeText("endAt", value)}
-              onCommit={() => props.onCommitText("endAt")}
-            />
-            {meta.endAt !== null && (
-              <button type="button" className={controls.ghostButton} disabled={props.metaLocked} onClick={props.onClearEnd}>
-                終了日時を消す
-              </button>
-            )}
-            <span className={styles.hint}>終了日時を過ぎると「開催中」でなくなります。延長されたときはここで直せます</span>
-          </>
-        )}
-
-        {isCreate && (
-          <>
-            <span className={styles.dateField}>
-              <label htmlFor={baseSelectId} className={styles.fieldLabel}>
-                元にするイベント
-              </label>
-              <select
-                id={baseSelectId}
-                className={controls.input}
-                value={
-                  workspace.eventId !== null ? CREATED_VALUE : (workspace.loadingBaseEventId ?? workspace.baseEventId)
-                }
-                disabled={!props.canChooseBase}
-                onChange={(event) => props.onChooseBase(event.currentTarget.value)}
-              >
-                {workspace.eventId !== null && (
-                  <option value={CREATED_VALUE}>
-                    {baseName === undefined ? "作成済み（変えられません）" : `作成済み（${baseName}を元に作成）`}
-                  </option>
-                )}
-                <option value="">使わない（空から作る）</option>
-                {props.baseEventOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </span>
-            <span className={styles.hint}>元にすると札と段階をコピーして始めます（特効は空）</span>
-            <span className={styles.break} aria-hidden="true" />
-            <DateField
-              label="開始日時"
-              required
-              badge="必須"
-              value={startValue}
-              disabled={props.metaLocked}
-              onChange={(value) => props.onChangeText("startAt", value)}
-              onCommit={() => props.onCommitText("startAt")}
-            />
-            <DateField
-              label="終了日時"
-              required={false}
-              badge="任意"
-              value={endValue}
-              disabled={props.metaLocked}
-              onChange={(value) => props.onChangeText("endAt", value)}
-              onCommit={() => props.onCommitText("endAt")}
-            />
-            <span className={styles.hint}>終了日時は未定なら空欄で構いません（あとから入れられます）</span>
-          </>
-        )}
-
-        {props.fieldError !== null && (
-          <p role="alert" className={styles.fieldError}>
-            {props.fieldError}
-          </p>
-        )}
-      </div>
-
-      <div className={styles.info}>
-        {permissions.canEditName ? (
-          <span className={styles.nameRow}>
-            <span className={styles.fieldLabel}>
-              イベント名{isCreate && <span className={styles.requiredBadge}>必須</span>}
-            </span>
-            <input
-              type="text"
-              aria-label="イベント名"
-              className={`${controls.input} ${styles.nameInput}`}
-              placeholder="例：2026秋イベ"
-              value={nameValue}
-              disabled={props.metaLocked}
-              onChange={(event) => props.onChangeText("name", event.currentTarget.value)}
-              onBlur={() => props.onCommitText("name")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.nativeEvent.isComposing) props.onCommitText("name");
-              }}
-            />
-            {props.nameSuffix !== null && <span className={styles.nameSuffix}>{props.nameSuffix}</span>}
           </span>
-        ) : (
-          <span className={styles.eventTitle}>{meta.name}</span>
-        )}
-        {period !== null && <span className={styles.line}>{period}</span>}
-        <span className={styles.line}>
-          {workspace.published === null
-            ? `まだ公開していません${isCreate && baseName !== undefined ? `（${baseName}を元に作成）` : ""}`
-            : `公開中：${versionLabel(workspace.published.versionDate)}`}
-          {firstPending !== undefined && (
-            <span>
-              {" ／ "}
-              <span className={styles.pending}>未公開の変更 {props.pending.length} 件</span>（{firstPending.text}
-              {props.pending.length > 1 ? " ほか" : ""}）
-            </span>
-          )}
-        </span>
-        <span className={styles.line}>
-          共有の下書き：
-          {draftNote === null
-            ? "まだ保存していません"
-            : `${dateText(draftNote.updatedAt)} に${draftNote.updatedByName}が保存`}
-          （保存すると管理者・協力者全員の定義画面に反映されます。一般の画面には公開するまで出ません）
-          {props.draftLogSlot !== undefined && (
-            <>
-              {"　"}
-              {props.draftLogSlot}
-            </>
-          )}
-        </span>
-        {props.presenceSlot}
-        <span className={styles.line}>
-          編集できる人：{props.members.map((member) => member.displayName).join("・")}
-          {isAdmin && (
-            <>
-              {"　"}
-              <Link href={ROUTES.collaborators} className={styles.link}>
-                協力者を管理
-              </Link>
-            </>
-          )}
-        </span>
+          <span className={styles.line}>
+            共有の下書き：
+            {draftNote === null
+              ? "まだ保存していません"
+              : `${dateText(draftNote.updatedAt)} に${draftNote.updatedByName}が保存`}
+            （保存すると管理者・協力者全員の定義画面に反映されます。一般の画面には公開するまで出ません）
+            {props.draftLogSlot !== undefined && (
+              <>
+                {"　"}
+                {props.draftLogSlot}
+              </>
+            )}
+          </span>
+          {props.presenceSlot}
+          <span className={styles.line}>
+            編集できる人：{props.members.map((member) => member.displayName).join("・")}
+            {isAdmin && (
+              <>
+                {"　"}
+                <Link href={ROUTES.collaborators} className={styles.link}>
+                  協力者を管理
+                </Link>
+              </>
+            )}
+          </span>
+        </div>
       </div>
+
+      {/* 閉じている間も、イベント名・日時の誤りは出す（公開のボタンを押せない理由が見えなくならないように） */}
+      {!expanded && props.fieldError !== null && (
+        <p role="alert" className={styles.fieldError}>
+          {props.fieldError}
+        </p>
+      )}
 
       {permissions.canEditContent && (
         <div className={styles.actions}>

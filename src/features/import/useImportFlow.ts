@@ -4,6 +4,10 @@
 // - 保存先は usePlanData と同じもの（getPlanStorage）。保存の前に previewImport で外れる割り当ての件数を数え、
 //   1 件以上なら確認を挟む（2026-10-17 親の決定）。やめれば保存しない
 // - 完了の表示の「外した件数」は saveImport の戻り値（確認の後に割り当てが変わっても、実際に外した件数を出す）
+// - 「札割り n 隻を引き継ぎました」の n は、saveImport が返す最新のイベントで引き継いだ割り当ての数
+//   （keptAssignmentCount。保存できていない割り当てがあればそれで数える。UI／UX の指摘 中7）。
+//   前の取り込みの記録は見ない（「取り込んだ艦娘データを削除」は記録だけを消して割り当てを残すため。PR #44 のレビュー）。
+//   初回は割り当てがないので 0、個体 ID がない古い形式は引き継がないので 0
 // - 解析〜保存の途中と確認待ちの間は、次の取り込みを受け付けない（二重押しを防ぐ）
 // - 保存した後に呼ぶ onImported は、呼ぶ時点で最後に描いたときに渡されたものを使う
 //   （取り込みの途中で公開定義が読めて札割りのデータの読み込み先が決まっても、最新の値で読み直せるように）
@@ -28,6 +32,13 @@ export interface ImportSummary {
   unknownShipCount: number;
   /** 外した割り当ての件数（saveImport の戻り値） */
   removedAssignmentCount: number;
+  /**
+   * 最新のイベントで引き継いだ割り当ての数（UI／UX の指摘 中7）。
+   * 個体 ID がある形式で取り込んだときに、最新のイベントの割り当てのうち取り込みの後も残るものの数
+   * （saveImport の keptAssignmentCount。保存できていない割り当てがあれば、画面に出ているその割り当てで数える）。
+   * 初回の取り込み・個体 ID がない古い形式・最新のイベントが分からないときは 0
+   */
+  keptAssignmentCount: number;
   /** 個体 ID があったか（false なら割り当てを引き継げなかった。U9） */
   hasUid: boolean;
   /** 「ロック済みだけ」を選んだが、ロックの情報がない形式のため効かなかった */
@@ -64,6 +75,11 @@ export interface UseImportFlowOptions {
   /** 艦船マスタ（読み込み中・失敗のときは null。null の間は取り込まない） */
   master: ShipMaster | null;
   /**
+   * 最新のイベントの ID（公開定義を読めていないときは null）。引き継いだ割り当ての数を数えるのに使う。
+   * 取り込みを始めたときではなく、保存した時点で最後に描いたときに渡されたものを使う
+   */
+  latestEventId: string | null;
+  /**
    * 保存した後に呼ぶ（札割りのデータの読み直しなど）。
    * 取り込みを始めたときのものではなく、保存した時点で最後に描いたときに渡されたものを呼ぶ
    */
@@ -86,19 +102,28 @@ export interface ImportFlow {
 const IDLE: ImportFlowState = { status: "idle" };
 const WORKING: ImportFlowState = { status: "working" };
 
-/** 保存先に渡す入力を作る（日時は呼んだときの時刻） */
-function toSaveInput(parsed: ImportSuccess, filter: ImportFilter): SaveImportInput {
-  return {
+/**
+ * 保存先に渡す入力を作る（日時は呼んだときの時刻）。
+ * keptCountEventId を渡すと、取り込みの保存がそのイベントで引き継いだ割り当ての数を返す
+ */
+function toSaveInput(parsed: ImportSuccess, filter: ImportFilter, keptCountEventId?: string): SaveImportInput {
+  const input: SaveImportInput = {
     ships: parsed.ships,
     importedAt: new Date().toISOString(),
     filter,
     hasUid: parsed.hasUid,
     hasLockInfo: parsed.hasLockInfo,
   };
+  return keptCountEventId === undefined ? input : { ...input, keptCountEventId };
 }
 
 /** 保存した結果から、完了の表示に出すものを作る */
-function toSummary(parsed: ImportSuccess, filter: ImportFilter, removedAssignmentCount: number): ImportSummary {
+function toSummary(
+  parsed: ImportSuccess,
+  filter: ImportFilter,
+  removedAssignmentCount: number,
+  keptAssignmentCount: number,
+): ImportSummary {
   return {
     shipCount: parsed.ships.length,
     lockedOnly: filter.lockedOnly && parsed.hasLockInfo,
@@ -106,6 +131,7 @@ function toSummary(parsed: ImportSuccess, filter: ImportFilter, removedAssignmen
     taggedShipCount: parsed.taggedShipCount,
     unknownShipCount: parsed.unknownShipCount,
     removedAssignmentCount,
+    keptAssignmentCount,
     hasUid: parsed.hasUid,
     lockFilterIgnored: parsed.lockFilterIgnored,
   };
@@ -120,7 +146,7 @@ function toSummary(parsed: ImportSuccess, filter: ImportFilter, removedAssignmen
 type FlowPhase = "idle" | "working" | "confirm";
 
 /** 取り込みの流れ（解析・確認・保存）の状態と操作を返す */
-export function useImportFlow({ master, onImported }: UseImportFlowOptions): ImportFlow {
+export function useImportFlow({ master, latestEventId, onImported }: UseImportFlowOptions): ImportFlow {
   const [state, setState] = useState<ImportFlowState>(IDLE);
   // 今の段階。続けて押したときに 2 回目を無視するために使う
   // （状態は次の描画まで変わらないため、押した直後の 2 回目は状態では見分けられない）。描画には使わない
@@ -129,8 +155,11 @@ export function useImportFlow({ master, onImported }: UseImportFlowOptions): Imp
   const failureCountRef = useRef(0);
   // 最後に描いたときに渡された onImported（保存は描画をまたいで終わるため、始めたときの関数を使うと古い値で読み直してしまう）
   const onImportedRef = useRef(onImported);
+  // 最後に描いたときに渡された最新のイベントの ID（onImported と同じ理由で、保存した時点の値を使う）
+  const latestEventIdRef = useRef(latestEventId);
   useEffect(() => {
     onImportedRef.current = onImported;
+    latestEventIdRef.current = latestEventId;
   });
 
   /** 失敗にする（前の失敗と同じ理由でも、新しい番号を振る） */
@@ -144,8 +173,12 @@ export function useImportFlow({ master, onImported }: UseImportFlowOptions): Imp
     phaseRef.current = "working";
     setState(WORKING);
     try {
-      const result = await getPlanStorage().saveImport(toSaveInput(parsed, filter));
-      setState({ status: "done", summary: toSummary(parsed, filter, result.removedAssignmentCount) });
+      // 引き継いだ数は最新のイベントで数えてもらう（外した件数と同じく、保存先の包みが保存できていない割り当てを踏まえて数える。
+      // 最新のイベントが分からない〔公開定義を読めていない〕ときは数えない）
+      const keptCountEventId = latestEventIdRef.current ?? undefined;
+      const result = await getPlanStorage().saveImport(toSaveInput(parsed, filter, keptCountEventId));
+      const kept = result.keptAssignmentCount ?? 0;
+      setState({ status: "done", summary: toSummary(parsed, filter, result.removedAssignmentCount, kept) });
       onImportedRef.current();
     } catch {
       fail(SAVE_FAILED_MESSAGE);

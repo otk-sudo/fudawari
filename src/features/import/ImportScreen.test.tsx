@@ -1422,4 +1422,165 @@ describe("取り込み画面（ImportScreen）", () => {
       await expectLastImport("10/15 20:40", 5);
     });
   });
+
+  // UI／UX の指摘 中7（親が決めた直し方。ユーザーの承認済み）
+  // - 取り込み直し（前の取り込みがあり、個体 ID で割り当てを引き継いだ）のとき、完了の表示に「札割り n 隻を引き継ぎました」を出す。
+  //   n は引き継いだ割り当ての数。外した件数の表示（「n件の割り当てを外しました」）は今のまま。初回の取り込みでは出さない
+  // - 札が付いている艦（taggedShipCount > 0）があるときは「差分を見る」を主なボタン（見た目の主・並びの先）にし、
+  //   ないときは今のまま「割り振りへ進む」が主
+  // テストで決めていないこと：引き継いだ割り当てが 0 件の取り込み直しで出すか（親の方針に書かれていないため確かめない）
+  describe("取り込み直しで引き継いだ札割りの知らせと、主なボタン（UI／UX の指摘 中7）", () => {
+    /** 完了の表示に書く「札割り n 隻を引き継ぎました」 */
+    function keptText(count: number): RegExp {
+      return new RegExp(`札割り\\s*${count}\\s*隻を引き継ぎました`);
+    }
+
+    /** 「引き継ぎました」の語句（数を問わない） */
+    const KEPT_PHRASE = /引き継ぎました/;
+
+    /** 完了の表示の「割り振りへ進む」「差分を見る」のリンク */
+    function doneLinks(region: HTMLElement): { assign: HTMLElement; drift: HTMLElement } {
+      return {
+        assign: within(region).getByRole("link", { name: "割り振りへ進む" }),
+        drift: within(region).getByRole("link", { name: "差分を見る" }),
+      };
+    }
+
+    it("取り込み直しで個体 ID が同じ艦の割り当て（101・102 の 2 件）を引き継いだら、「札割り 2 隻を引き継ぎました」と出す", async () => {
+      // 準備：前の取り込み（101〜105）で、最新イベントに 101・102 を割り当てておく（どちらも今回の取り込みにいる）
+      await seedPreviousImport({ "101": "s31", "102": "tago" });
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      const region = await findDoneRegion();
+      expect(region).toHaveTextContent(keptText(2));
+      expect(region).not.toHaveTextContent(/割り当てを外しました/);
+      expect(await storage.loadAssignments(EVENT_ID)).toEqual({ "101": "s31", "102": "tago" });
+    });
+
+    it("外れる割り当てがある取り込み直しで「外して取り込む」を押すと、引き継いだ数（101 の 1 隻）と外した件数（2件）の両方を出す", async () => {
+      // 準備：101・103・105 を割り当てておき、「ロック済みだけ」（101・102・104）で取り込む → 103・105 が外れ、101 を引き継ぐ
+      await seedPreviousImport({ "101": "s31", "103": "rengo", "105": "tago" });
+      const user = await renderImportScreen();
+      await user.click(lockOption("ロック済みだけ"));
+      await pasteAndImport(user, standardSvdataText);
+      const dialog = await screen.findByRole("alertdialog");
+
+      // 実行
+      await user.click(within(dialog).getByRole("button", { name: CONFIRM_BUTTON }));
+
+      // 検証
+      const region = await findDoneRegion();
+      expect(region).toHaveTextContent(keptText(1));
+      expect(region).toHaveTextContent(removedText(2));
+    });
+
+    it("初回の取り込み（前の取り込みがない）では、引き継いだ知らせを出さない", async () => {
+      // 準備
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(await findDoneRegion()).not.toHaveTextContent(KEPT_PHRASE);
+    });
+
+    it("個体 ID がない古い形式の取り込み直しでは、引き継げない知らせを出し、引き継いだ知らせは出さない", async () => {
+      // 準備：前の取り込みで 101 を割り当てておく（古い形式ではすべての割り当てが外れるため、確認が出る）
+      await seedPreviousImport({ "101": "s31" });
+      const user = await renderImportScreen();
+      await pasteAndImport(user, LEGACY_TEXT);
+      const dialog = await screen.findByRole("alertdialog");
+
+      // 実行
+      await user.click(within(dialog).getByRole("button", { name: CONFIRM_BUTTON }));
+
+      // 検証
+      const region = await findDoneRegion();
+      expect(region).toHaveTextContent(NO_UID_NOTICE);
+      expect(region).not.toHaveTextContent(KEPT_PHRASE);
+    });
+
+    it("札が付いている艦がいなければ「割り振りへ進む」が先（主）、札が付いている艦がいれば「差分を見る」が先になり、主なボタンの見た目が入れ替わる", async () => {
+      // 準備：札が付いている艦がいない内容（時雨改三 1 隻）を取り込む
+      const user = await renderImportScreen();
+      await pasteAndImport(user, KNOWN_ONLY_SVDATA_TEXT);
+      const withoutTags = doneLinks(await findDoneRegion());
+      expect(doneLine(await findDoneRegion(), "すでに札が付いている艦")).toHaveTextContent(/艦\s*0\s*隻/);
+      // 札がないときは今のまま：「割り振りへ進む」が先で、2 つの見た目（class）は違う
+      expectInDocumentOrder([withoutTags.assign, withoutTags.drift]);
+      const primaryClass = withoutTags.assign.className;
+      const secondaryClass = withoutTags.drift.className;
+      expect(primaryClass).not.toBe(secondaryClass);
+
+      // 実行：札が付いている艦が 2 隻（102・104）いる内容を取り込み直す
+      await user.clear(pasteBox());
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証：「差分を見る」が先になり、主なボタンの見た目（札がないときの「割り振りへ進む」の class）になる
+      const region = await findDoneRegion();
+      await waitFor(() => expect(doneLine(region, "すでに札が付いている艦")).toHaveTextContent(/艦\s*2\s*隻/));
+      const withTags = doneLinks(await findDoneRegion());
+      expectInDocumentOrder([withTags.drift, withTags.assign]);
+      expect(withTags.drift.className).toBe(primaryClass);
+      expect(withTags.assign.className).toBe(secondaryClass);
+      expect(withTags.drift).toHaveAttribute("href", "/drift");
+      expect(withTags.assign).toHaveAttribute("href", "/assign");
+    });
+  });
+
+  // PR #44 の独立レビューの指摘（親の決定）：前の取り込みの記録は見ず、個体 ID のある取り込みで、保存した後に
+  // 最新のイベントの割り当てが残っていれば「札割り n 隻を引き継ぎました」を出す（初回は割り当てがないので出ない）
+  describe("引き継いだ札割りの知らせの数え方（PR #44 の独立レビュー）", () => {
+    /** 完了の表示に書く「札割り n 隻を引き継ぎました」 */
+    function keptText(count: number): RegExp {
+      return new RegExp(`札割り\\s*${count}\\s*隻を引き継ぎました`);
+    }
+
+    /** 「引き継ぎました」の語句（数を問わない） */
+    const KEPT_PHRASE = /引き継ぎました/;
+
+    it("「取り込んだ艦娘データを削除」（最終取り込みの記録は消え、割り当ては残る）の後に取り込み直しても、残った割り当て（2 隻）を引き継いだと出す", async () => {
+      // 準備
+      await seedPreviousImport({ "101": "s31", "102": "tago" });
+      await storage.clearImportedShips();
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(await findDoneRegion()).toHaveTextContent(keptText(2));
+    });
+
+    it("引き継いだ数は最新のイベントの割り当てだけを数え、ほかのイベントの割り当ては含めない（最新の 1 隻）", async () => {
+      // 準備：最新のイベントに 101、ほかのイベントに 102・103 を割り当てておく
+      await seedPreviousImport({ "101": "s31" });
+      await storage.saveAssignments(OTHER_EVENT_ID, { "102": "e1", "103": "e2" });
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(await findDoneRegion()).toHaveTextContent(keptText(1));
+    });
+
+    it("前の取り込みがあっても、最新のイベントで引き継いだ割り当てが 0 件なら（ほかのイベントにだけ割り当てがあっても）出さない", async () => {
+      // 準備
+      await seedPreviousImport({});
+      await storage.saveAssignments(OTHER_EVENT_ID, { "101": "e1" });
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(await findDoneRegion()).not.toHaveTextContent(KEPT_PHRASE);
+    });
+  });
 });

@@ -11,6 +11,7 @@ import {
   blurInput,
   boostGroupNamed,
   COLLAB,
+  confirmPublish,
   createFakeRepository,
   CREATED_EVENT_ID,
   detailRegion,
@@ -30,11 +31,13 @@ import {
   publishAsLatestButton,
   publishButton,
   PUBLISH_RESULT,
+  queryShipNameInput,
   renderEditor,
   restoreClock,
   saveDraftButton,
   savedDraftInput,
   selectStage,
+  shipNameInput,
   stageButton,
   stageIn,
   switchToCreate,
@@ -357,6 +360,7 @@ describe("イベント定義の画面（PlanEditor）：レビュー・Codex の
 
       // 実行
       await user.click(publishAsLatestButton());
+      await confirmPublish(user);
       await waitFor(() => {
         expect(repository.createEvent).toHaveBeenCalledTimes(1);
       });
@@ -501,6 +505,7 @@ describe("イベント定義の画面（PlanEditor）：レビュー・Codex の
 
       // 実行：更新の途中で押す
       await user.click(publishButton());
+      await confirmPublish(user);
       await flushPending();
 
       // 検証：まだ保存も公開もしない
@@ -532,16 +537,16 @@ describe("イベント定義の画面（PlanEditor）：レビュー・Codex の
 
       // 実行：入れかけて Esc でやめる
       await user.click(within(group()).getByRole("button", { name: "＋ 艦名" }));
-      await user.type(within(group()).getByRole("textbox", { name: "追加する艦名" }), "大和");
+      await user.type(shipNameInput(group()), "大和");
       await user.keyboard("{Escape}");
 
       // 検証：欄を閉じ、足さない
-      expect(within(group()).queryByRole("textbox", { name: "追加する艦名" })).not.toBeInTheDocument();
+      expect(queryShipNameInput(group())).not.toBeInTheDocument();
       expect(within(group()).queryByText("大和")).not.toBeInTheDocument();
 
       // 実行：開き直して艦名を入れ、欄の外を押す
       await user.click(within(group()).getByRole("button", { name: "＋ 艦名" }));
-      await user.type(within(group()).getByRole("textbox", { name: "追加する艦名" }), "雪風");
+      await user.type(shipNameInput(group()), "雪風");
       await user.click(document.body);
 
       // 検証
@@ -830,6 +835,7 @@ describe("イベント定義の画面（PlanEditor）：レビュー・Codex の
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
       await waitFor(() => {
         expect(repository.publish).toHaveBeenCalledTimes(1);
       });

@@ -8,6 +8,7 @@ import { PlanEditor } from "./PlanEditor";
 import {
   ADMIN,
   autumn2025Definition,
+  confirmPublish,
   createFakeRepository,
   detailRegion,
   expectStages,
@@ -249,6 +250,7 @@ describe("イベント定義の画面（PlanEditor）：DB との結合（保管
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
 
       // 検証
       await waitFor(() => {
@@ -272,6 +274,7 @@ describe("イベント定義の画面（PlanEditor）：DB との結合（保管
 
       // 実行
       await user.click(publishAsLatestButton());
+      await confirmPublish(user);
 
       // 検証
       await waitFor(() => {

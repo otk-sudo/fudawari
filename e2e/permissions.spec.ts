@@ -82,6 +82,17 @@ async function isDefinitionWorkLocked(page: Page): Promise<boolean> {
   });
 }
 
+/**
+ * 公開の確認のウィンドウ（role="alertdialog"・名前「公開の確認」）で「公開する」を押す（UI／UX の指摘 中8。
+ * 「変更を公開する」「公開して最新にする」を押すと、公開の前に確認を出すようになった）
+ */
+async function confirmPublish(page: Page): Promise<void> {
+  const dialog = page.getByRole("alertdialog", { name: "公開の確認" });
+  await expect(dialog).toBeVisible();
+  await button(dialog, "公開する").click();
+  await expect(dialog).toHaveCount(0);
+}
+
 /** 左メニューの「設定」で設定のウィンドウを開く */
 async function openSettings(page: Page): Promise<Locator> {
   await button(sideNav(page), "設定").click();
@@ -300,7 +311,7 @@ async function editFudaStageImportanceAndBoost(page: Page): Promise<void> {
   await multiplier.fill("1.3");
   await multiplier.press("Enter");
   await button(group, "＋ 艦名").click();
-  const ship = group.getByRole("textbox", { name: "追加する艦名" });
+  const ship = group.getByLabel("追加する艦名");
   await ship.fill(NEW_SHIP);
   await ship.press("Enter");
   await ship.press("Escape");
@@ -569,6 +580,7 @@ test.describe("協力者（ログイン済み）", () => {
 
     // 実行：保存していない変更があるので、先に下書きを保存してから公開する
     await button(eventPanel(page), "変更を公開する").click();
+    await confirmPublish(page);
 
     // 検証
     await expect(page.getByRole("status").filter({ hasText: "変更を公開しました" })).toBeVisible();
@@ -772,6 +784,7 @@ test.describe("管理者（ログイン済み）", () => {
 
     // 実行：公開する
     await button(eventPanel(page), "変更を公開する").click();
+    await confirmPublish(page);
 
     // 検証
     await expect(page.getByRole("status").filter({ hasText: "変更を公開しました" })).toBeVisible();
@@ -889,6 +902,7 @@ test.describe("管理者（ログイン済み）", () => {
 
     // 実行：公開して最新にする
     await button(eventPanel(page), "公開して最新にする").click();
+    await confirmPublish(page);
 
     // 検証：作ったイベントの版 1 を、最新にして公開する
     await expect(page.getByRole("status").filter({ hasText: "公開して、2026秋イベを最新のイベントにしました" })).toBeVisible();
