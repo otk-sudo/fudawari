@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, type Ref, useEffect, useId, useRef, useState } from "react";
 import { type Importance, importanceLabel, type Stage } from "@/domain/definition";
 import {
   type BoostGroupPatch,
@@ -41,6 +41,8 @@ export type StageDetailProps = {
   actions: StageActions;
   /** 特効グループの倍率の欄に入力の誤りが残っているかを知らせる（BoostGroupEditor の onInvalidChange） */
   onGroupInvalidChange: (groupId: string, invalid: boolean) => void;
+  /** 段階の詳細の区分（section）の参照（段階を選んだときに、ここへスクロールするため） */
+  sectionRef?: Ref<HTMLElement>;
 };
 
 const IMPORTANCES: readonly Importance[] = ["normal", "important", "hard"];
@@ -59,6 +61,7 @@ export function StageDetail({
   knownShipNames,
   actions,
   onGroupInvalidChange,
+  sectionRef,
 }: StageDetailProps): ReactNode {
   const [confirming, setConfirming] = useState(false);
   // 「この段階を削除」（削除の確認をやめたら、ここへフォーカスを戻す）
@@ -74,7 +77,7 @@ export function StageDetail({
   const stageLabel = `${area?.name ?? ""} ${stage.name}`.trim();
 
   return (
-    <section aria-label="段階の詳細" className={styles.section}>
+    <section ref={sectionRef} aria-label="段階の詳細" className={styles.section}>
       <div className={styles.head} style={{ background: color, color: inkFor(color) }}>
         <span className={styles.headText}>
           <h2 className={styles.headTitle}>{stageLabel}</h2>
@@ -251,18 +254,29 @@ type PastePanelProps = {
   onCancel: () => void;
 };
 
-/** 「攻略サイトの艦名リストを貼り付け」：貼った艦名の一覧から新しい特効グループを作る */
+/**
+ * 「攻略サイトの艦名リストを貼り付け」：貼った艦名の一覧から新しい特効グループを作る。
+ * 開いたら「艦名リスト」にフォーカスを移し、欄全体（「特効グループとして追加」まで）が画面に入るようスクロールする（UI／UX の指摘 中11）
+ */
 function PastePanel({ onAdd, onCancel }: PastePanelProps): ReactNode {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const id = useId();
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true });
+    panelRef.current?.scrollIntoView({ block: "nearest" });
+  }, []);
 
   return (
-    <div className={styles.paste}>
+    <div ref={panelRef} className={styles.paste}>
       <label htmlFor={id} className={styles.label}>
         艦名リスト
       </label>
       <textarea
+        ref={inputRef}
         id={id}
         rows={4}
         className={`${controls.input} ${styles.pasteInput}`}

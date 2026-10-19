@@ -1,0 +1,110 @@
+/*
+ * 公開の前の確認（取り込み画面の確認〔ConfirmRemoveDialog.module.css〕と同じ作り）。
+ * Portal で body の直下に出すため、定義画面の変数（--pe-*。.root に置いている）は使えない。
+ * 警告の色はこのファイルの変数に置く（ダークは定義画面の --pe-pending と同じ値、ライトは仮）。
+ */
+
+.overlay {
+  --pc-warning: #f2c98a; /* 警告の文字（定義画面の未公開の変更・知らない艦名の警告と同じ色） */
+  --pc-warning-border: #7a6230;
+
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 80px 16px 40px;
+  overflow-y: auto;
+  background: var(--color-overlay);
+}
+
+:global(:root[data-theme="light"]) .overlay {
+  --pc-warning: #8a5a00; /* 仮 */
+  --pc-warning-border: #e2c79c; /* 仮 */
+}
+
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .overlay {
+    --pc-warning: #8a5a00; /* 仮 */
+    --pc-warning-border: #e2c79c; /* 仮 */
+  }
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 520px;
+  padding: 16px 18px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  color: var(--color-text);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border: 1px solid var(--pc-warning-border);
+  border-radius: var(--radius-md);
+  color: var(--pc-warning);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cancelButton,
+.confirmButton {
+  min-height: 36px;
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cancelButton {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+}
+
+.confirmButton {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border: 0;
+  font-weight: 700;
+}
+
+.cancelButton:focus-visible,
+.confirmButton:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}

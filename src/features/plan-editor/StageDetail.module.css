@@ -1,6 +1,8 @@
 /* 段階の詳細と特効グループ（モック PlanEditor.dc.html の右下の section） */
 
 .section {
+  /* 段階を選んだときに上端へ寄せてスクロールする（固定のヘッダーはないため、少しだけ余白を残す。UI／UX の指摘 中11） */
+  scroll-margin-top: 8px;
   flex: 999 1 480px;
   min-width: 0;
   background: var(--color-surface);
@@ -268,6 +270,35 @@
 }
 
 /* 艦名のタグ */
+/* 艦名・国籍・艦種の行（左に小さな見出し。UI／UX の指摘 中9） */
+.tagRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.rowLabel {
+  flex: 0 0 auto;
+  min-width: 2.5em;
+  padding-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.tagRow > .tags {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 効く条件の要約（グループの下の 1 行。中9） */
+.summary {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .tags {
   display: flex;
   flex-wrap: wrap;
@@ -286,6 +317,13 @@
   color: var(--pe-tag-text);
   border-radius: 12px;
   font-size: 12px;
+}
+
+/* 艦船マスタにない艦名のタグ（警告の色の点線の枠と文字。中10） */
+.tagUnknown {
+  padding: 1px 3px 1px 7px;
+  border: 1px dashed var(--pe-pending);
+  color: var(--pe-pending);
 }
 
 .tagRemove {
@@ -413,6 +451,7 @@
 
 /* 艦名リストの貼り付け */
 .paste {
+  scroll-margin: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;

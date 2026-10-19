@@ -151,3 +151,53 @@
   color: var(--pe-danger-text);
   font-size: 12px;
 }
+
+/* 開閉のボタンの行（UI／UX の指摘 中11。閉じている間はイベント名を横に出す） */
+.panelHead {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--pe-chip-bg);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--pe-drop);
+  outline-offset: 1px;
+}
+
+.collapsedName {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/*
+ * 折りたたむ範囲。開いている間は中身（新規か更新かの行・状態の表示）を .panel の並びにそのまま入れる（display: contents）。
+ * 閉じている間は hidden 属性で隠す（クラスの display が hidden の既定の display: none に勝つため、ここで指定する）
+ */
+.collapsible {
+  display: contents;
+}
+
+.collapsible[hidden] {
+  display: none;
+}
