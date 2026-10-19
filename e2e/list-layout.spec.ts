@@ -25,11 +25,18 @@ import { summer2026Definition, summer2026Ships } from "../src/test/fixtures";
 //
 // コントラスト比は、文字の色（要素と祖先の不透明度を掛けたもの）を、いちばん近い不透明な下地まで重ねた背景の色に合成して、
 // WCAG 2 の式で求める（背景の画像・グラデーションは見ない）
+//
+// 追加（PR #43 の独立レビュー）：幅 1024px では 5 段階の海域のセルが約 175px になり、段階名が 0px まで縮んで消えていた。
+// 1024×768・文字「標準」「大」で、どの段階名も少なくとも 2 文字分（2em。段階名がそれより短ければその幅）は見えることを確かめる
 
 // ---- テスト用のデータ ----
 
 /** 画面の大きさ（UI／UX レビューの 1366×768） */
 const VIEWPORT = { width: 1366, height: 768 } as const;
+/** 狭い画面の大きさ（PR #43 の独立レビュー。5 段階の海域のセルが約 175px になる） */
+const NARROW_VIEWPORT = { width: 1024, height: 768 } as const;
+/** 狭いセルでも段階名が見えている最低の幅（文字の大きさの倍数。2 文字分） */
+const MIN_VISIBLE_STAGE_EM = 2;
 /** 2026夏イベの開催中の時刻（ほかの画面テストと同じ） */
 const WHILE_RUNNING = new Date("2026-10-16T12:00:00+09:00");
 /** 文字の最低のコントラスト比（WCAG 2 の AA、通常の文字） */
@@ -116,8 +123,11 @@ async function routeFiveAreaDefinition(page: Page): Promise<void> {
   );
 }
 
-/** ブラウザ内の保存の設定（settings の表）に画面モードを書く（行の形は src/lib/storage/storage.ts の版 1） */
-async function saveThemeMode(page: Page, themeMode: "dark" | "light"): Promise<void> {
+/** 設定の「文字の大きさ」（src/lib/storage/storage.ts の値。標準は mid） */
+type FontSize = "small" | "mid" | "large";
+
+/** ブラウザ内の保存の設定（settings の表）に画面モードと文字の大きさを書く（行の形は src/lib/storage/storage.ts の版 1） */
+async function saveThemeMode(page: Page, themeMode: "dark" | "light", fontSize: FontSize = "mid"): Promise<void> {
   await page.evaluate(async (mode) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("fudawari");
@@ -129,22 +139,31 @@ async function saveThemeMode(page: Page, themeMode: "dark" | "light"): Promise<v
         const transaction = db.transaction("settings", "readwrite");
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
-        transaction.objectStore("settings").put({ id: "settings", values: { themeMode: mode } });
+        transaction.objectStore("settings").put({ id: "settings", values: { themeMode: mode.themeMode, fontSize: mode.fontSize } });
       });
     } finally {
       db.close();
     }
-  }, themeMode);
+  }, { themeMode, fontSize });
 }
 
-/** 1366×768 で、艦と割り当て（と画面モード）を入れてから一覧を開く。ページの一番上にいることを確かめる */
-async function openList(page: Page, themeMode: "dark" | "light" = "dark"): Promise<void> {
-  await page.setViewportSize(VIEWPORT);
+/** 一覧の開き方（画面モード・文字の大きさ・画面の大きさ） */
+interface OpenListOptions {
+  themeMode?: "dark" | "light";
+  fontSize?: FontSize;
+  viewport?: { width: number; height: number };
+}
+
+/** 艦と割り当て（と画面モード・文字の大きさ）を入れてから一覧を開く（既定は 1366×768・ダーク・標準）。ページの一番上にいることを確かめる */
+async function openList(page: Page, options: OpenListOptions = {}): Promise<void> {
+  const { themeMode = "dark", fontSize = "mid", viewport = VIEWPORT } = options;
+  await page.setViewportSize(viewport);
   await seedPlan(page, { ships: summer2026Ships, assignments: ASSIGNMENTS });
-  await saveThemeMode(page, themeMode);
+  await saveThemeMode(page, themeMode, fontSize);
   await page.goto("/list");
   await expect(fudaRow(page, FUDAS[0].name)).toContainText(/2\s*隻/);
   await expect(page.locator("html")).toHaveAttribute("data-theme", themeMode);
+  if (fontSize === "large") await expect(page.locator("html")).toHaveAttribute("data-font-size", "large");
   expect(await page.evaluate(() => window.scrollY), "前提：ページの一番上にいる").toBe(0);
 }
 
@@ -176,6 +195,102 @@ async function boxOf(locator: Locator, label: string): Promise<{ x: number; y: n
   const box = await locator.boundingBox();
   if (box === null) throw new Error(`${label} の箱が取れない（見えていない）`);
   return box;
+}
+
+/** 画面上の箱 */
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 段階のセルの中の 1 つの部品（段階名・札名・「特効 n隻」）の測った値 */
+interface StepPartMeasure {
+  name: "段階名" | "札名" | "特効 n隻";
+  /** 文字がちょうど一致する要素が見つかったか */
+  found: boolean;
+  box: Box;
+  /** 文字の大きさ（px） */
+  fontSize: number;
+  /** 省略記号で切らないときの文字の幅（scrollWidth） */
+  naturalWidth: number;
+}
+
+/** 段階のセル 1 つの測った値 */
+interface StepMeasure {
+  label: string;
+  /** 海域の list とその中の listitem が見つかったか */
+  found: boolean;
+  box: Box;
+  parts: StepPartMeasure[];
+}
+
+/**
+ * 攻略の流れの全段階のセルと、その中の段階名・札名・「特効 n隻」の箱を、ページの中で 1 回に測る
+ * （部品ごとに往復すると 20 段階×3 部品で遅いため。探し方は stepOf と getByText の exact と同じ：海域名を名前に持つ list の
+ * n 番目の listitem の中で、空白を詰めた文字がちょうど一致するいちばん内側の要素）
+ */
+async function measureSteps(page: Page): Promise<StepMeasure[]> {
+  const cases = STEP_CASES.map(({ areaName, indexInArea, stageName, fudaName }) => ({
+    areaName,
+    indexInArea,
+    stageName,
+    fudaName,
+    label: `${areaName} の ${indexInArea + 1} 番目の段階（${stageName}）`,
+  }));
+  return timelineOf(page).evaluate((timeline, stepCases): StepMeasure[] => {
+    const normalize = (text: string | null) => (text ?? "").replace(/\s+/g, " ").trim();
+    const boxOfElement = (element: Element): Box => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    };
+    const nameOf = (element: Element): string => {
+      const labelledBy = element.getAttribute("aria-labelledby");
+      if (labelledBy !== null) {
+        return normalize(
+          labelledBy
+            .split(/\s+/)
+            .map((id) => document.getElementById(id)?.textContent ?? "")
+            .join(" "),
+        );
+      }
+      return normalize(element.getAttribute("aria-label"));
+    };
+    const lists = [...timeline.querySelectorAll('ol, ul, [role="list"]')];
+    /** root の中で、文字が matches に当たるいちばん内側の要素 */
+    const findText = (root: Element, matches: (text: string) => boolean): Element | undefined =>
+      [...root.querySelectorAll("*")].find(
+        (element) =>
+          matches(normalize(element.textContent)) &&
+          ![...element.children].some((child) => matches(normalize(child.textContent))),
+      );
+    const empty: Box = { x: 0, y: 0, width: 0, height: 0 };
+
+    return stepCases.map(({ areaName, indexInArea, stageName, fudaName, label }) => {
+      const list = lists.find((candidate) => nameOf(candidate) === areaName);
+      const items = list === undefined ? [] : [...list.children].filter((child) => child.matches('li, [role="listitem"]'));
+      const step = items[indexInArea];
+      if (step === undefined) return { label, found: false, box: empty, parts: [] };
+      const partDefs = [
+        { name: "段階名" as const, matches: (text: string) => text === stageName },
+        { name: "札名" as const, matches: (text: string) => text === fudaName },
+        { name: "特効 n隻" as const, matches: (text: string) => /^特効\s*\d+\s*隻$/.test(text) },
+      ];
+      const parts = partDefs.map(({ name, matches }): StepPartMeasure => {
+        const element = findText(step, matches);
+        if (element === undefined) return { name, found: false, box: empty, fontSize: 0, naturalWidth: 0 };
+        return {
+          name,
+          found: true,
+          box: boxOfElement(element),
+          fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+          naturalWidth: element.scrollWidth,
+        };
+      });
+      return { label, found: true, box: boxOfElement(step), parts };
+    });
+  }, cases);
 }
 
 /** 文字の要素の大きさ（px）と、背景とのコントラスト比 */
@@ -278,37 +393,65 @@ test.describe("一覧の攻略の流れを詰める（UI／UX レビュー 中5�
     await openList(page);
 
     // 検証
-    for (const { areaName, indexInArea, stageName, fudaName } of STEP_CASES) {
-      const step = stepOf(page, areaName, indexInArea);
-      const label = `${areaName} の ${indexInArea + 1} 番目の段階（${stageName}）`;
-      const stepBox = await boxOf(step, label);
-      const parts = [
-        { name: "段階名", locator: step.getByText(stageName, { exact: true }) },
-        { name: "札名", locator: step.getByText(fudaName, { exact: true }) },
-        { name: "特効 n隻", locator: step.getByText(/^特効\s*\d+\s*隻$/) },
-      ];
-      const boxes = [];
-      for (const part of parts) {
-        const box = await boxOf(part.locator, `${label}の${part.name}`);
-        const fontSize = await part.locator.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
-        expect.soft(box.height, `${label}の${part.name}が 1 行に収まる（高さ ${box.height}px、文字 ${fontSize}px）`).toBeLessThan(
-          fontSize * 2,
-        );
-        expect.soft(box.x, `${label}の${part.name}がセルの左にはみ出さない`).toBeGreaterThanOrEqual(stepBox.x - 0.5);
-        expect.soft(box.x + box.width, `${label}の${part.name}がセルの右にはみ出さない（長ければ省略記号で切る）`).toBeLessThanOrEqual(
-          stepBox.x + stepBox.width + 0.5,
-        );
-        boxes.push({ name: part.name, center: box.y + box.height / 2, height: box.height });
-      }
-      const [stage, ...others] = boxes;
-      for (const other of others) {
-        expect.soft(
-          Math.abs(other.center - stage.center),
-          `${label}の${other.name}が段階名と同じ行にある（縦の中心の差）`,
-        ).toBeLessThan(Math.min(other.height, stage.height) / 2);
-      }
-    }
+    expectStepsInOneLine(await measureSteps(page));
   });
+});
+
+/** 各段階のセルの段階名・札名・「特効 n隻」が 1 行に横並びで、どれも 1 行に収まり、セルの外にはみ出さない */
+function expectStepsInOneLine(steps: readonly StepMeasure[]): void {
+  for (const { label, found, box: stepBox, parts } of steps) {
+    expect.soft(found, `${label}のセルがある`).toBe(true);
+    if (!found) continue;
+    const boxes = [];
+    for (const { name, found: partFound, box, fontSize } of parts) {
+      expect.soft(partFound, `${label}の${name}の要素がある`).toBe(true);
+      if (!partFound) continue;
+      expect.soft(box.height, `${label}の${name}が 1 行に収まる（高さ ${box.height}px、文字 ${fontSize}px）`).toBeLessThan(
+        fontSize * 2,
+      );
+      expect.soft(box.x, `${label}の${name}がセルの左にはみ出さない`).toBeGreaterThanOrEqual(stepBox.x - 0.5);
+      expect.soft(box.x + box.width, `${label}の${name}がセルの右にはみ出さない（長ければ省略記号で切る）`).toBeLessThanOrEqual(
+        stepBox.x + stepBox.width + 0.5,
+      );
+      boxes.push({ name, center: box.y + box.height / 2, height: box.height });
+    }
+    const [stage, ...others] = boxes;
+    for (const other of others) {
+      expect.soft(
+        Math.abs(other.center - stage.center),
+        `${label}の${other.name}が段階名と同じ行にある（縦の中心の差）`,
+      ).toBeLessThan(Math.min(other.height, stage.height) / 2);
+    }
+  }
+}
+
+test.describe("狭い画面でも攻略の流れの段階名が消えない（PR #43 の独立レビュー）", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(WHILE_RUNNING);
+    await routeFiveAreaDefinition(page);
+  });
+
+  for (const fontSize of ["mid", "large"] as const) {
+    test(`1024×768・文字${fontSize === "mid" ? "標準" : "大"}で、どの段階名も少なくとも 2 文字分の幅が見え、段階名・札名・「特効 n隻」は 1 行に収まってセルの外にはみ出さない`, async ({
+      page,
+    }) => {
+      // 準備・実行
+      await openList(page, { fontSize, viewport: NARROW_VIEWPORT });
+
+      // 検証
+      const steps = await measureSteps(page);
+      for (const { label, parts } of steps) {
+        const stage = parts.find((part) => part.name === "段階名");
+        if (stage === undefined || !stage.found) continue;
+        const minWidth = Math.min(stage.fontSize * MIN_VISIBLE_STAGE_EM, stage.naturalWidth);
+        expect.soft(
+          stage.box.width,
+          `${label}の段階名の幅（${stage.box.width.toFixed(1)}px）が 2 文字分（${minWidth.toFixed(1)}px）以上`,
+        ).toBeGreaterThanOrEqual(minWidth - 0.5);
+      }
+      expectStepsInOneLine(steps);
+    });
+  }
 });
 
 test.describe("一覧の段階名と「まだ割り当てがありません」の読みやすさ（UI／UX レビュー 中12）", () => {
@@ -322,7 +465,7 @@ test.describe("一覧の段階名と「まだ割り当てがありません」�
       page,
     }) => {
       // 準備・実行
-      await openList(page, themeMode);
+      await openList(page, { themeMode });
 
       // 検証
       for (const { areaName, indexInArea, stageName } of STEP_CASES) {
@@ -339,7 +482,7 @@ test.describe("一覧の段階名と「まだ割り当てがありません」�
       page,
     }) => {
       // 準備・実行
-      await openList(page, themeMode);
+      await openList(page, { themeMode });
 
       // 検証：艦がいない札（2 札目）の行の文
       const measure = await measureText(fudaRow(page, FUDAS[1].name).getByText(EMPTY_ROW_TEXT, { exact: true }));

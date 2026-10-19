@@ -681,6 +681,9 @@ describe("差分の画面（DriftPageContent）", () => {
       expect(countInPage(/比べられません/g)).toBe(0);
       expect(screen.queryByText(NO_GAME_NUMBER_BANNER)).not.toBeInTheDocument();
       expect(screen.getByRole("heading", { level: 2, name: /対応が必要/ })).toBeInTheDocument();
+      // 検証：札番号のない札の進み具合は短い印と計画の隻数だけ。ほかの札は今のまま（PR #43 の独立レビュー）
+      expect(getProgressItem("第三十一戦隊")).toHaveTextContent(/^第三十一戦隊\s*札番号なし\s*／\s*計画\s*4\s*隻$/);
+      expect(getProgressItem("連合艦隊")).toHaveTextContent(/札付き\s*\d+\s*／\s*計画\s*8\s*隻/);
     });
 
     it("一部の札だけ札番号がなければ（2 札）、帯に札の数（2 札）を書く", async () => {
@@ -722,6 +725,9 @@ describe("差分の画面（DriftPageContent）", () => {
       expect(screen.queryByText("対応が必要なものはありません")).not.toBeInTheDocument();
       expect(issueCards()).toHaveLength(0);
       expect(screen.queryByRole("button", { name: "計画をまとめて実際に合わせる" })).not.toBeInTheDocument();
+      // 検証：札ごとの進み具合は札名と「計画 m隻」だけ（「札付き」も短い印も出さない。PR #43 の独立レビュー）
+      expect(getProgressItem("連合艦隊")).toHaveTextContent(/^連合艦隊\s*計画\s*8\s*隻$/);
+      for (const item of progressItems()) expect(item).toHaveTextContent(/^[^／]+?\s*計画\s*\d+\s*隻$/);
       // 検証：ヘッダーと取り込みへのリンクはそのまま
       expect(within(getHeader()).getByRole("link", { name: "最新の状態を取り込む" })).toHaveAttribute("href", "/import");
     });
