@@ -15,6 +15,8 @@
 //   取り込みを保存したら、ストアに知らせる（それより前に作った割り当ては保存先に書かず、読み直すときに絞って保存し直す）。
 //   取り込みの確認・取り込みの保存が返す件数は、保存できていない割り当てが残っていれば、それで外れる件数で数える
 //   （取り込みの保存で、数え直すための保存先の割り当てを読めなければ、取り込みは行い、保存先で数えた件数を返す）。
+//   取り込みの保存が返す引き継いだ数（keptCountEventId を渡したとき）も同じく、そのイベントに保存できていない割り当てが
+//   残っていれば、それで数える（UI／UX の指摘 中7、PR #44 の Codex の指摘）。
 //   包みの close は何もしない。
 import { useEffect, useSyncExternalStore } from "react";
 import type { AssignmentMap } from "@/domain/plan/types";
@@ -91,13 +93,41 @@ function getStorage(): FudawariStorage {
  * ない形式はすべての割り当て。U9）
  */
 function countRemovedByImport(assignments: AssignmentMap, input: SaveImportInput): number {
+  return countByImport(assignments, input, false);
+}
+
+/**
+ * その取り込みを保存したら、割り当てのうち残る（引き継ぐ）件数（countRemovedByImport と同じ規則。
+ * 個体 ID がない形式では引き継がないので 0。U9）
+ */
+function countKeptByImport(assignments: AssignmentMap, input: SaveImportInput): number {
+  return countByImport(assignments, input, true);
+}
+
+/** 割り当てのうち、取り込みの後に残る（kept が true）／外れる（false）件数 */
+function countByImport(assignments: AssignmentMap, input: SaveImportInput, kept: boolean): number {
   const keepUids: ReadonlySet<ShipUid> = input.hasUid ? new Set(input.ships.map((ship) => ship.uid)) : new Set();
   let count = 0;
   for (const [uid, fudaId] of Object.entries(assignments)) {
     // 控え（undefined）は割り当てではないので数えない
-    if (typeof fudaId === "string" && !keepUids.has(uid)) count += 1;
+    if (typeof fudaId === "string" && keepUids.has(uid) === kept) count += 1;
   }
   return count;
+}
+
+/**
+ * 保存先で数えた引き継いだ数を、保存できていない割り当てがあるイベントなら、その割り当て（画面に出ている割り当て。
+ * 読み直すと残す）で数え直す。引き継いだ数を頼んでいない・別のイベントなら、保存先の結果のまま
+ */
+function withKeptFromUnsaved(
+  result: SaveImportResult,
+  unsaved: UnsavedAssignments | null,
+  input: SaveImportInput,
+): SaveImportResult {
+  if (unsaved === null || result.keptAssignmentCount === undefined || unsaved.eventId !== input.keptCountEventId) {
+    return result;
+  }
+  return { ...result, keptAssignmentCount: countKeptByImport(unsaved.assignments, input) };
 }
 
 /**
@@ -146,11 +176,13 @@ async function saveImportWithUnsaved(
   const unsaved = store.unsavedAssignments();
   // 数え直すために、取り込みで変わる前の保存先の割り当てを読んでおく（読めなければ数え直さない）
   const saved = unsaved === null ? null : await loadAssignmentsOrNull(inner, unsaved.eventId);
-  const result = await inner.saveImport(input);
+  const stored = await inner.saveImport(input);
   store.noteImport(input.hasUid);
-  // 保存できていない割り当てがない・保存先の割り当てを読めなかったときは、保存先で数えた件数を返す
+  // 引き継いだ数は、保存できていない割り当てがあれば、それだけで数え直せる（保存先の割り当ては要らない）
+  const result = withKeptFromUnsaved(stored, unsaved, input);
+  // 保存できていない割り当てがない・保存先の割り当てを読めなかったときは、保存先で数えた外した件数を返す
   if (unsaved === null || saved === null) return result;
-  return recountWithUnsaved(result.removedAssignmentCount, saved, unsaved, input);
+  return { ...result, ...recountWithUnsaved(result.removedAssignmentCount, saved, unsaved, input) };
 }
 
 /**

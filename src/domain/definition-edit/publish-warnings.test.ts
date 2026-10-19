@@ -118,4 +118,77 @@ describe("findPublishWarnings（公開の前の警告）", () => {
   it("入口（@/domain/definition-edit）から使える", () => {
     expect(definitionEdit.findPublishWarnings).toBe(findPublishWarnings);
   });
+
+  // PR #44 の独立レビュー（親の決定）
+  describe("効く艦がない特効グループ（名前・倍率はあるが、艦名も国籍もない）", () => {
+    it("空の特効グループとは別の文（「効く艦がない特効グループ」と段階名）で警告する", () => {
+      const doc = editDoc(def, (draft) => {
+        stageOf(draft, "E3-G").boosts.push({ id: "E3-G-N", name: "米艦", multiplier: 1.2, shipNames: [] });
+      });
+
+      const warnings = findPublishWarnings(doc, ALL_SHIP_NAMES);
+
+      expect(warnings.map((w) => w.code)).toEqual(["no_target_boost_groups"]);
+      expect(warnings[0]?.message).toContain("効く艦がない特効グループ");
+      expect(warnings[0]?.message).toContain("「E3 ギミック」");
+      expect(warnings[0]?.message).not.toContain("空の特効グループ");
+    });
+
+    it("空の特効グループはこれまでどおり空として警告し、効く艦がないグループとしては数えない。並びは 空 → 効く艦がない → 札", () => {
+      const doc = editDoc(def, (draft) => {
+        stageOf(draft, "E3-G").boosts.push({ id: "E3-G-X", name: "", multiplier: 1, shipNames: [] });
+        stageOf(draft, "E3-G").boosts.push({ id: "E3-G-N", name: "", multiplier: 1.2, shipNames: [] });
+        fudaOf(draft, "tago").gameNumber = null;
+      });
+
+      const warnings = findPublishWarnings(doc, ALL_SHIP_NAMES);
+
+      expect(warnings.map((w) => w.code)).toEqual(["empty_boost_groups", "no_target_boost_groups", "missing_game_number"]);
+    });
+  });
+
+  describe("警告の見分け方（同じ名前の段階・札）", () => {
+    it("警告ごとに重複しない id を持つ", () => {
+      const doc = editDoc(def, (draft) => {
+        stageOf(draft, "E3-G").boosts.push({ id: "E3-G-X", name: "", multiplier: 1, shipNames: [] });
+        stageOf(draft, "E2-G").boosts.push({ id: "E2-G-X", name: "", multiplier: 1, shipNames: [] });
+        fudaOf(draft, "tago").gameNumber = null;
+        fudaOf(draft, "sixth").gameNumber = null;
+      });
+
+      const ids = findPublishWarnings(doc, new Set<string>()).map((w) => w.id);
+
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("同じ表示名の段階（E2 の 2・3 番目がどちらも「新しい段階」）は、海域の中の位置を添えて見分けられる文にする", () => {
+      const doc = editDoc(def, (draft) => {
+        for (const id of ["E2-1", "E2-2"]) {
+          const stage = stageOf(draft, id);
+          stage.name = "新しい段階";
+          stage.boosts.push({ id: `${id}-X`, name: "", multiplier: 1, shipNames: [] });
+        }
+      });
+
+      const messages = findPublishWarnings(doc, ALL_SHIP_NAMES).map((w) => w.message);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toContain("E2 の 2 番目の段階「新しい段階」");
+      expect(messages[1]).toContain("E2 の 3 番目の段階「新しい段階」");
+    });
+
+    it("同じ名前の札（どちらも札番号が未入力）は、札の並びの位置を添えて見分けられる文にする", () => {
+      const doc = editDoc(def, (draft) => {
+        fudaOf(draft, "tago").gameNumber = null;
+        fudaOf(draft, "sixth").gameNumber = null;
+        fudaOf(draft, "sixth").name = "多号作戦部隊";
+      });
+
+      const messages = findPublishWarnings(doc, ALL_SHIP_NAMES).map((w) => w.message);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toContain("2 番目の札「多号作戦部隊」");
+      expect(messages[1]).toContain("5 番目の札「多号作戦部隊」");
+    });
+  });
 });

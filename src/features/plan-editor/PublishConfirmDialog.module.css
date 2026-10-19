@@ -1,11 +1,10 @@
 /*
  * 公開の前の確認（取り込み画面の確認〔ConfirmRemoveDialog.module.css〕と同じ作り）。
  * Portal で body の直下に出すため、定義画面の変数（--pe-*。.root に置いている）は使えない。
- * 警告の色はこのファイルの変数に置く（ダークは定義画面の --pe-pending と同じ値、ライトは仮）。
+ * 警告の文字は theme.css の共通の警告色（--color-warning）。警告の枠の色はこのファイルの変数に置く（ライトは仮）。
  */
 
 .overlay {
-  --pc-warning: #f2c98a; /* 警告の文字（定義画面の未公開の変更・知らない艦名の警告と同じ色） */
   --pc-warning-border: #7a6230;
 
   position: fixed;
@@ -20,13 +19,11 @@
 }
 
 :global(:root[data-theme="light"]) .overlay {
-  --pc-warning: #8a5a00; /* 仮 */
   --pc-warning-border: #e2c79c; /* 仮 */
 }
 
 @media (prefers-color-scheme: light) {
   :global(:root:not([data-theme])) .overlay {
-    --pc-warning: #8a5a00; /* 仮 */
     --pc-warning-border: #e2c79c; /* 仮 */
   }
 }
@@ -51,6 +48,12 @@
   font-weight: 700;
 }
 
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .description {
   margin: 0;
   font-size: 13px;
@@ -66,7 +69,7 @@
   padding: 10px 12px 10px 28px;
   border: 1px solid var(--pc-warning-border);
   border-radius: var(--radius-md);
-  color: var(--pc-warning);
+  color: var(--color-warning);
   font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;

@@ -387,6 +387,17 @@ export function DefinitionEditor({
     if (!dialogOpen && dialogWasOpenRef.current) returnFocusRef.current?.focus();
     dialogWasOpenRef.current = dialogOpen;
   }, [dialogOpen]);
+  // 公開の前の確認で「公開する」を押した後、公開が終わったら押した公開のボタンへフォーカスを戻す
+  // （確認を閉じた時点では公開の途中でボタンを押せず、フォーカスを置けないため。PR #44 のレビュー）。
+  // 保存の確認のウィンドウが出たときは、そのウィンドウが閉じたときに戻す（上の効果）ので、ここでは戻さない
+  // （確認を閉じた描画でも効果を走らせるため、確認の警告も依存に入れる。公開を始める前に止まったときは、その場で戻す）
+  const focusAfterPublishRef = useRef(false);
+  const publishSettled = busy === null;
+  useEffect(() => {
+    if (!focusAfterPublishRef.current || !publishSettled || publishWarnings !== null) return;
+    focusAfterPublishRef.current = false;
+    if (!dialogOpen) returnFocusRef.current?.focus();
+  }, [publishSettled, dialogOpen, publishWarnings]);
   // 今のモード（保存の途中に切り替えた後で衝突が返ったとき、衝突したワークスペースのモードに戻すかを見る）
   const modeRef = useRef(state.mode);
   useEffect(() => {
@@ -935,6 +946,7 @@ export function DefinitionEditor({
   };
 
   const confirmPublish = (): void => {
+    focusAfterPublishRef.current = true;
     setPublishWarnings(null);
     void handlePublish();
   };

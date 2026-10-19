@@ -4,8 +4,10 @@
 // - 保存先は usePlanData と同じもの（getPlanStorage）。保存の前に previewImport で外れる割り当ての件数を数え、
 //   1 件以上なら確認を挟む（2026-10-17 親の決定）。やめれば保存しない
 // - 完了の表示の「外した件数」は saveImport の戻り値（確認の後に割り当てが変わっても、実際に外した件数を出す）
-// - 「札割り n 隻を引き継ぎました」の n は、取り込み直し（前の取り込みがあり、個体 ID がある形式）のときに、
-//   保存した後に残った最新のイベントの割り当ての数（UI／UX の指摘 中7）
+// - 「札割り n 隻を引き継ぎました」の n は、saveImport が返す最新のイベントで引き継いだ割り当ての数
+//   （keptAssignmentCount。保存できていない割り当てがあればそれで数える。UI／UX の指摘 中7）。
+//   前の取り込みの記録は見ない（「取り込んだ艦娘データを削除」は記録だけを消して割り当てを残すため。PR #44 のレビュー）。
+//   初回は割り当てがないので 0、個体 ID がない古い形式は引き継がないので 0
 // - 解析〜保存の途中と確認待ちの間は、次の取り込みを受け付けない（二重押しを防ぐ）
 // - 保存した後に呼ぶ onImported は、呼ぶ時点で最後に描いたときに渡されたものを使う
 //   （取り込みの途中で公開定義が読めて札割りのデータの読み込み先が決まっても、最新の値で読み直せるように）
@@ -32,7 +34,8 @@ export interface ImportSummary {
   removedAssignmentCount: number;
   /**
    * 最新のイベントで引き継いだ割り当ての数（UI／UX の指摘 中7）。
-   * 前の取り込みがあり、個体 ID がある形式で取り込み直したときに、保存した後に残った最新のイベントの割り当ての数。
+   * 個体 ID がある形式で取り込んだときに、最新のイベントの割り当てのうち取り込みの後も残るものの数
+   * （saveImport の keptAssignmentCount。保存できていない割り当てがあれば、画面に出ているその割り当てで数える）。
    * 初回の取り込み・個体 ID がない古い形式・最新のイベントが分からないときは 0
    */
   keptAssignmentCount: number;
@@ -50,8 +53,6 @@ export interface PendingImport {
   filter: ImportFilter;
   /** 保存すると外れる割り当ての件数（previewImport の戻り値。1 以上） */
   removedAssignmentCount: number;
-  /** 取り込む前に、前の取り込みがあったか（取り込み直しか） */
-  hadPreviousImport: boolean;
 }
 
 /** 取り込みの状態 */
@@ -101,15 +102,19 @@ export interface ImportFlow {
 const IDLE: ImportFlowState = { status: "idle" };
 const WORKING: ImportFlowState = { status: "working" };
 
-/** 保存先に渡す入力を作る（日時は呼んだときの時刻） */
-function toSaveInput(parsed: ImportSuccess, filter: ImportFilter): SaveImportInput {
-  return {
+/**
+ * 保存先に渡す入力を作る（日時は呼んだときの時刻）。
+ * keptCountEventId を渡すと、取り込みの保存がそのイベントで引き継いだ割り当ての数を返す
+ */
+function toSaveInput(parsed: ImportSuccess, filter: ImportFilter, keptCountEventId?: string): SaveImportInput {
+  const input: SaveImportInput = {
     ships: parsed.ships,
     importedAt: new Date().toISOString(),
     filter,
     hasUid: parsed.hasUid,
     hasLockInfo: parsed.hasLockInfo,
   };
+  return keptCountEventId === undefined ? input : { ...input, keptCountEventId };
 }
 
 /** 保存した結果から、完了の表示に出すものを作る */
@@ -130,34 +135,6 @@ function toSummary(
     hasUid: parsed.hasUid,
     lockFilterIgnored: parsed.lockFilterIgnored,
   };
-}
-
-/**
- * 保存した後に残った、最新のイベントの割り当ての数（引き継いだ数）。
- * 取り込み直しでない・個体 ID がない古い形式・最新のイベントが分からないときは 0。
- * 読めなくても取り込みは済んでいるため、失敗は 0 として扱う（知らせを出さないだけ）
- */
-async function countKeptAssignments(
-  parsed: ImportSuccess,
-  hadPreviousImport: boolean,
-  latestEventId: string | null,
-): Promise<number> {
-  if (!hadPreviousImport || !parsed.hasUid || latestEventId === null) return 0;
-  try {
-    const assignments = await getPlanStorage().loadAssignments(latestEventId);
-    return Object.values(assignments).filter((fudaId) => typeof fudaId === "string").length;
-  } catch {
-    return 0;
-  }
-}
-
-/** 前の取り込みがあるか（読めなければ、引き継いだ知らせを出さないよう false） */
-async function hasPreviousImport(): Promise<boolean> {
-  try {
-    return (await getPlanStorage().loadLastImport()) !== null;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -192,12 +169,15 @@ export function useImportFlow({ master, latestEventId, onImported }: UseImportFl
   }
 
   /** 保存して完了にする（失敗なら理由を出す） */
-  async function save(parsed: ImportSuccess, filter: ImportFilter, hadPreviousImport: boolean): Promise<void> {
+  async function save(parsed: ImportSuccess, filter: ImportFilter): Promise<void> {
     phaseRef.current = "working";
     setState(WORKING);
     try {
-      const result = await getPlanStorage().saveImport(toSaveInput(parsed, filter));
-      const kept = await countKeptAssignments(parsed, hadPreviousImport, latestEventIdRef.current);
+      // 引き継いだ数は最新のイベントで数えてもらう（外した件数と同じく、保存先の包みが保存できていない割り当てを踏まえて数える。
+      // 最新のイベントが分からない〔公開定義を読めていない〕ときは数えない）
+      const keptCountEventId = latestEventIdRef.current ?? undefined;
+      const result = await getPlanStorage().saveImport(toSaveInput(parsed, filter, keptCountEventId));
+      const kept = result.keptAssignmentCount ?? 0;
       setState({ status: "done", summary: toSummary(parsed, filter, result.removedAssignmentCount, kept) });
       onImportedRef.current();
     } catch {
@@ -225,20 +205,19 @@ export function useImportFlow({ master, latestEventId, onImported }: UseImportFl
       fail(SAVE_FAILED_MESSAGE);
       return;
     }
-    const hadPreviousImport = await hasPreviousImport();
     if (removedAssignmentCount > 0) {
       // 確認の答えを待つ（待つ間は次の取り込みを受け付けない）
       phaseRef.current = "confirm";
-      setState({ status: "confirm", pending: { parsed, filter, removedAssignmentCount, hadPreviousImport } });
+      setState({ status: "confirm", pending: { parsed, filter, removedAssignmentCount } });
       return;
     }
-    await save(parsed, filter, hadPreviousImport);
+    await save(parsed, filter);
   }
 
   async function confirm(): Promise<void> {
     if (phaseRef.current !== "confirm" || state.status !== "confirm") return;
-    const { parsed, filter, hadPreviousImport } = state.pending;
-    await save(parsed, filter, hadPreviousImport);
+    const { parsed, filter } = state.pending;
+    await save(parsed, filter);
   }
 
   function cancel(): void {

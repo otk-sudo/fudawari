@@ -130,6 +130,18 @@ function removeAssignmentsOfMissingShips(
   return { removedCount, changedRows };
 }
 
+/**
+ * 1 つのイベントの割り当てのうち、取り込みの後も残る（残す個体の一覧にいる個体の）割り当ての数（引き継いだ数）。
+ * 残す個体の規則は keepUidsOf と同じ（個体 ID がない古い形式では空なので 0。U9）
+ */
+function countKeptAssignments(assignments: AssignmentMap, keepUids: ReadonlySet<ShipUid>): number {
+  let count = 0;
+  for (const [uid, fudaId] of Object.entries(assignments)) {
+    if (typeof fudaId === "string" && keepUids.has(uid)) count += 1;
+  }
+  return count;
+}
+
 // ---- 個体 ----
 
 /** 個体の項目だけを写す（ほかの項目を DB に入れない） */
@@ -198,7 +210,12 @@ export function openStorage(options: OpenStorageOptions = {}): FudawariStorage {
         });
 
         // 外す件数は previewImport と同じ関数で数える（確認で知らせた件数と、実際に外した件数をそろえる）
-        const removal = removeAssignmentsOfMissingShips(await assignments.toArray(), keepUids);
+        const rows = await assignments.toArray();
+        const removal = removeAssignmentsOfMissingShips(rows, keepUids);
+        const kept =
+          input.keptCountEventId === undefined
+            ? undefined
+            : countKeptAssignments(rows.find((row) => row.eventId === input.keptCountEventId)?.assignments ?? {}, keepUids);
         if (!input.hasUid) {
           // 個体 ID がない古い形式：どの個体が同じ艦か分からないため、すべてのイベントの割り当てを消す（U9）
           await assignments.clear();
@@ -206,7 +223,9 @@ export function openStorage(options: OpenStorageOptions = {}): FudawariStorage {
           // 個体 ID がある形式：今回の取り込みにいない個体の割り当てを、すべてのイベントで外す
           await assignments.bulkPut(removal.changedRows);
         }
-        return { removedAssignmentCount: removal.removedCount };
+        return kept === undefined
+          ? { removedAssignmentCount: removal.removedCount }
+          : { removedAssignmentCount: removal.removedCount, keptAssignmentCount: kept };
       });
     },
 

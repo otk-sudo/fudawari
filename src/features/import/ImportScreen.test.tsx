@@ -1532,4 +1532,55 @@ describe("取り込み画面（ImportScreen）", () => {
       expect(withTags.assign).toHaveAttribute("href", "/assign");
     });
   });
+
+  // PR #44 の独立レビューの指摘（親の決定）：前の取り込みの記録は見ず、個体 ID のある取り込みで、保存した後に
+  // 最新のイベントの割り当てが残っていれば「札割り n 隻を引き継ぎました」を出す（初回は割り当てがないので出ない）
+  describe("引き継いだ札割りの知らせの数え方（PR #44 の独立レビュー）", () => {
+    /** 完了の表示に書く「札割り n 隻を引き継ぎました」 */
+    function keptText(count: number): RegExp {
+      return new RegExp(`札割り\\s*${count}\\s*隻を引き継ぎました`);
+    }
+
+    /** 「引き継ぎました」の語句（数を問わない） */
+    const KEPT_PHRASE = /引き継ぎました/;
+
+    it("「取り込んだ艦娘データを削除」（最終取り込みの記録は消え、割り当ては残る）の後に取り込み直しても、残った割り当て（2 隻）を引き継いだと出す", async () => {
+      // 準備
+      await seedPreviousImport({ "101": "s31", "102": "tago" });
+      await storage.clearImportedShips();
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(await findDoneRegion()).toHaveTextContent(keptText(2));
+    });
+
+    it("引き継いだ数は最新のイベントの割り当てだけを数え、ほかのイベントの割り当ては含めない（最新の 1 隻）", async () => {
+      // 準備：最新のイベントに 101、ほかのイベントに 102・103 を割り当てておく
+      await seedPreviousImport({ "101": "s31" });
+      await storage.saveAssignments(OTHER_EVENT_ID, { "102": "e1", "103": "e2" });
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(await findDoneRegion()).toHaveTextContent(keptText(1));
+    });
+
+    it("前の取り込みがあっても、最新のイベントで引き継いだ割り当てが 0 件なら（ほかのイベントにだけ割り当てがあっても）出さない", async () => {
+      // 準備
+      await seedPreviousImport({});
+      await storage.saveAssignments(OTHER_EVENT_ID, { "101": "e1" });
+      const user = await renderImportScreen();
+
+      // 実行
+      await pasteAndImport(user, standardSvdataText);
+
+      // 検証
+      expect(await findDoneRegion()).not.toHaveTextContent(KEPT_PHRASE);
+    });
+  });
 });

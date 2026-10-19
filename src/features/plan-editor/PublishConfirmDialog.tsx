@@ -68,16 +68,17 @@ export function PublishConfirmDialog({
                 {warnings.length === 0 ? (
                   <Dialog.Description className={styles.description}>{NO_WARNING_NOTE}</Dialog.Description>
                 ) : (
-                  <>
-                    <Dialog.Description className={styles.description}>
-                      次の点があります。このまま公開すると一般の画面に反映されます。
-                    </Dialog.Description>
-                    <ul className={styles.warnings} aria-label="公開の前の警告">
-                      {warnings.map((warning) => (
-                        <li key={warning.message}>{warning.message}</li>
-                      ))}
-                    </ul>
-                  </>
+                  // 説明（aria-describedby）に警告の一覧まで含める（読み上げで警告の中身も伝わるように）
+                  <Dialog.Description asChild>
+                    <div className={styles.body}>
+                      <p className={styles.description}>次の点があります。このまま公開すると一般の画面に反映されます。</p>
+                      <ul className={styles.warnings} aria-label="公開の前の警告">
+                        {warnings.map((warning) => (
+                          <li key={warning.id}>{warning.message}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </Dialog.Description>
                 )}
                 <div className={styles.footer}>
                   <button ref={cancelRef} type="button" className={styles.cancelButton} onClick={onCancel}>
