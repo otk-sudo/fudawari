@@ -428,6 +428,62 @@ describe("ブラウザ内の保存：取り込みで外れる割り当て（件�
     expect(saved).toEqual({ removedAssignmentCount: 0 });
     expect(await storage.loadAssignments("summer2026")).toEqual({ "101": "rengo", "102": "s31" });
   });
+
+  // 取り込み直しの「札割り n 隻を引き継ぎました」の n（UI／UX の指摘 中7。外した件数と同じ所で数える）
+  describe("引き継いだ割り当ての数（keptCountEventId を渡したときの keptAssignmentCount）", () => {
+    it("saveImport に keptCountEventId を渡すと、そのイベントで取り込みの後も残る割り当ての数を返す：summer2026 は 101 の 1 件", async () => {
+      const storage = open(newDbName());
+      await prepareTwoEvents(storage);
+
+      const saved = await storage.saveImport({ ...twoShips, keptCountEventId: "summer2026" });
+
+      expect(saved).toEqual({ removedAssignmentCount: 2, keptAssignmentCount: 1 });
+    });
+
+    it("割り当てのある個体がすべて今回の取り込みにいれば、そのイベントの割り当ての数（2）を返す", async () => {
+      const storage = open(newDbName());
+      await storage.saveImport(threeShips);
+      await storage.saveAssignments("summer2026", { "101": "rengo", "102": "s31" });
+
+      const saved = await storage.saveImport({ ...twoShips, keptCountEventId: "summer2026" });
+
+      expect(saved).toEqual({ removedAssignmentCount: 0, keptAssignmentCount: 2 });
+    });
+
+    it("割り当てを保存していないイベントなら 0", async () => {
+      const storage = open(newDbName());
+      await prepareTwoEvents(storage);
+
+      const saved = await storage.saveImport({ ...twoShips, keptCountEventId: "autumn2026" });
+
+      expect(saved.keptAssignmentCount).toBe(0);
+    });
+
+    it("個体 ID がない古い形式では引き継がないので 0（U9）", async () => {
+      const storage = open(newDbName());
+      await storage.saveAssignments("summer2026", { "1": "rengo" });
+
+      const saved = await storage.saveImport({
+        ships: [ship("1", 961, 175, 59)],
+        importedAt: "2026-10-17T21:00:00.000+09:00",
+        filter: ALL,
+        hasUid: false,
+        hasLockInfo: false,
+        keptCountEventId: "summer2026",
+      });
+
+      expect(saved).toEqual({ removedAssignmentCount: 1, keptAssignmentCount: 0 });
+    });
+
+    it("keptCountEventId を渡さなければ keptAssignmentCount を返さない", async () => {
+      const storage = open(newDbName());
+      await prepareTwoEvents(storage);
+
+      const saved = await storage.saveImport(twoShips);
+
+      expect(saved).not.toHaveProperty("keptAssignmentCount");
+    });
+  });
 });
 
 describe("ブラウザ内の保存：札割りの書き出し・読み込み（U21）", () => {

@@ -4,7 +4,8 @@
 //
 // - 見出しは札の色で、札名・使う段階・隻数
 // - 艦を選んでいるとき、その艦がいない札の列に「ここに置く（特効あり）」／「ここに置く（特効なし）」を出す
-// - 選んだ艦に特効がない札の列は薄くする（data-dimmed="true"。選んだ艦が今いる列は薄くしない）
+// - 選んだ艦に特効がない札の列は薄くする（data-dimmed="true"。選んだ艦が今いる列は薄くしない）。
+//   opacity で全体を薄くせず、下地・枠・見出しの札の色だけを抑え、文字は読める濃さのまま（FudaColumn.module.css）
 // - 艦カードは呼ぶ側が children（<li> の並び）で渡す
 // - <section> は札の列へのドロップの落とす先（dnd-kit の useDroppable。roadmap T2-8）。ドラッグ中の強調（data-drop-highlight）と、
 //   列の最後の「ここに移動」の出し方は画面が決める（dropHighlight・moveHint）。
@@ -13,11 +14,14 @@
 //
 // 札名を見出しにして region の名前にする（aria-labelledby）。
 import { useDroppable } from "@dnd-kit/core";
-import { type ReactNode, useId } from "react";
+import { type CSSProperties, type ReactNode, useId } from "react";
 import type { Fuda } from "@/domain/definition/types";
 import { fudaDropIdOf } from "./dnd";
 import { inkOn } from "./ship-view";
 import styles from "./FudaColumn.module.css";
+
+/** CSS 変数を含む style（React の CSSProperties は CSS 変数の名前を知らないため、型を足す） */
+type StyleWithVariables = CSSProperties & Record<`--${string}`, string>;
 
 /** 「ここに置く」ボタンの出し方。null は出さない（艦を選んでいない、選んだ艦がこの札にいる） */
 export type PlaceButtonKind = "boost" | "no-boost" | null;
@@ -61,6 +65,8 @@ export function FudaColumn({
   const headingId = useId();
   const { setNodeRef: setDropNodeRef } = useDroppable({ id: fudaDropIdOf(fuda.id) });
   const headClass = `${styles.head} ${inkOn(fuda.color) === "dark" ? styles.darkInk : styles.lightInk}`;
+  // 見出しの下地は CSS で札の色にする（薄い列では札の色を左端の線だけに抑えるため、style で直接塗らない）
+  const headStyle: StyleWithVariables = { "--fuda-color": fuda.color };
 
   return (
     <section
@@ -70,7 +76,7 @@ export function FudaColumn({
       data-dimmed={dimmed ? "true" : undefined}
       data-drop-highlight={dropHighlight ? "true" : undefined}
     >
-      <div className={headClass} style={{ background: fuda.color }}>
+      <div className={headClass} style={headStyle}>
         <h2 id={headingId} className={styles.name}>
           {fuda.name}
         </h2>

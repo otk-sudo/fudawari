@@ -7,6 +7,7 @@ import type { Mutable } from "@/test/fixtures";
 import { PlanEditor } from "./PlanEditor";
 import { SessionExpiredError } from "./repository-errors";
 import {
+  confirmPublish,
   createFakeRepository,
   detailRegion,
   DRAFT_VERSION,
@@ -153,6 +154,7 @@ describe("イベント定義の画面（PlanEditor）：PR-11c のレビュー�
 
       // 実行
       await user.click(publishButton());
+      await confirmPublish(user);
       await waitFor(() => {
         expect(repository.publish).toHaveBeenCalledTimes(1);
       });

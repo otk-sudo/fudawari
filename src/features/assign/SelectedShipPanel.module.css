@@ -3,7 +3,14 @@
  * 札のブロックの左端の線と ■ は札の色（style で渡す）
  */
 
+/*
+ * 置き場所（AssignScreen.module.css の .side）は画面の高さまでに収めるので、パネルはその中で縮み、
+ * 入りきらない分は本文（札ごとのブロック）の中でスクロールさせる（見出しの艦名と「×」は上に残す）
+ */
 .panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   background: var(--color-surface);
   border: 1px solid var(--assign-band-border);
@@ -11,6 +18,7 @@
 }
 
 .head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -55,7 +63,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
   padding: 10px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .caption {
@@ -164,9 +175,10 @@
   color: var(--assign-highlight);
 }
 
+/* 「特効なし：札A、札B」。文字は補助の文字の色（面の上で 4.5:1 以上。UI／UX レビュー 2026-10-19） */
 .none {
   font-size: calc(12px * var(--font-scale));
-  color: var(--assign-faint-text);
+  color: var(--color-text-muted);
 }
 
 .close:focus-visible,

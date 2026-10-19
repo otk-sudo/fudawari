@@ -101,9 +101,9 @@ type StyleWithVariables = CSSProperties & Record<`--${string}`, string>;
 
 /**
  * 要素の高さ（border-box）を測り続ける（描いた後と、大きさが変わるたび。ResizeObserver の知らせで測る）。
- * 戻り値は要素に付ける ref と高さ（px）。要素がない・測れない（ResizeObserver のない環境）ときは 0
+ * 戻り値は要素に付ける ref と高さ（px）と要素。高さは、要素がない・測れない（ResizeObserver のない環境）ときは 0
  */
-function useElementHeight<T extends HTMLElement>(): [(element: T | null) => void, number] {
+function useElementHeight<T extends HTMLElement>(): [(element: T | null) => void, number, T | null] {
   const [element, setElement] = useState<T | null>(null);
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
@@ -113,7 +113,22 @@ function useElementHeight<T extends HTMLElement>(): [(element: T | null) => void
     observer.observe(element);
     return () => observer.disconnect();
   }, [element]);
-  return [setElement, element === null ? 0 : height];
+  return [setElement, element === null ? 0 : height, element];
+}
+
+/** ヘッダー帯の高さと、その下の間の既定の値（AssignScreen.module.css の .screen と同じ。CSS が読めないとき用） */
+const DEFAULT_HEADER_HEIGHT = "51px";
+const DEFAULT_STICKY_GAP = "12px";
+
+/**
+ * ページのスクロールの scroll-padding-top（留めたヘッダー帯の高さ＋ヘッダー帯の下の間）。
+ * .screen の変数（--assign-header-height・--assign-sticky-gap）を読む。読めない（CSS がない）ときは既定の値
+ */
+function scrollPaddingTopOf(screen: HTMLElement): string {
+  const style = getComputedStyle(screen);
+  const header = style.getPropertyValue("--assign-header-height").trim() || DEFAULT_HEADER_HEIGHT;
+  const gap = style.getPropertyValue("--assign-sticky-gap").trim() || DEFAULT_STICKY_GAP;
+  return `calc(${header} + ${gap})`;
 }
 
 /** ドラッグ中の艦カードの写しは押せないので、押したときは何もしない */
@@ -173,9 +188,28 @@ export function AssignScreen({
   const screenRef = useRef<HTMLDivElement>(null);
   // お知らせの欄の高さ。控えの高さの上限から引く（お知らせが出ていても、ページの一番上で控えが画面に収まるように。PR-14b）
   const [noticesRef, noticesHeight] = useElementHeight<HTMLDivElement>();
-  const screenStyle: StyleWithVariables = { "--assign-notices-height": `${noticesHeight}px` };
+  // 画面の上に留めるヘッダー帯の高さ。控えと選択中の艦のパネルを留める位置と高さの上限に使う（狭い画面でヘッダー帯が折り返しても
+  // その下に留めるため、測った高さを使う。測る前は AssignScreen.module.css の既定値）
+  const [headerRef, headerHeight, headerElement] = useElementHeight<HTMLDivElement>();
+  const screenStyle: StyleWithVariables = {
+    "--assign-notices-height": `${noticesHeight}px`,
+    ...(headerHeight > 0 ? { "--assign-header-height": `${headerHeight}px` } : {}),
+  };
   const searchRef = useRef<HTMLInputElement>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+
+  // 割り振り画面を出している間は、ページのスクロール（<html>）に、留めたヘッダー帯の高さ＋間の分の scroll-padding-top を効かせる。
+  // ヘッダー帯の下に重なった「ここに置く」・艦カードなどにフォーカスが移ると、ブラウザがヘッダー帯の下まで見せる
+  // （WCAG 2.4.11。PR #45 のレビュー）。画面を離れたら外す。値は .screen の変数（測ったヘッダー帯の高さ・間）から作る
+  useLayoutEffect(() => {
+    const screen = screenRef.current;
+    if (screen === null) return;
+    const root = document.documentElement;
+    root.style.scrollPaddingTop = scrollPaddingTopOf(screen);
+    return () => {
+      root.style.removeProperty("scroll-padding-top");
+    };
+  }, [headerHeight]);
 
   // 頼まれた艦のカードにフォーカスを移す（描き直した後。カードが描かれていなければ控えの検索欄）
   useLayoutEffect(() => {
@@ -222,7 +256,12 @@ export function AssignScreen({
     }),
     [entries, fudas, assignments, fudaIds],
   );
-  const { contextProps: dndContextProps, activeUid, over } = useShipDnd({ store, lookup: dragLookup });
+  const { contextProps: dndContextProps, activeUid, over } = useShipDnd({
+    store,
+    lookup: dragLookup,
+    // 画面の上に留めたヘッダー帯の上で離しても、その下に隠れた札の列・艦カードには落とさない
+    dropBlocker: headerElement,
+  });
   const dropFeedback = dropFeedbackOf(dragLookup, activeUid, over);
   /** 札の列の「ここに移動」の出し方（ドラッグ中はどの列にも場所を取り、出す列だけ見せる） */
   const moveHintOf = (fudaId: string): MoveHintKind =>
@@ -316,17 +355,20 @@ export function AssignScreen({
     <DndContext {...dndContextProps}>
       <DragLookupContext.Provider value={dragLookup}>
         <div ref={screenRef} className={styles.screen} style={screenStyle}>
-          <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
-            <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
-            <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
-            <span className={styles.headerSpacer} />
-            <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
-              元に戻す
-            </button>
-            <Link href={ROUTES.list} className={styles.listLink}>
-              一覧で確認
-            </Link>
-          </ScreenHeader>
+          {/* ヘッダー帯（元に戻す・一覧で確認）は、ページをスクロールしても画面の上に留める */}
+          <div ref={headerRef} className={styles.headerBar}>
+            <ScreenHeader title={ASSIGN_SCREEN_TITLE} eventName={definition.event.name}>
+              <span className={styles.headerNote}>ドラッグで別の札へ移動、カードに重ねると入れ替え</span>
+              <span className={styles.headerNote}>特効データ：{formatVersionDate(definition.event.versionDate)} 版</span>
+              <span className={styles.headerSpacer} />
+              <button type="button" className={styles.undoButton} disabled={!canUndo} onClick={undo}>
+                元に戻す
+              </button>
+              <Link href={ROUTES.list} className={styles.listLink}>
+                一覧で確認
+              </Link>
+            </ScreenHeader>
+          </div>
 
           {(saveError !== null || returnedCount > 0) && (
             <div ref={noticesRef} className={styles.notices}>

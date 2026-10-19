@@ -24,6 +24,7 @@ import { expectInDocumentOrder } from "@/test/dom-order";
 import {
   actualFudaOf,
   bulkApplyLabel,
+  excludedFudasBannerPattern,
   getDoneStatus,
   getHeader,
   getIssueCard,
@@ -31,6 +32,7 @@ import {
   issueCards,
   issueCardsOf,
   issuesHeadingPattern,
+  NO_GAME_NUMBER_BANNER,
   plannedFudaOf,
   progressItems,
   progressPattern,
@@ -137,6 +139,11 @@ function withSally(ships: readonly OwnedShip[], sally: Readonly<Record<string, n
     if (!ships.some((ship) => ship.uid === uid)) throw new Error(`テスト用データに個体 ${uid} がありません`);
   }
   return ships.map((ship) => ({ ...ship, sallyArea: sally[ship.uid] ?? 0 }));
+}
+
+/** ページの文字全体の中で pattern（g を付けた正規表現）に当たる回数 */
+function countInPage(pattern: RegExp): number {
+  return (document.body.textContent ?? "").match(pattern)?.length ?? 0;
 }
 
 /** 割り当てから個体を除いた（控えに戻した）割り当て */
@@ -616,7 +623,7 @@ describe("差分の画面（DriftPageContent）", () => {
       expect(getProgressItem("第六艦隊")).toHaveTextContent(progressPattern(0, 1));
     });
 
-    it("札番号が未入力の札は「札番号が未入力」と出し、その札に置いた艦は差分の対象外にする（一覧にも件数にも入れない。U10）", async () => {
+    it("札番号が未入力の札は札ごとに「比べられません」を繰り返さず（札付きの数も出さない）、その札に置いた艦は差分の対象外にする（一覧にも件数にも入れない。U10・UI／UX レビュー 高2）", async () => {
       // 準備：第三十一戦隊の札番号を未入力にする。初霜改二（計画 第三十一戦隊）に連合艦隊の札が付いている
       const definition = cloneSummer2026Definition();
       definition.fudas[0].gameNumber = null;
@@ -629,13 +636,100 @@ describe("差分の画面（DriftPageContent）", () => {
 
       // 検証：第三十一戦隊の 4 隻は対象外。残りの計画 15 隻は「まだ出撃していない」
       const s31 = getProgressItem("第三十一戦隊");
-      expect(s31).toHaveTextContent(/札番号が未入力/);
+      expect(s31).not.toHaveTextContent(/比べられません/);
       expect(s31).not.toHaveTextContent(/札付き/);
       expect(getProgressItem("連合艦隊")).toHaveTextContent(progressPattern(0, 8));
       expect(issueCardsOf("初霜改二")).toHaveLength(0);
       expect(screen.getByText("対応が必要なものはありません")).toBeInTheDocument();
       expect(summaryCount("計画と違う札が付いた")).toBe(0);
       expect(summaryCount("まだ出撃していない")).toBe(15);
+    });
+  });
+
+  // UI／UX レビュー 高2：本番の定義は全札の札番号が空で、何も比べていないのに件数のまとめが 0 で「対応が必要なものはありません」と出ていた。
+  // 比べられる札（札番号のある札）の数で、全札あり・一部なし・全札なしの 3 通りに出し分ける
+  describe("札番号の有無による出し分け（UI／UX レビュー 高2）", () => {
+    it("全札に札番号があれば、札番号についての帯を出さない（件数のまとめと「対応が必要」の欄を出す）", async () => {
+      // 準備：テスト用データの定義は全札に札番号（1〜5）がある
+      await seed();
+
+      // 実行
+      renderDrift();
+      await waitForReady();
+
+      // 検証
+      expect(screen.queryByText(NO_GAME_NUMBER_BANNER)).not.toBeInTheDocument();
+      expect(countInPage(/差分の対象外/g)).toBe(0);
+      expect(countInPage(/比べられません/g)).toBe(0);
+      expect(screen.getByRole("heading", { level: 2, name: issuesHeadingPattern(4) })).toBeInTheDocument();
+    });
+
+    it("一部の札だけ札番号がなければ（1 札）、その旨を帯で一度だけ「札番号が未入力の札（1 札）は差分の対象外」と知らせ、件数のまとめと「対応が必要」の欄は出す", async () => {
+      // 準備：第三十一戦隊だけ札番号を未入力にする
+      const definition = cloneSummer2026Definition();
+      definition.fudas[0].gameNumber = null;
+      respondWithLatestData(fetchMock, { definition });
+      await seed();
+
+      // 実行
+      renderDrift();
+      await waitForReady();
+
+      // 検証：帯は一度だけ。札ごとのカードに「比べられません」を繰り返さない
+      expect(countInPage(/差分の対象外/g)).toBe(1);
+      expect(document.body).toHaveTextContent(excludedFudasBannerPattern(1));
+      expect(countInPage(/比べられません/g)).toBe(0);
+      expect(screen.queryByText(NO_GAME_NUMBER_BANNER)).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: /対応が必要/ })).toBeInTheDocument();
+      // 検証：札番号のない札の進み具合は短い印と計画の隻数だけ。ほかの札は今のまま（PR #43 の独立レビュー）
+      expect(getProgressItem("第三十一戦隊")).toHaveTextContent(/^第三十一戦隊\s*札番号なし\s*／\s*計画\s*4\s*隻$/);
+      expect(getProgressItem("連合艦隊")).toHaveTextContent(/札付き\s*\d+\s*／\s*計画\s*8\s*隻/);
+    });
+
+    it("一部の札だけ札番号がなければ（2 札）、帯に札の数（2 札）を書く", async () => {
+      // 準備：第三十一戦隊と第六艦隊の札番号を未入力にする
+      const definition = cloneSummer2026Definition();
+      definition.fudas[0].gameNumber = null;
+      definition.fudas[4].gameNumber = null;
+      respondWithLatestData(fetchMock, { definition });
+      await seed();
+
+      // 実行
+      renderDrift();
+      await waitForReady();
+
+      // 検証
+      expect(countInPage(/差分の対象外/g)).toBe(1);
+      expect(document.body).toHaveTextContent(excludedFudasBannerPattern(2));
+      expect(countInPage(/比べられません/g)).toBe(0);
+    });
+
+    it("全札に札番号がなければ、件数のまとめと「対応が必要」の欄の代わりに「この定義には札番号がないため、差分を比べられません」の帯を 1 つだけ出し、「対応が必要なものはありません」・札ごとの「比べられません」を出さない", async () => {
+      // 準備：全札の札番号を未入力にする（本番の定義と同じ）。艦には実際の札が付いている
+      const definition = cloneSummer2026Definition();
+      for (const fuda of definition.fudas) fuda.gameNumber = null;
+      respondWithLatestData(fetchMock, { definition });
+      await seed();
+
+      // 実行
+      renderDrift();
+      expect(await screen.findByText(NO_GAME_NUMBER_BANNER)).toBeInTheDocument();
+
+      // 検証：帯は 1 つだけ（「比べられません」は帯の 1 回だけ）
+      expect(screen.getAllByText(NO_GAME_NUMBER_BANNER)).toHaveLength(1);
+      expect(countInPage(/比べられません/g)).toBe(1);
+      expect(countInPage(/差分の対象外/g)).toBe(0);
+      // 検証：件数のまとめ・「対応が必要」の欄・1 件ずつの表示・まとめての反映を出さない
+      expect(querySummaryList()).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: /対応が必要/ })).not.toBeInTheDocument();
+      expect(screen.queryByText("対応が必要なものはありません")).not.toBeInTheDocument();
+      expect(issueCards()).toHaveLength(0);
+      expect(screen.queryByRole("button", { name: "計画をまとめて実際に合わせる" })).not.toBeInTheDocument();
+      // 検証：札ごとの進み具合は札名と「計画 m隻」だけ（「札付き」も短い印も出さない。PR #43 の独立レビュー）
+      expect(getProgressItem("連合艦隊")).toHaveTextContent(/^連合艦隊\s*計画\s*8\s*隻$/);
+      for (const item of progressItems()) expect(item).toHaveTextContent(/^[^／]+?\s*計画\s*\d+\s*隻$/);
+      // 検証：ヘッダーと取り込みへのリンクはそのまま
+      expect(within(getHeader()).getByRole("link", { name: "最新の状態を取り込む" })).toHaveAttribute("href", "/import");
     });
   });
 

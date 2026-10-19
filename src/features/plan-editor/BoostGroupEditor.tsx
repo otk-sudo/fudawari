@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { BoostGroup } from "@/domain/definition";
+import { summarizeBoostGroup } from "@/domain/definition-edit";
 import { BOOST_NATIONALITIES, type BoostNationality, nationalityLabel } from "@/domain/nationality";
 import { BOOST_SHIP_TYPE_OPTIONS, type BoostShipTypeOption } from "@/domain/ship-type";
 import type { StageActions } from "./StageDetail";
@@ -80,6 +81,8 @@ export type BoostGroupEditorProps = {
  * 艦名のタグの下に国籍のタグ（v1.1）。「＋ 国籍」で国籍を選ぶ欄を開き、チェックを入れる・外すとすぐ文書に反映する。
  * 国籍が 1 つ以上あるときだけ、その下に艦種のタグ（v1.1。国籍の条件を絞る）。「＋ 艦種」で艦種を選ぶ欄を開き、
  * チェックを入れる・外すと、その選択肢の番号をすべて足す・外す（すぐ文書に反映する）
+ * 艦名・国籍・艦種の各行の左に小さく見出しを付け、グループの下に効く条件の要約を 1 行出す（UI／UX の指摘 中9）。
+ * 艦名の入力欄には艦船マスタの艦名を候補（datalist）に出し、マスタにない艦名のタグは data-unknown と警告の色で区別する（中10）
  */
 export function BoostGroupEditor({
   group,
@@ -121,6 +124,9 @@ export function BoostGroupEditor({
   const chosenShipTypeOptions = BOOST_SHIP_TYPE_OPTIONS.filter((option) => isOptionChosen(option, shipTypes));
   const groupName = group.name === "" ? "（名前なし）" : group.name;
   const unknownShips = knownShipNames === undefined ? [] : group.shipNames.filter((name) => !knownShipNames.has(name));
+  const unknownShipSet = new Set(unknownShips);
+  // 艦名の候補（datalist）の ID
+  const suggestionsId = useId();
 
   useEffect(() => {
     if (autoFocus) nameRef.current?.focus();
@@ -217,93 +223,124 @@ export function BoostGroupEditor({
             ×
           </button>
         </div>
-        <ul className={styles.tags} aria-label="艦名">
-          {group.shipNames.map((ship) => (
-            <li key={ship} className={styles.tag}>
-              <span>{ship}</span>
-              <button
-                type="button"
-                aria-label={`${ship}を外す`}
-                className={styles.tagRemove}
-                onClick={() => actions.removeShip(group.id, ship)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-          <li className={styles.tagAddItem}>
-            {adding ? (
-              <input
-                ref={shipInputRef}
-                type="text"
-                aria-label="追加する艦名"
-                className={styles.tagInput}
-                placeholder="艦名"
-                value={shipText}
-                onChange={(event) => setShipText(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    commitShip(true);
-                  } else if (event.key === "Escape") {
-                    cancelShipRef.current = true;
-                    setShipText("");
-                    setAdding(false);
-                  }
-                }}
-                onBlur={() => {
-                  if (cancelShipRef.current) {
-                    cancelShipRef.current = false;
-                    return;
-                  }
-                  commitShip(false);
-                }}
-              />
-            ) : (
-              <button
-                type="button"
-                className={styles.tagAdd}
-                onClick={() => {
-                  // 前に Esc でやめたときの印を消す（欄を閉じた後の blur は届かないことがあるため、開くときに消す）
-                  cancelShipRef.current = false;
-                  setAdding(true);
-                }}
-              >
-                ＋ 艦名
-              </button>
-            )}
-          </li>
-        </ul>
-        <ul className={styles.tags} aria-label="国籍">
-          {nationalities.map((nationality) => {
-            const label = nationalityLabel(nationality);
-            return (
-              <li key={nationality} className={styles.tag}>
-                <span>{label}</span>
+        <div className={styles.tagRow}>
+          <span className={styles.rowLabel} aria-hidden="true">
+            艦名
+          </span>
+          <ul className={styles.tags} aria-label="艦名">
+            {group.shipNames.map((ship) => {
+              const unknown = unknownShipSet.has(ship);
+              return (
+                <li
+                  key={ship}
+                  className={unknown ? `${styles.tag} ${styles.tagUnknown}` : styles.tag}
+                  // 艦船マスタにない艦名のタグ（UI／UX の指摘 中10。マスタを読めないときは付けない）
+                  data-unknown={unknown ? "true" : undefined}
+                  title={unknown ? "艦船マスタにない艦名です" : undefined}
+                >
+                  <span>{ship}</span>
+                  <button
+                    type="button"
+                    aria-label={`${ship}を外す`}
+                    className={styles.tagRemove}
+                    onClick={() => actions.removeShip(group.id, ship)}
+                  >
+                    ×
+                  </button>
+                </li>
+              );
+            })}
+            <li className={styles.tagAddItem}>
+              {adding ? (
+                <>
+                  <input
+                    ref={shipInputRef}
+                    type="text"
+                    aria-label="追加する艦名"
+                    className={styles.tagInput}
+                    placeholder="艦名"
+                    // 艦船マスタの改装段階を問わない艦名を候補に出す（UI／UX の指摘 中10。マスタを読めないときは出さない）
+                    list={knownShipNames === undefined ? undefined : suggestionsId}
+                    autoComplete="off"
+                    value={shipText}
+                    onChange={(event) => setShipText(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        commitShip(true);
+                      } else if (event.key === "Escape") {
+                        cancelShipRef.current = true;
+                        setShipText("");
+                        setAdding(false);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (cancelShipRef.current) {
+                        cancelShipRef.current = false;
+                        return;
+                      }
+                      commitShip(false);
+                    }}
+                  />
+                  {knownShipNames !== undefined && (
+                    <datalist id={suggestionsId}>
+                      {[...knownShipNames].map((name) => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
+                  )}
+                </>
+              ) : (
                 <button
                   type="button"
-                  aria-label={`${label}を外す`}
-                  className={styles.tagRemove}
-                  onClick={() => toggleNationality(nationality, false)}
+                  className={styles.tagAdd}
+                  onClick={() => {
+                    // 前に Esc でやめたときの印を消す（欄を閉じた後の blur は届かないことがあるため、開くときに消す）
+                    cancelShipRef.current = false;
+                    setAdding(true);
+                  }}
                 >
-                  ×
+                  ＋ 艦名
                 </button>
-              </li>
-            );
-          })}
-          <li className={styles.tagAddItem}>
-            <button
-              ref={nationalityButtonRef}
-              type="button"
-              className={styles.tagAdd}
-              aria-expanded={pickingNationality}
-              aria-controls={pickingNationality ? nationalityPickerId : undefined}
-              onClick={() => toggleNationalityPicker(!pickingNationality)}
-            >
-              ＋ 国籍
-            </button>
-          </li>
-        </ul>
+              )}
+            </li>
+          </ul>
+        </div>
+        <div className={styles.tagRow}>
+          <span className={styles.rowLabel} aria-hidden="true">
+            国籍
+          </span>
+          <ul className={styles.tags} aria-label="国籍">
+            {nationalities.map((nationality) => {
+              const label = nationalityLabel(nationality);
+              return (
+                <li key={nationality} className={styles.tag}>
+                  <span>{label}</span>
+                  <button
+                    type="button"
+                    aria-label={`${label}を外す`}
+                    className={styles.tagRemove}
+                    onClick={() => toggleNationality(nationality, false)}
+                  >
+                    ×
+                  </button>
+                </li>
+              );
+            })}
+            <li className={styles.tagAddItem}>
+              <button
+                ref={nationalityButtonRef}
+                type="button"
+                className={styles.tagAdd}
+                aria-expanded={pickingNationality}
+                aria-controls={pickingNationality ? nationalityPickerId : undefined}
+                onClick={() => toggleNationalityPicker(!pickingNationality)}
+              >
+                ＋ 国籍
+              </button>
+            </li>
+          </ul>
+        </div>
         {pickingNationality && (
           <fieldset
             ref={nationalityPickerRef}
@@ -335,33 +372,38 @@ export function BoostGroupEditor({
           </fieldset>
         )}
         {hasNationality && (
-          <ul className={styles.tags} aria-label="艦種">
-            {chosenShipTypeOptions.map((option) => (
-              <li key={option.label} className={styles.tag}>
-                <span>{option.label}</span>
+          <div className={styles.tagRow}>
+            <span className={styles.rowLabel} aria-hidden="true">
+              艦種
+            </span>
+            <ul className={styles.tags} aria-label="艦種">
+              {chosenShipTypeOptions.map((option) => (
+                <li key={option.label} className={styles.tag}>
+                  <span>{option.label}</span>
+                  <button
+                    type="button"
+                    aria-label={`${option.label}を外す`}
+                    className={styles.tagRemove}
+                    onClick={() => toggleShipType(option, false)}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+              <li className={styles.tagAddItem}>
                 <button
+                  ref={shipTypeButtonRef}
                   type="button"
-                  aria-label={`${option.label}を外す`}
-                  className={styles.tagRemove}
-                  onClick={() => toggleShipType(option, false)}
+                  className={styles.tagAdd}
+                  aria-expanded={pickingShipType}
+                  aria-controls={pickingShipType ? shipTypePickerId : undefined}
+                  onClick={() => toggleShipTypePicker(!pickingShipType)}
                 >
-                  ×
+                  ＋ 艦種
                 </button>
               </li>
-            ))}
-            <li className={styles.tagAddItem}>
-              <button
-                ref={shipTypeButtonRef}
-                type="button"
-                className={styles.tagAdd}
-                aria-expanded={pickingShipType}
-                aria-controls={pickingShipType ? shipTypePickerId : undefined}
-                onClick={() => toggleShipTypePicker(!pickingShipType)}
-              >
-                ＋ 艦種
-              </button>
-            </li>
-          </ul>
+            </ul>
+          </div>
         )}
         {pickingShipType && (
           <fieldset
@@ -394,6 +436,8 @@ export function BoostGroupEditor({
             </button>
           </fieldset>
         )}
+        {/* 効く条件の要約（UI／UX の指摘 中9。例「冬月・北上、またはアメリカの駆逐に ×1.21」） */}
+        <p className={styles.summary}>{summarizeBoostGroup(group)}</p>
         {unknownShips.length > 0 && (
           <p className={styles.warning}>
             {`艦船マスタにない艦名：${unknownShips.join("、")}（書き間違いがないか確かめてください）`}

@@ -160,6 +160,11 @@ function ImportDoneSummary({ summary }: { summary: ImportSummary }): ReactNode {
             います。新しく実装された艦かもしれません（取り込みは続けられます）
           </li>
         )}
+        {summary.keptAssignmentCount > 0 && (
+          <li>
+            札割り <b>{summary.keptAssignmentCount}隻</b>を引き継ぎました
+          </li>
+        )}
         {summary.removedAssignmentCount > 0 && (
           <li>
             <b>{summary.removedAssignmentCount}件</b>の割り当てを外しました
@@ -180,13 +185,30 @@ function ImportDoneSummary({ summary }: { summary: ImportSummary }): ReactNode {
         取り込みの直後に出るリンクなので、先読み（静的書き出しでは HEAD と取得の要求）はしない。
         行き先は左メニューのリンクが先読みしているため、移動は遅くならない
       */}
+      {/*
+        札が付いている艦がいるときは、計画との差分を先に確かめられるよう「差分を見る」を主なボタンにして先に並べる
+        （UI／UX の指摘 中7）。いないときは「割り振りへ進む」が主
+      */}
       <div className={styles.doneActions}>
-        <Link href={ROUTES.assign} prefetch={false} className={styles.primaryLink}>
-          割り振りへ進む
-        </Link>
-        <Link href={ROUTES.drift} prefetch={false} className={styles.secondaryLink}>
-          差分を見る
-        </Link>
+        {summary.taggedShipCount > 0 ? (
+          <>
+            <Link href={ROUTES.drift} prefetch={false} className={styles.primaryLink}>
+              差分を見る
+            </Link>
+            <Link href={ROUTES.assign} prefetch={false} className={styles.secondaryLink}>
+              割り振りへ進む
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link href={ROUTES.assign} prefetch={false} className={styles.primaryLink}>
+              割り振りへ進む
+            </Link>
+            <Link href={ROUTES.drift} prefetch={false} className={styles.secondaryLink}>
+              差分を見る
+            </Link>
+          </>
+        )}
       </div>
     </section>
   );
@@ -224,6 +246,7 @@ export function ImportScreen(): ReactNode {
 
   const flow = useImportFlow({
     master: masterState.status === "success" ? masterState.master : null,
+    latestEventId: definition?.event.id ?? null,
     // useImportFlow は、保存した時点で最後に描いたときのこの関数を呼ぶ。
     // そのため、取り込みの途中で定義が読めても、その定義で読み込んだ札割りのデータを読み直す
     onImported: () => {

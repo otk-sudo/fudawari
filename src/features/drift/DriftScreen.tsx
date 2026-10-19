@@ -8,7 +8,11 @@
 //   渡して行う（ほかの部品が同じ時に変えた分を消さない）。保存はブラウザ内だけ。
 // - 元に戻せるのは直前の反映 1 回分だけ。反映の後にほかの部品が割り当てを変えたら（読み直しを含む）、その記録は使わない。
 // - 代わりの艦の提案は出さない。「代わりの艦を探す」は割り振り画面へ移動するだけ（U23）。
-// - 札番号が未入力の札は比べられないので、札ごとの進み具合に「札番号が未入力」と出し、その札に置いた艦は差分の対象外にする（U10）。
+// - 札番号が未入力の札は比べられないので、その札に置いた艦は差分の対象外にする（U10）。札ごとに「比べられません」を繰り返さず、
+//   比べられる札（札番号のある札）の数で出し分ける（UI／UX レビュー 高2）。
+//   - 一部の札だけ札番号がない：上に帯「札番号が未入力の札（n 札）は差分の対象外です」を一度だけ出し、進み具合はその札に短い印だけ
+//   - 全札に札番号がない：件数のまとめと「対応が必要」の欄の代わりに、帯「この定義には札番号がないため、差分を比べられません」を
+//     1 つだけ出す（何も比べていないのに「対応が必要なものはありません」と出さない）
 import Link from "next/link";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PublicDefinition } from "@/domain/definition/types";
@@ -25,11 +29,14 @@ import type { AssignmentMap } from "@/domain/plan/types";
 import type { PlanData } from "@/lib/plan";
 import { ROUTES } from "@/lib/routes";
 import {
+  excludedFudasMessage,
   type FudaChip,
   fudaMapOf,
+  gameNumberCoverageOf,
   inkOn,
   type IssueView,
   issueViewOf,
+  NO_GAME_NUMBER_MESSAGE,
   type ProgressView,
   progressViewsOf,
 } from "./drift-view";
@@ -82,6 +89,7 @@ export function DriftScreen({ definition, master, plan }: DriftScreenProps): Rea
     return report.issues.map((entry) => issueViewOf(definition, master, fudas, entry, shipByUid.get(entry.uid)));
   }, [report, ships, definition, master, fudas]);
   const progress = useMemo(() => progressViewsOf(fudas, report.progress), [fudas, report]);
+  const coverage = gameNumberCoverageOf(progress);
 
   const [record, setRecord] = useState<AppliedRecord | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -146,8 +154,37 @@ export function DriftScreen({ definition, master, plan }: DriftScreenProps): Rea
     (bulkButtonRef.current ?? issuesHeadingRef.current)?.focus();
   }
 
+  const progressSection = (
+    <section aria-labelledby={progressHeadingId} className={styles.section}>
+      <h2 id={progressHeadingId} className={styles.heading}>
+        札ごとの進み具合
+      </h2>
+      <ul className={styles.progressGrid}>
+        {progress.map((item) => (
+          <ProgressItem key={item.fudaId} item={item} markMissingNumber={coverage.kind === "partial"} />
+        ))}
+      </ul>
+    </section>
+  );
+
+  // 比べられる札が 1 つもなければ、件数のまとめと「対応が必要」の欄の代わりに帯を 1 つだけ出す
+  if (coverage.kind === "none") {
+    return (
+      <div className={styles.screen}>
+        <p className={styles.notice}>{NO_GAME_NUMBER_MESSAGE}</p>
+        {saveError !== null && (
+          <p role="alert" className={styles.saveError}>
+            {saveError.message}
+          </p>
+        )}
+        {progressSection}
+      </div>
+    );
+  }
+
   return (
     <div className={styles.screen}>
+      {coverage.kind === "partial" && <p className={styles.notice}>{excludedFudasMessage(coverage.missing)}</p>}
       <ul aria-label="件数のまとめ" className={styles.summary}>
         {report.summary.map((item) => (
           <li key={item.kind} className={`${styles.summaryItem} ${SUMMARY_TONE[item.kind]}`}>
@@ -202,16 +239,7 @@ export function DriftScreen({ definition, master, plan }: DriftScreenProps): Rea
         ))}
       </section>
 
-      <section aria-labelledby={progressHeadingId} className={styles.section}>
-        <h2 id={progressHeadingId} className={styles.heading}>
-          札ごとの進み具合
-        </h2>
-        <ul className={styles.progressGrid}>
-          {progress.map((item) => (
-            <ProgressItem key={item.fudaId} item={item} />
-          ))}
-        </ul>
-      </section>
+      {progressSection}
     </div>
   );
 }
@@ -390,7 +418,11 @@ function BulkConfirm({ issues, onApply, onCancel }: BulkConfirmProps): ReactNode
 
 // ---- 札ごとの進み具合 ----
 
-function ProgressItem({ item }: { item: ProgressView }): ReactNode {
+/**
+ * 札ごとの進み具合の 1 つ。札番号が未入力の札（札付きが null）は計画の隻数だけを出す。
+ * markMissingNumber が true（一部の札だけ札番号がない）なら、短い印「札番号なし」を添える（理由は上の帯に一度だけ書く）
+ */
+function ProgressItem({ item, markMissingNumber }: { item: ProgressView; markMissingNumber: boolean }): ReactNode {
   return (
     <li className={styles.progressCard}>
       <div className={`${styles.progressHead} ${inkClass(item.color)}`} style={{ background: item.color }}>
@@ -398,7 +430,9 @@ function ProgressItem({ item }: { item: ProgressView }): ReactNode {
       </div>
       <div className={styles.progressBody}>
         {item.tagged === null ? (
-          <span className={styles.progressText}>{`札番号が未入力のため比べられません（計画 ${item.planned}隻）`}</span>
+          <span className={styles.progressText}>
+            {markMissingNumber ? `札番号なし ／ 計画 ${item.planned}隻` : `計画 ${item.planned}隻`}
+          </span>
         ) : (
           <>
             <div className={styles.progressBar} aria-hidden="true">

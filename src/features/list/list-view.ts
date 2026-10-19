@@ -257,3 +257,18 @@ export function inkOn(color: string): "dark" | "light" {
   const contrastWithDark = (luminance + 0.05) / (DARK_INK_LUMINANCE + 0.05);
   return contrastWithDark >= contrastWithWhite ? "dark" : "light";
 }
+
+/**
+ * 一覧の札の色の上に置く文字の色：黒（"black"。#000000）か白（"white"。#FFFFFF）か（UI／UX レビュー 中12）。
+ * WCAG の相対輝度からコントラスト比の高い方を選ぶ。黒と白の高い方は、どの色の上でも 4.58:1 以上になる
+ * （暗い文字 #101114 では、第六艦隊の #B5651D の上が 4.35:1 で 4.5:1 に届かない）。
+ * 色の形が "#RRGGBB" でなければ null（札の色で塗らないので、画面モードの文字の色を使う）。
+ * 画像で保存の画像は見た目を変えないため、inkOn（暗い文字 #101114 か白か）のまま
+ */
+export function readableInkOn(color: string): "black" | "white" | null {
+  const luminance = relativeLuminance(color);
+  if (luminance === null) return null;
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithBlack = (luminance + 0.05) / 0.05;
+  return contrastWithBlack >= contrastWithWhite ? "black" : "white";
+}

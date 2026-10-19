@@ -12,7 +12,7 @@ import {
   type FudaView,
   formatMultiplier,
   groupByShipType,
-  inkOn,
+  readableInkOn,
   type TimelineArea,
 } from "./list-view";
 import styles from "./ListBoard.module.css";
@@ -29,9 +29,14 @@ export interface ListBoardProps {
   assignments: AssignmentMap;
 }
 
-/** 札の色の上の文字の色のクラス */
+/**
+ * 札の色の上の文字の色のクラス：黒と白のうちコントラスト比の高い方（UI／UX レビュー 中12）。
+ * 色が "#RRGGBB" でなければ（札の色で塗らないので）画面モードの文字の色のまま
+ */
 function inkClass(color: string): string {
-  return inkOn(color) === "light" ? styles.inkLight : styles.inkDark;
+  const ink = readableInkOn(color);
+  if (ink === null) return "";
+  return ink === "white" ? styles.inkWhite : styles.inkBlack;
 }
 
 /**
@@ -114,8 +119,13 @@ function Timeline({ areas }: { areas: readonly TimelineArea[] }): ReactNode {
                     style={{ backgroundColor: color || undefined }}
                     data-fuda-color={color}
                   >
-                    <span className={styles.stepStage}>{stage.name}</span>
-                    <span className={styles.stepFuda}>{fuda?.name ?? stage.fudaId}</span>
+                    {/* 段階名・札名・「特効 n隻」・難所の印を 1 行に横並びにし、長ければ省略記号で切る（UI／UX レビュー 中5） */}
+                    <span className={styles.stepStage} title={stage.name}>
+                      {stage.name}
+                    </span>
+                    <span className={styles.stepFuda} title={fuda?.name ?? stage.fudaId}>
+                      {fuda?.name ?? stage.fudaId}
+                    </span>
                     {/* 全段階に出す（特効グループのない段階や、特効のある艦がいない段階は「特効 0隻」） */}
                     <span className={styles.stepBoost}>特効 {boostedCount}隻</span>
                     {stage.importance === "hard" && <span className={styles.hard}>難所</span>}

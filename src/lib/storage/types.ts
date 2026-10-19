@@ -24,6 +24,11 @@ export interface SaveImportInput {
    * （記録するのは実際に効いた条件＝filter.lockedOnly && hasLockInfo）
    */
   hasLockInfo: boolean;
+  /**
+   * 引き継いだ割り当ての数を数えるイベントの ID（任意。saveImport だけが見る。UI／UX の指摘 中7）。
+   * 渡すと saveImport が keptAssignmentCount を返す（取り込み画面の「札割り n 隻を引き継ぎました」の n）
+   */
+  keptCountEventId?: string;
 }
 
 /**
@@ -34,6 +39,12 @@ export interface SaveImportInput {
 export interface SaveImportResult {
   /** 外れる（previewImport）／外した（saveImport）割り当ての件数 */
   removedAssignmentCount: number;
+  /**
+   * 引き継いだ割り当ての数（saveImport に keptCountEventId を渡したときだけ返す。previewImport は返さない）。
+   * そのイベントの割り当てのうち、取り込みの後も残るもの（今回の取り込みにいる個体の割り当て）の数。
+   * 個体 ID がない古い形式では引き継がないので 0（U9）
+   */
+  keptAssignmentCount?: number;
 }
 
 /** 保存した取り込みの情報（最終取り込み。ホームと設定の「最終取り込み（日時） ／ n 隻」に使う） */

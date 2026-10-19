@@ -31,7 +31,15 @@
 // - 反映後：role="status" の中に「n件を計画に反映しました（艦名・艦名）」とボタン「元に戻す」（フォーカスを移す）。
 //   元に戻すと両方消え、フォーカスを見出し「対応が必要 n件」へ移す
 // - 札ごとの進み具合：region「札ごとの進み具合」（<section aria-labelledby> で見出し h2 を名前にする）。
-//   定義の札の順に listitem が 1 つずつ。各 listitem に札名と「札付き n ／ 計画 m隻」、札番号が未入力の札は「札番号が未入力」
+//   定義の札の順に listitem が 1 つずつ。各 listitem に札名と「札付き n ／ 計画 m隻」。札番号が未入力の札は「札付き」を出さず、
+//   「比べられません」の文を札ごとに繰り返さない（短い印にするか、何も書かない。UI／UX レビュー 高2）
+// - 札番号の有無による出し分け（UI／UX レビュー 高2。比べられる札＝札番号〔gameNumber〕のある札）
+//   - 全札に札番号がある：帯を出さない
+//   - 一部の札だけ札番号がない：帯を一度だけ「札番号が未入力の札（n 札）は差分の対象外です」（excludedFudasBannerPattern）。
+//     「差分の対象外」はこの帯にだけ書く。件数のまとめ・「対応が必要」の欄はそのまま出す
+//   - 全札に札番号がない：件数のまとめ・「対応が必要」の欄（見出し・「対応が必要なものはありません」・1 件ずつ・まとめて）の代わりに、
+//     文字がちょうど「この定義には札番号がないため、差分を比べられません」（NO_GAME_NUMBER_BANNER）の要素を 1 つだけ出す。
+//     「比べられません」はこの帯の 1 回だけ（札ごとの進み具合に繰り返さない）
 // - 割り当ての保存の失敗：role="alert" に「保存できませんでした」
 import { screen, within } from "@testing-library/react";
 import { expect } from "vitest";
@@ -46,6 +54,14 @@ export const SUMMARY_LABELS = [
 
 /** 件数のまとめの名前 */
 export type SummaryLabel = (typeof SUMMARY_LABELS)[number];
+
+/** 全札に札番号がないときの帯の文（UI／UX レビュー 高2。文字がちょうどこの文の要素を 1 つ出す） */
+export const NO_GAME_NUMBER_BANNER = "この定義には札番号がないため、差分を比べられません";
+
+/** 一部の札だけ札番号がないときの帯「札番号が未入力の札（n 札）は差分の対象外です」（前に数字が続かない n。句点の手前まで） */
+export function excludedFudasBannerPattern(count: number): RegExp {
+  return new RegExp(`札番号が未入力の札[^。]*?(?<!\\d)${count}\\s*札[^。]*?差分の対象外`);
+}
 
 /** 「対応が必要 n件」（前に数字が続かない n） */
 export function issuesHeadingPattern(count: number): RegExp {

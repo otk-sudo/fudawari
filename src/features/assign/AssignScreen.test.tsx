@@ -1101,13 +1101,15 @@ describe("割り振り画面の中身（AssignScreen）", () => {
       expect(save).toHaveBeenLastCalledWith(EVENT_ID, { ...summer2026Assignments, tone: "rengo" });
     });
 
-    it("置いた艦のカードは開いたままで、移った札の段階の倍率だけを並べる", async () => {
+    it("置いた艦のカードは閉じ、押して開き直すと、移った札の段階の倍率だけを並べる", async () => {
       // 準備
       const { user } = renderAssignScreen();
       await user.click(getCard(getTray(), "利根改二"));
 
-      // 実行
+      // 実行：置く（カードは閉じる）→ 移った札の列のカードを押して開く
       await user.click(within(getColumn("連合艦隊")).getByRole("button", { name: "ここに置く（特効あり）" }));
+      expect(getCard(getColumn("連合艦隊"), "利根改二")).toHaveAttribute("aria-expanded", "false");
+      await user.click(getCard(getColumn("連合艦隊"), "利根改二"));
 
       // 検証
       const card = getCard(getColumn("連合艦隊"), "利根改二");
@@ -1354,5 +1356,22 @@ describe("割り振り画面の中身（AssignScreen）", () => {
     // 検証：控えの利根改二・札の列の時雨改二は、画面全体で 1 つずつ
     expect(findCards(document.body, "利根改二")).toHaveLength(1);
     expect(findCards(document.body, "時雨改二")).toHaveLength(1);
+  });
+});
+
+// PR #45 の独立レビュー：ヘッダー帯の下に重なった要素にフォーカスが移ったとき、ページのスクロールでヘッダー帯の下まで見せる（WCAG 2.4.11）
+describe("割り振り画面：ページのスクロールの scroll-padding-top", () => {
+  it("画面を出している間は <html> に、ヘッダー帯の高さ＋間の分の scroll-padding-top を付け、画面を離れたら外す", () => {
+    // 準備・実行
+    const { unmount } = renderAssignScreen();
+
+    // 検証：CSS を読まないテストの環境では既定の値（ヘッダー帯 51px＋間 12px。jsdom は calc を 63px にまとめる）
+    expect(document.documentElement.style.scrollPaddingTop).toMatch(/^calc\((51px \+ 12px|63px)\)$/);
+
+    // 実行：画面を離れる
+    unmount();
+
+    // 検証
+    expect(document.documentElement.style.scrollPaddingTop).toBe("");
   });
 });

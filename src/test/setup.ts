@@ -9,3 +9,9 @@ import { afterEach } from "vitest";
 afterEach(() => {
   cleanup();
 });
+
+// jsdom の要素には scrollIntoView がない（配置を持たないため）。画面の部品が呼んでも失敗しないよう、何もしない関数を用意する
+// （スクロールして画面の中に見えることは Playwright の画面テストで確かめる）
+if (typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = function scrollIntoView(): void {};
+}
