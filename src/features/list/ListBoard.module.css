@@ -217,8 +217,8 @@
 }
 
 .rowStages {
-  font-size: calc(11px * var(--font-scale));
-  opacity: 0.9;
+  /* 札の色の上の文字は黒白のうち読みやすいほうを選ぶ。不透明度を下げると 4.5:1 を割るので掛けない */
+  font-size: calc(12px * var(--font-scale));
 }
 
 .rowCount {
