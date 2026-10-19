@@ -5,7 +5,8 @@
 //   艦カードはドラッグするものと落とす先の両方なので、ID を分ける（同じ ID だと、自分の上にあるのか分からなくなる）
 // - 落とす先の判定：ポインターの下にあるものから選び、艦カードを札の列・控えより優先する（カードに重ねると入れ替え）。
 //   控えの一覧は仮想スクロールで前後に少し余分に行を描くので、スクロールで隠れた行のカードには当てない。
-//   控えの一覧の一番上に固定した区切りの見出しの上では、その下に隠れたカードに当てず、控えとして扱う
+//   控えの一覧の一番上に固定した区切りの見出しの上では、その下に隠れたカードに当てず、控えとして扱う。
+//   画面の上に留めたヘッダー帯の上では、落とす先なしにする（createDropTargetDetector）
 // - 読み上げ：dnd-kit の既定（英語・ID を読む）の代わりに、艦名・札名で知らせる日本語の文にする。
 //   キーボードでのドラッグは作らない（切り捨て候補 1）ので、キーボードの操作説明は置かない
 import type { Announcements, CollisionDetection, ScreenReaderInstructions, UniqueIdentifier } from "@dnd-kit/core";
@@ -98,6 +99,22 @@ export const detectDropTarget: CollisionDetection = (args) => {
   if (shipHit !== undefined) return [shipHit];
   return hits.filter((hit) => !isShip(hit.id));
 };
+
+/**
+ * 上に重なって隠す要素（画面の上に留めたヘッダー帯など）を考える、落とす先の判定を作る。
+ * ポインターが隠す要素の見える範囲の中にあれば、落とす先なし（その下に隠れた札の列・艦カードに落とさない。PR #45 のレビュー）。
+ * そうでなければ detectDropTarget と同じ。隠す要素は判定のたびに getBlockers で読む（まだ描いていない要素は null）
+ */
+export function createDropTargetDetector(getBlockers: () => readonly (Element | null)[]): CollisionDetection {
+  return (args) => {
+    const { pointerCoordinates } = args;
+    if (pointerCoordinates !== null) {
+      const blocked = getBlockers().some((blocker) => blocker !== null && isPointInside(blocker, pointerCoordinates));
+      if (blocked) return [];
+    }
+    return detectDropTarget(args);
+  };
+}
 
 // ---- 落とした結果 ----
 

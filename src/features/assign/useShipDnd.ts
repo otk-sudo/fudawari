@@ -27,6 +27,7 @@ import type { ShipUid } from "@/domain/ship/types";
 import type { AssignStore } from "./assign-store";
 import {
   createDragAnnouncements,
+  createDropTargetDetector,
   detectDropTarget,
   type DragLookup,
   type DropTarget,
@@ -56,6 +57,8 @@ export interface UseShipDndOptions {
   store: AssignStore;
   /** 読み上げに使う艦名・札名と、艦の今いる札（描き直すたびに同じものを渡すと、読み上げの文を作り直さない） */
   lookup: DragLookup;
+  /** 上に重なって隠す要素（画面の上に留めたヘッダー帯）。この上で離しても、その下に隠れたものには落とさない */
+  dropBlocker?: Element | null;
 }
 
 /** useShipDnd の戻り値 */
@@ -65,7 +68,7 @@ export interface ShipDnd extends DragState {
 }
 
 /** 割り振り画面のドラッグ＆ドロップ */
-export function useShipDnd({ store, lookup }: UseShipDndOptions): ShipDnd {
+export function useShipDnd({ store, lookup, dropBlocker = null }: UseShipDndOptions): ShipDnd {
   const sensors = useSensors(
     useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
     useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
@@ -74,6 +77,11 @@ export function useShipDnd({ store, lookup }: UseShipDndOptions): ShipDnd {
   const accessibility = useMemo(
     () => ({ announcements: createDragAnnouncements(lookup), screenReaderInstructions: NO_DRAG_INSTRUCTIONS }),
     [lookup],
+  );
+  // 隠す要素が変わったとき（描いたとき）だけ判定の関数を作り直す
+  const collisionDetection = useMemo(
+    () => (dropBlocker === null ? detectDropTarget : createDropTargetDetector(() => [dropBlocker])),
+    [dropBlocker],
   );
 
   const handleDragStart = ({ active }: DragStartEvent): void => {
@@ -110,7 +118,7 @@ export function useShipDnd({ store, lookup }: UseShipDndOptions): ShipDnd {
     ...drag,
     contextProps: {
       sensors,
-      collisionDetection: detectDropTarget,
+      collisionDetection,
       accessibility,
       onDragStart: handleDragStart,
       onDragOver: handleDragOver,

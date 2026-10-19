@@ -294,7 +294,14 @@ export function TrayGroupList({
               className={joinClasses(styles.row, styles.headerRow, sticky ? styles.stickyRow : undefined, ROW_SPACE_CLASS[row.space])}
               style={rowStyle(item, sticky)}
             >
-              <button type="button" className={styles.header} aria-expanded={row.open} onClick={() => toggleGroup(row, item)}>
+              {/* 見出しは 1 行に収め、入らない分は「…」にする。全文は title（ポインターを重ねたとき）で読める */}
+              <button
+                type="button"
+                className={styles.header}
+                aria-expanded={row.open}
+                title={row.group.title}
+                onClick={() => toggleGroup(row, item)}
+              >
                 <span className={styles.chevron} aria-hidden="true">
                   {row.open ? "▾" : "▸"}
                 </span>

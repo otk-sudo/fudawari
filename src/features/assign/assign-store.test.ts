@@ -163,6 +163,19 @@ describe("「ここに置く」「（札名）に置く」", () => {
     expect(openSet(store)).toEqual(new Set(["i168"]));
   });
 
+  it("今いる札に置いた（割り当てが変わらない）ときは、選択だけを外し、カードは閉じない（ドラッグと同じ決まり）", () => {
+    // 準備：連合艦隊の時雨改二を選ぶ
+    const { store } = setup();
+    store.getState().pressShip("shigure2");
+
+    // 実行
+    store.getState().placeSelected("rengo");
+
+    // 検証
+    expect(store.getState().selectedUid).toBeNull();
+    expect(openSet(store)).toEqual(new Set(["shigure2"]));
+  });
+
   it("艦を選んでいないときは、置く操作をしても何も変わらない", () => {
     const { store, save } = setup();
 

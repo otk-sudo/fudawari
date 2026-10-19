@@ -224,17 +224,11 @@
 }
 
 /*
- * 札の列の艦カードにフォーカスが移ったとき（置いた後・「×」の後）にブラウザがページをスクロールしても、
- * 留めたヘッダー帯の下に隠さない
- */
-.columns [data-ship-uid] {
-  scroll-margin-top: calc(var(--assign-header-height) + var(--assign-sticky-gap));
-}
-
-/*
  * 選択中の艦のパネルの置き場所。ページをスクロールしても、ヘッダー帯の下に留める（UI／UX レビュー 2026-10-19）。
- * 高さは画面の高さから上（ヘッダー帯と間）と下（本文の下の余白）を除いた分まで（ページの一番下まで
- * スクロールしても、本文の終わりに押し上げられてヘッダー帯に寄らない）。入りきらないときは、パネルの中（札ごとのブロック）を
+ * 高さは画面の高さから上（ヘッダー帯と間）と下（本文の下の余白）と、お知らせの欄の高さ（--assign-notices-height）を除いた分まで。
+ * 控えの高さ（TrayPanel.module.css の --tray-max-height）と同じ考え方：お知らせが出ていても、ページの一番上でパネルの下端が
+ * 画面に収まり、ページの一番下までスクロールしても本文の終わりに押し上げられてヘッダー帯に寄らない（PR #45 のレビュー）。
+ * 入りきらないときは、パネルの中（札ごとのブロック）を
  * スクロールさせる（SelectedShipPanel.module.css。艦名と「×」は上に残す）。ここの overflow は念のため
  */
 .side {
@@ -245,7 +239,10 @@
   flex-direction: column;
   gap: 10px;
   max-width: 340px;
-  max-height: calc(100dvh - var(--assign-header-height) - var(--assign-sticky-gap) - var(--assign-body-bottom));
+  max-height: calc(
+    100dvh - var(--assign-header-height) - var(--assign-sticky-gap) - var(--assign-body-bottom) -
+      var(--assign-notices-height, 0px)
+  );
   overflow-y: auto;
 }
 

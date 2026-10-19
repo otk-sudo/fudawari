@@ -1358,3 +1358,20 @@ describe("割り振り画面の中身（AssignScreen）", () => {
     expect(findCards(document.body, "時雨改二")).toHaveLength(1);
   });
 });
+
+// PR #45 の独立レビュー：ヘッダー帯の下に重なった要素にフォーカスが移ったとき、ページのスクロールでヘッダー帯の下まで見せる（WCAG 2.4.11）
+describe("割り振り画面：ページのスクロールの scroll-padding-top", () => {
+  it("画面を出している間は <html> に、ヘッダー帯の高さ＋間の分の scroll-padding-top を付け、画面を離れたら外す", () => {
+    // 準備・実行
+    const { unmount } = renderAssignScreen();
+
+    // 検証：CSS を読まないテストの環境では既定の値（ヘッダー帯 51px＋間 12px。jsdom は calc を 63px にまとめる）
+    expect(document.documentElement.style.scrollPaddingTop).toMatch(/^calc\((51px \+ 12px|63px)\)$/);
+
+    // 実行：画面を離れる
+    unmount();
+
+    // 検証
+    expect(document.documentElement.style.scrollPaddingTop).toBe("");
+  });
+});

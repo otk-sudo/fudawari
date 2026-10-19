@@ -185,10 +185,11 @@ export function createAssignStore(options: AssignStoreOptions): AssignStore {
       placeSelected: (fudaId) => {
         const { selectedUid } = get();
         if (selectedUid === null) return;
-        reassign([[selectedUid, fudaId]]);
-        // 置いた艦のカードは閉じる（モック Assign.dc.html の placeTo は開いたままだが、UI／UX レビュー 2026-10-19 で変えた。
-        // ほかの開いた艦は閉じない）
-        set({ selectedUid: null, openUids: get().openUids.filter((open) => open !== selectedUid) });
+        const changed = reassign([[selectedUid, fudaId]]);
+        // 札へ移した艦のカードは閉じる（モック Assign.dc.html の placeTo は開いたままだが、UI／UX レビュー 2026-10-19 で変えた。
+        // ほかの開いた艦は閉じない）。今いる札に置いた（割り当てが変わらない）ときは、ドラッグと同じく閉じない
+        const { openUids } = get();
+        set({ selectedUid: null, openUids: changed ? openUids.filter((open) => open !== selectedUid) : openUids });
       },
       // ドラッグ中の艦は画面（dnd-kit）が持つ。ストアは選択を外すだけ
       startDrag: () => set({ selectedUid: null }),

@@ -74,15 +74,27 @@
 }
 
 .chevron {
+  flex: 0 0 auto;
   width: 10px;
   color: var(--color-text-muted);
 }
 
+/*
+ * 見出しの文（例「（札名）で効く」。札名は利用者が決めるので長いことがある）。
+ * 折り返すと見出しが --tray-group-header-height より高くなり、一覧の scroll-padding-top が足りずに艦名の行を隠すため、
+ * 1 行に収めて入らない分は「…」にする（全文はボタンの title。PR #45 のレビュー）
+ */
 .title {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .count {
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-family: Consolas, monospace;
   font-size: calc(11px * var(--font-scale));
   color: var(--color-text-muted);
