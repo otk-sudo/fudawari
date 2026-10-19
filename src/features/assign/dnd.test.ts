@@ -28,6 +28,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ShipUid } from "@/domain/ship/types";
 import {
   createDragAnnouncements,
+  createDropTargetDetector,
   detectDropTarget,
   dragIdOf,
   type DragLookup,
@@ -413,5 +414,42 @@ describe("detectDropTarget（落とす先の判定）", () => {
     const pinnedHeader = elementWithRect(rectOf(0, 100, 300, 28));
     const tone = droppableOf(shipDropIdOf("tone"), rectOf(10, 96, 280, 40), { clip: list, cover: pinnedHeader });
     expect(detect([TRAY, RENGO, tone], { x: 100, y: 132 })).toEqual([shipDropIdOf("tone")]);
+  });
+});
+
+// PR #45 の独立レビュー：画面の上に留めたヘッダー帯の上で離すと、その下に隠れた札の列・艦カードに落ちていた
+describe("createDropTargetDetector（ヘッダー帯など、上に重なって隠す要素の上では落とす先なし）", () => {
+  // 画面の配置（px）：ヘッダー帯（y 0〜51。画面の上に留めてある）。その下に、ページのスクロールで札の列「連合艦隊」
+  // （x 320〜520・y -200〜400）と、その中の時雨改二のカード（y 30〜70。上の 21px がヘッダー帯に隠れる）がある
+  const RENGO = droppableOf(fudaDropIdOf("rengo"), rectOf(320, -200, 200, 600));
+  const SHIGURE = droppableOf(shipDropIdOf("shigure2"), rectOf(330, 30, 180, 40), { clip: null });
+
+  /** 隠す要素を渡して作った判定で、当たった落とす先の ID を返す */
+  function detectWith(blockers: readonly (Element | null)[], pointer: { x: number; y: number }): UniqueIdentifier[] {
+    const detector = createDropTargetDetector(() => blockers);
+    const droppables = [RENGO, SHIGURE];
+    return detector({
+      active: activeOf("tone"),
+      collisionRect: rectOf(pointer.x, pointer.y, 0, 0),
+      droppableRects: new Map(droppables.map(({ container, rect }) => [container.id, rect])),
+      droppableContainers: droppables.map(({ container }) => container),
+      pointerCoordinates: pointer,
+    }).map((collision) => collision.id);
+  }
+
+  it("ポインターがヘッダー帯の上にあれば、その下に隠れた艦カード・札の列のどちらにも当たらない", () => {
+    const header = elementWithRect(rectOf(0, 0, 1366, 51));
+    expect(detectWith([header], { x: 400, y: 40 })).toEqual([]);
+    expect(detectWith([header], { x: 400, y: 20 })).toEqual([]);
+  });
+
+  it("ヘッダー帯の外（すぐ下）では、ふだんどおり艦カードに当たる", () => {
+    const header = elementWithRect(rectOf(0, 0, 1366, 51));
+    expect(detectWith([header], { x: 400, y: 60 })).toEqual([shipDropIdOf("shigure2")]);
+    expect(detectWith([header], { x: 400, y: 90 })).toEqual([fudaDropIdOf("rengo")]);
+  });
+
+  it("隠す要素がまだない（null）ときは、ふだんどおりに判定する", () => {
+    expect(detectWith([null], { x: 400, y: 40 })).toEqual([shipDropIdOf("shigure2")]);
   });
 });
