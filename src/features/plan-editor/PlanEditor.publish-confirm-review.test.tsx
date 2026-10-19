@@ -4,6 +4,7 @@ import { summer2026Definition } from "@/test/fixtures";
 import {
   ADMIN,
   blurInput,
+  boostGroupNamed,
   confirmPublish,
   createFakeRepository,
   enterDateTime,
@@ -21,6 +22,8 @@ import {
   renderEditor,
   restoreClock,
   saveDraftButton,
+  selectStage,
+  shipNameInput,
   switchToCreate,
 } from "./test-helpers";
 
@@ -82,6 +85,42 @@ describe("イベント定義の画面（PlanEditor）：公開の前の確認の
     await waitFor(() => {
       expect(publishButton()).toHaveFocus();
     });
+  });
+
+  it("公開の途中にほかの欄（艦名の入力欄）へ移って入力していたら、公開が終わってもフォーカスを奪わず、打ちかけの艦名をタグにしない", async () => {
+    // 準備：公開の返事を止めておく
+    const repository = createFakeRepository();
+    let finishPublish: (() => void) | undefined;
+    repository.publish.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishPublish = () => resolve(PUBLISH_RESULT);
+        }),
+    );
+    const { user } = await renderEditor(makeData(), { repository, knownShipNames: ALL_SHIP_NAMES });
+    await user.click(publishButton());
+    await confirmPublish(user);
+    await waitFor(() => {
+      expect(repository.publish).toHaveBeenCalledTimes(1);
+    });
+
+    // 実行：公開の途中に、E2 ゲージ3 の連合艦隊C で「＋ 艦名」を開いて「ユキ」と打ちかけ、そのあと公開の返事を返す
+    await selectStage(user, "E2", "ゲージ3");
+    await user.click(within(boostGroupNamed("連合艦隊C")).getByRole("button", { name: "＋ 艦名" }));
+    await user.type(shipNameInput(boostGroupNamed("連合艦隊C")), "ユキ");
+    await act(async () => {
+      finishPublish?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expectTextShown("変更を公開しました");
+    });
+
+    // 検証：フォーカスは艦名の入力欄のまま、打ちかけの「ユキ」はタグになっていない
+    const input = shipNameInput(boostGroupNamed("連合艦隊C"));
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("ユキ");
+    expect(within(boostGroupNamed("連合艦隊C")).queryByRole("button", { name: "ユキを外す" })).not.toBeInTheDocument();
   });
 
   it("確認のウィンドウの説明（aria-describedby）に警告の一覧を含める", async () => {

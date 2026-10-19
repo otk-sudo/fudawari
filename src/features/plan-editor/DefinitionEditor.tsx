@@ -396,7 +396,11 @@ export function DefinitionEditor({
   useEffect(() => {
     if (!focusAfterPublishRef.current || !publishSettled || publishWarnings !== null) return;
     focusAfterPublishRef.current = false;
-    if (!dialogOpen) returnFocusRef.current?.focus();
+    // 公開の途中も本文は編集できる。ほかの欄へ移っていたら（フォーカスが body・なし以外）奪わない
+    // （打ちかけの艦名の欄からフォーカスを外すと、その欄の確定でタグが足されてしまうため。PR #44 の再レビュー）
+    const active = document.activeElement;
+    const focusLost = active === null || active === document.body;
+    if (!dialogOpen && focusLost) returnFocusRef.current?.focus();
   }, [publishSettled, dialogOpen, publishWarnings]);
   // 今のモード（保存の途中に切り替えた後で衝突が返ったとき、衝突したワークスペースのモードに戻すかを見る）
   const modeRef = useRef(state.mode);
