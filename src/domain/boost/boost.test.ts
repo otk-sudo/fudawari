@@ -450,6 +450,66 @@ describe("stageLabel（段階の表示名）", () => {
   ])("段階 %s の表示名は「%s」", (stageId, expected) => {
     expect(stageLabel(def, stageId)).toBe(expected);
   });
+
+  // UI／UX レビュー 中6：本番の定義の段階名は「E1-1 第一ゲージ」のように海域名で始まり、前に海域を付けると「E1 E1-1 第一ゲージ」と
+  // 二重に出る。段階名が海域名で始まり、その直後が区切り（- ・空白〔全角を含む〕・括弧〔全角・半角〕）か段階名の終わりなら、
+  // 海域を前に付けない。それ以外は今のまま「海域名 段階名」
+  describe("段階名が海域名で始まるとき（UI／UX レビュー 中6）", () => {
+    /** 段階 E1-1（海域 E1）の段階名を name にした定義。areaName を渡すと海域 E1 の表示名も変える */
+    function definitionWithStageName(name: string, areaName?: string): PublicDefinition {
+      return {
+        ...def,
+        areas: def.areas.map((area) => (area.id === "E1" && areaName !== undefined ? { ...area, name: areaName } : area)),
+        stages: def.stages.map((stage) => (stage.id === "E1-1" ? { ...stage, name } : stage)),
+      };
+    }
+
+    it.each<[stageName: string, expected: string]>([
+      ["E1-1 第一ゲージ", "E1-1 第一ゲージ"],
+      ["E1-G", "E1-G"],
+      ["E1 第一ゲージ", "E1 第一ゲージ"],
+      ["E1　第一ゲージ", "E1　第一ゲージ"],
+      ["E1（甲）第一ゲージ", "E1（甲）第一ゲージ"],
+      ["E1(甲)第一ゲージ", "E1(甲)第一ゲージ"],
+      ["E1", "E1"],
+    ])("海域 E1 の段階名「%s」は海域を前に付けず「%s」", (stageName, expected) => {
+      // 準備
+      const definition = definitionWithStageName(stageName);
+
+      // 実行・検証
+      expect(stageLabel(definition, "E1-1")).toBe(expected);
+    });
+
+    it.each<[stageName: string, expected: string]>([
+      ["第一ゲージ", "E1 第一ゲージ"],
+      ["E10 ゲージ1", "E1 E10 ゲージ1"],
+      ["E1ギミック", "E1 E1ギミック"],
+      ["E2-1 輸送", "E1 E2-1 輸送"],
+      ["ゲージ E1-1", "E1 ゲージ E1-1"],
+    ])(
+      "海域 E1 の段階名「%s」は海域名の直後が区切りでない（または海域名で始まらない）ので、今のまま「%s」",
+      (stageName, expected) => {
+        // 準備
+        const definition = definitionWithStageName(stageName);
+
+        // 実行・検証
+        expect(stageLabel(definition, "E1-1")).toBe(expected);
+      },
+    );
+
+    it.each<[areaName: string, stageName: string, expected: string]>([
+      ["E.1", "E.1-1 ゲージ", "E.1-1 ゲージ"],
+      ["E.1", "EX1-1 ゲージ", "E.1 EX1-1 ゲージ"],
+      ["前段", "前段（輸送）", "前段（輸送）"],
+      ["前段", "前段作戦", "前段 前段作戦"],
+    ])("海域名「%s」の段階名「%s」は「%s」（海域名は文字どおりに比べる）", (areaName, stageName, expected) => {
+      // 準備
+      const definition = definitionWithStageName(stageName, areaName);
+
+      // 実行・検証
+      expect(stageLabel(definition, "E1-1")).toBe(expected);
+    });
+  });
 });
 
 describe("個体から（艦船マスタの改装段階を問わない艦名を通して）", () => {

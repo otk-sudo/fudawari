@@ -279,7 +279,10 @@ test("長い内訳でも、開いた艦カードと選んだ艦のパネルで�
 // ---- 報告と同じ条件（1366×768 の艦カード・長い段階名・文字「大」）で、■・段階名・倍率が同じ段に残る ----
 // 内訳を下の段に回すと、段階名が縮まないため長い段階名では ■ だけが 1 段目に取り残され、倍率も下の段へ落ちていた（PR #41 のレビュー M1）。
 
-/** E2 ゲージ3 の段階名を本番の報告と同じくらい長くした定義（表示は「E2 E2-2 第二ゲージ（戦車輸送）」） */
+/**
+ * E2 ゲージ3 の段階名を本番の報告と同じくらい長くした定義（表示は「E2-2 第二ゲージ（戦車輸送）」。
+ * 段階名が海域名で始まるので、前に海域を付けない。UI／UX レビュー 中6）
+ */
 const longLabelDefinition: PublicDefinition = {
   ...longNoteDefinition,
   stages: longNoteDefinition.stages.map((stage) =>
@@ -340,7 +343,7 @@ for (const fontSize of ["標準", "大"] as const) {
 
     // 検証：■・段階名・倍率が同じ段にあり、内訳は段階名の下の段、行はあふれない
     for (const [where, scope] of [["艦カード", card], ["選んだ艦のパネル", panel]] as const) {
-      const row = await measureRow(scope.getByText("E2 E2-2 第二ゲージ（戦車輸送）", { exact: true }));
+      const row = await measureRow(scope.getByText("E2-2 第二ゲージ（戦車輸送）", { exact: true }));
       const detail = `${where}（${JSON.stringify(row)}）`;
       expect.soft(row.sameRow, `${detail}：■・段階名・倍率が同じ段`).toBe(true);
       expect.soft(row.noteBelow, `${detail}：内訳は段階名の下の段`).toBe(true);

@@ -311,11 +311,28 @@ export function countBoostedShipsByStage(
   return counts;
 }
 
-/** 段階の表示名「海域名 段階名」（例「E2 ゲージ3」。要件 14 章の提案）。定義にない段階 ID はその ID をそのまま返す */
+/** 段階名で海域名の直後に来てよい区切り（- ・半角／全角の空白・全角／半角の始め括弧） */
+const STAGE_NAME_SEPARATORS: ReadonlySet<string> = new Set(["-", " ", "　", "（", "("]);
+
+/**
+ * 段階名が海域名で始まり、その直後が区切りか段階名の終わりか（例：海域 E1 の「E1-1 第一ゲージ」「E1（甲）」「E1」）。
+ * 海域名は正規表現にせず、文字どおりに比べる
+ */
+function stageNameStartsWithArea(stageName: string, areaName: string): boolean {
+  if (areaName === "" || !stageName.startsWith(areaName)) return false;
+  const next = stageName.charAt(areaName.length);
+  return next === "" || STAGE_NAME_SEPARATORS.has(next);
+}
+
+/**
+ * 段階の表示名「海域名 段階名」（例「E2 ゲージ3」。要件 14 章の提案）。定義にない段階 ID はその ID をそのまま返す。
+ * 段階名が海域名で始まる（「E1-1 第一ゲージ」など）ときは、海域を前に付けず段階名だけにする（UI／UX レビュー 中6）
+ */
 export function stageLabel(definition: PublicDefinition, stageId: string): string {
   const { stageById, areaNameById } = definitionIndex(definition);
   const stage = stageById.get(stageId);
   if (stage === undefined) return stageId;
   const areaName = areaNameById.get(stage.areaId);
-  return areaName === undefined ? stage.name : `${areaName} ${stage.name}`;
+  if (areaName === undefined || stageNameStartsWithArea(stage.name, areaName)) return stage.name;
+  return `${areaName} ${stage.name}`;
 }
