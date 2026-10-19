@@ -171,6 +171,34 @@ export function progressViewsOf(fudas: ReadonlyMap<string, Fuda>, progress: read
   });
 }
 
+// ---- 札番号の有無（UI／UX レビュー 高2） ----
+
+/** 全札に札番号がないときの帯の文 */
+export const NO_GAME_NUMBER_MESSAGE = "この定義には札番号がないため、差分を比べられません";
+
+/** 一部の札だけ札番号がないときの帯の文（例「札番号が未入力の札（2 札）は差分の対象外です」） */
+export function excludedFudasMessage(count: number): string {
+  return `札番号が未入力の札（${count} 札）は差分の対象外です`;
+}
+
+/**
+ * 札番号の有無（比べられる札＝札番号のある札）。
+ * - all：全札に札番号がある
+ * - partial：一部の札だけ札番号がない（missing はその札の数）
+ * - none：比べられる札が 1 つもない（全札に札番号がない。札がない定義も含む）
+ */
+export type GameNumberCoverage =
+  | { readonly kind: "all" }
+  | { readonly kind: "partial"; readonly missing: number }
+  | { readonly kind: "none" };
+
+/** 札ごとの進み具合の表示から、札番号の有無を求める（札付きが null の札＝札番号が未入力の札） */
+export function gameNumberCoverageOf(progress: readonly ProgressView[]): GameNumberCoverage {
+  const missing = progress.filter((item) => item.tagged === null).length;
+  if (missing === progress.length) return { kind: "none" };
+  return missing === 0 ? { kind: "all" } : { kind: "partial", missing };
+}
+
 /** 対応が必要な 1 件の表示を作る。ship は取り込んだ艦のうち、その個体（Lv を出すため。いなければ undefined） */
 export function issueViewOf(
   definition: PublicDefinition,
